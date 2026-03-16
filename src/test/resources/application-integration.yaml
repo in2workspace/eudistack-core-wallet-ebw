@@ -1,0 +1,31 @@
+spring:
+  mail:
+    host: localhost
+    port: 1025
+
+ebw:
+  jwt:
+    private-key-path: src/test/resources/test-ec256-private.pem
+    access-token-ttl: 15m
+    refresh-token-ttl: 7d
+    issuer: eudistack-ebw-test
+  otp:
+    length: 6
+    expiration: 10m
+    max-attempts: 5
+  rate-limit:
+    register-per-email: 100
+    register-per-ip: 1000
+    verify-per-email: 100
+    verify-per-ip: 1000
+    refresh-per-ip: 1000
+    logout-per-ip: 1000
+    window: 1h
+  cors:
+    allowed-origins: http://localhost:4200
+  security:
+    max-payload-size: 65536
+
+logging:
+  level:
+    com.eudistack.ebw: DEBUG
