@@ -1,29 +1,19 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: 'Release target'
-        required: true
-        type: choice
-        options:
-          - docker-push
-          - tag-create
-        default: 'docker-push'
+  push:
+    branches: [main]
 
 permissions:
   contents: write
   packages: write
 
 jobs:
-  docker-push:
-    if: inputs.target == 'docker-push'
-    name: Build & Push Docker Image
+  release:
+    name: Docker Push & GitHub Release
     runs-on: ubuntu-latest
     environment: stg
     steps:
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
@@ -37,22 +27,32 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x ./gradlew
 
-      - name: Get Project Name
-        id: project_name
-        run: echo "PROJECT_NAME=$(./gradlew -q properties | grep '^name:' | awk '{print $2}')" >> $GITHUB_ENV
+      - name: Get Project Metadata
+        run: |
+          echo "PROJECT_NAME=$(./gradlew -q properties | grep '^name:' | awk '{print $2}')" >> $GITHUB_ENV
+          echo "VERSION=$(./gradlew -q properties | grep '^version:' | awk '{print $2}')" >> $GITHUB_ENV
 
-      - name: Get Project Version
-        id: project_version
-        run: echo "VERSION=$(./gradlew -q properties | grep '^version:' | awk '{print $2}')" >> $GITHUB_ENV
+      - name: Check if tag already exists
+        id: check_tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${VERSION}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "::notice::Release v${VERSION} already exists — skipping."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
 
-      # Logins
       - name: Login to Docker Hub
+        if: steps.check_tag.outputs.exists == 'false'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PAT }}
 
       - name: Configure AWS credentials
+        if: steps.check_tag.outputs.exists == 'false'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
@@ -60,10 +60,12 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        if: steps.check_tag.outputs.exists == 'false'
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and Push docker image (DockerHub + ECR)
+      - name: Build & Push Docker Image
+        if: steps.check_tag.outputs.exists == 'false'
         env:
           PROJECT_NAME: ${{ env.PROJECT_NAME }}
           VERSION: ${{ env.VERSION }}
@@ -87,54 +89,21 @@ jobs:
 
           docker push "${DH_IMAGE}"
           docker push "${DH_LATEST}"
-
           docker push "${ECR_IMAGE}"
           docker push "${ECR_LATEST}"
 
-  tag-create:
-    if: inputs.target == 'tag-create'
-    name: Validate & Create Tag
-    runs-on: ubuntu-latest
-    environment: stg
-    steps:
-
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '25'
-          cache: 'gradle'
-
-      - name: Make Gradlew Executable
-        run: chmod +x ./gradlew
-
-      - name: Get Project Version
-        id: project_version
-        run: echo "VERSION=$(./gradlew -q properties | grep '^version:' | awk '{print $2}')" >> $GITHUB_ENV
-
-      - name: Check for existing release tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ env.VERSION }}
-        run: |
-          TAG_EXISTS=$(curl -H "Authorization: token $GITHUB_TOKEN" -s https://api.github.com/repos/${{ github.repository }}/releases | jq -r ".[] | select(.tag_name == \"v$VERSION\") | .tag_name")
-          if [ "$TAG_EXISTS" == "v$VERSION" ]; then
-            echo "::error::Release tag v$VERSION already exists."
-            exit 1
-          else
-            echo "No existing release with tag v$VERSION found. Proceeding."
-          fi
+          echo "### Docker image pushed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** \`${TAG}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **DockerHub:** \`${DH_IMAGE}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **ECR:** \`${ECR_IMAGE}\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
+        if: steps.check_tag.outputs.exists == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: "v${{ env.VERSION }}"
-          release_name: "v${{ env.VERSION }}"
-          body: "Release of version v${{ env.VERSION }}"
-          draft: false
-          prerelease: false
+        run: |
+          gh release create "v${VERSION}" \
+            --repo "${{ github.repository }}" \
+            --title "v${VERSION}" \
+            --notes "Release of version v${VERSION}" \
+            --latest
