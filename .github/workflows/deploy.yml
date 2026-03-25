@@ -40,9 +40,12 @@ jobs:
           echo "- Cluster: \`${CLUSTER}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Service: \`${SERVICE}\`" >> $GITHUB_STEP_SUMMARY
 
+          TASK_FAMILY="eudistack-${ENV}-ecs-ew1-${APP_NAME}-task"
+
           aws ecs update-service \
             --cluster "${CLUSTER}" \
             --service "${SERVICE}" \
+            --task-definition "${TASK_FAMILY}" \
             --force-new-deployment \
             --no-cli-pager
 
