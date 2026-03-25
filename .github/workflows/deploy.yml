@@ -40,12 +40,10 @@ jobs:
           echo "- Cluster: \`${CLUSTER}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Service: \`${SERVICE}\`" >> $GITHUB_STEP_SUMMARY
 
-          TASK_FAMILY="eudistack-${ENV}-ecs-ew1-${APP_NAME}-task"
-
+          # TODO: add --task-definition when apps_ci_cd IAM user has iam:PassRole permission
           aws ecs update-service \
             --cluster "${CLUSTER}" \
             --service "${SERVICE}" \
-            --task-definition "${TASK_FAMILY}" \
             --force-new-deployment \
             --no-cli-pager
 
