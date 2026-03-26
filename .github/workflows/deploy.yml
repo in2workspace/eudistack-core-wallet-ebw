@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           ENV="${{ inputs.environment }}"
-          URL="https://${APP_NAME}-${ENV}.altia.eudistack.net/actuator/health"
+          URL="https://${APP_NAME}-${ENV}.altia.eudistack.net/health"
 
           echo "Health check: ${URL}"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${URL}")
