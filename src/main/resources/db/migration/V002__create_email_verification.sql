@@ -1,4 +1,4 @@
-CREATE TABLE email_verification (
+CREATE TABLE ebw.email_verification (
     id         UUID PRIMARY KEY,
     user_email VARCHAR(254) NOT NULL,
     code_hash  VARCHAR(255) NOT NULL,
@@ -9,4 +9,4 @@ CREATE TABLE email_verification (
 );
 
 CREATE INDEX idx_verification_email_active
-    ON email_verification (user_email, used, expires_at);
+    ON ebw.email_verification (user_email, used, expires_at);

@@ -11,10 +11,12 @@ import org.springframework.context.annotation.Configuration;
 public class FlywayConfig {
 
     @Bean(initMethod = "migrate")
-    public Flyway flyway(FlywayProperties properties) {
+    public Flyway flyway(FlywayProperties flywayProperties) {
         return Flyway.configure()
-                .dataSource(properties.getUrl(), properties.getUser(), properties.getPassword())
+                .dataSource(flywayProperties.getUrl(), flywayProperties.getUser(), flywayProperties.getPassword())
                 .locations("classpath:db/migration")
+                .defaultSchema(flywayProperties.getDefaultSchema())
+                .baselineOnMigrate(true)
                 .load();
     }
 }

@@ -12,7 +12,6 @@ import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
-import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
@@ -45,13 +44,13 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
         var ip = resolveIp(exchange);
 
         return switch (path) {
-            case "/api/auth/register" -> checkRateLimit("register:ip:" + ip, properties.registerPerIp())
+            case "/api/v1/auth/register" -> checkRateLimit("register:ip:" + ip, properties.registerPerIp())
                     .then(chain.filter(exchange));
-            case "/api/auth/verify-email" -> checkRateLimit("verify:ip:" + ip, properties.verifyPerIp())
+            case "/api/v1/auth/verify-email" -> checkRateLimit("verify:ip:" + ip, properties.verifyPerIp())
                     .then(chain.filter(exchange));
-            case "/api/auth/refresh" -> checkRateLimit("refresh:ip:" + ip, properties.refreshPerIp())
+            case "/api/v1/auth/refresh" -> checkRateLimit("refresh:ip:" + ip, properties.refreshPerIp())
                     .then(chain.filter(exchange));
-            case "/api/auth/logout" -> checkRateLimit("logout:ip:" + ip, properties.logoutPerIp())
+            case "/api/v1/auth/logout" -> checkRateLimit("logout:ip:" + ip, properties.logoutPerIp())
                     .then(chain.filter(exchange));
             default -> chain.filter(exchange);
         };

@@ -37,12 +37,13 @@ public abstract class IntegrationTestBase {
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.r2dbc.url", () ->
-                "r2dbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/ebw_test");
+                "r2dbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/ebw_test?schema=ebw");
         registry.add("spring.r2dbc.username", () -> "test");
         registry.add("spring.r2dbc.password", () -> "test");
-        registry.add("spring.flyway.url", postgres::getJdbcUrl);
+        registry.add("spring.flyway.url", () -> postgres.getJdbcUrl() + "&schema=ebw");
         registry.add("spring.flyway.user", () -> "test");
         registry.add("spring.flyway.password", () -> "test");
+        registry.add("spring.flyway.default-schema", () -> "ebw");
     }
 
     @Autowired

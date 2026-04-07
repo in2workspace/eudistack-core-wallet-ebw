@@ -1,21 +1,33 @@
 spring:
+  application:
+    name: eudistack-core-wallet-ebw
   r2dbc:
-    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ebw}
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ebw}?schema=ebw
     username: ${DB_USERNAME:ebw}
     password: ${DB_PASSWORD:ebw}
   flyway:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ebw}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ebw}?schema=ebw
     user: ${DB_USERNAME:ebw}
     password: ${DB_PASSWORD:ebw}
+    default-schema: ebw
   mail:
     host: ${SMTP_HOST:localhost}
-    port: ${SMTP_PORT:1025}
+    port: ${SMTP_PORT:587}
     username: ${SMTP_USERNAME:}
     password: ${SMTP_PASSWORD:}
     properties:
       mail:
         smtp:
           from: ${SMTP_FROM:noreply@eudistack.com}
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS:true}
+          ssl:
+            enable: ${SMTP_SSL_ENABLE:false}
+            trust: ${SMTP_SSL_TRUST:}
+
+server:
+  port: 8080
 
 ebw:
   jwt:
@@ -41,16 +53,28 @@ ebw:
     max-payload-size: 65536
 
 management:
-  endpoint:
-    health:
-      probes:
-        enabled: true
-      show-details: when-authorized
-  endpoints:
+  endpoints:                          # ← Note: 'endpoints' (plural) for web exposure settings
     web:
       exposure:
-        include: health,info,prometheus
+        include: health, info, prometheus    # ← Also missing comma between 'info' and 'prometheus'
+      base-path: /
+      path-mapping:
+        health: health
+        prometheus: prometheus
+  endpoint:                           # ← 'endpoint' (singular) for individual endpoint config
+    health:
+      access: unrestricted
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:when-authorized}
+      probes:
+        enabled: true
+    prometheus:
+      access: unrestricted
+  health:
+    livenessstate:
 
 logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
   level:
+    org.springframework.security: ${LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY:INFO}
     com.eudistack.ebw: ${LOG_LEVEL:INFO}

@@ -48,4 +48,14 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
     public Mono<Long> countActiveByPasskeyId(UUID passkeyId) {
         return springRepository.countActiveByPasskeyId(passkeyId);
     }
+
+    @Override
+    public Mono<Void> updatePasskeyIdByTokenHash(String tokenHash, UUID passkeyId) {
+        return springRepository.updatePasskeyIdByTokenHash(tokenHash, passkeyId);
+    }
+
+    @Override
+    public Mono<Void> linkOrphanTokensToPasskey(UUID userId, UUID passkeyId) {
+        return springRepository.linkOrphanTokensToPasskey(userId, passkeyId);
+    }
 }
