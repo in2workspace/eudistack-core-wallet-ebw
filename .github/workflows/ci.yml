@@ -1,16 +1,60 @@
-name: Release
+name: CI
 
 on:
-  push:
+  pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
-  contents: write
+  contents: read
+  checks: write
+  pull-requests: write
   packages: write
 
+concurrency:
+  group: ci-${{ github.head_ref }}
+  cancel-in-progress: true
+
 jobs:
-  release:
-    name: Docker Push & GitHub Release
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+          cache: 'gradle'
+
+      - name: Make Gradlew Executable
+        run: chmod +x ./gradlew
+
+      - name: Build & Test
+        run: ./gradlew build --info
+
+      - name: Publish JaCoCo Coverage
+        if: always()
+        uses: madrapps/jacoco-report@v1.7.1
+        with:
+          paths: build/reports/jacoco/test/jacocoTestReport.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 40
+          min-coverage-changed-files: 60
+
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: build/reports/jacoco/test/html/
+
+  snapshot:
+    name: Snapshot Docker Image
+    needs: build
     runs-on: ubuntu-latest
     environment: stg
     steps:
@@ -32,27 +76,13 @@ jobs:
           echo "PROJECT_NAME=$(./gradlew -q properties | grep '^name:' | awk '{print $2}')" >> $GITHUB_ENV
           echo "VERSION=$(./gradlew -q properties | grep '^version:' | awk '{print $2}')" >> $GITHUB_ENV
 
-      - name: Check if tag already exists
-        id: check_tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if gh release view "v${VERSION}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "::notice::Release v${VERSION} already exists — skipping."
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Login to Docker Hub
-        if: steps.check_tag.outputs.exists == 'false'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PAT }}
 
       - name: Configure AWS credentials
-        if: steps.check_tag.outputs.exists == 'false'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
@@ -60,12 +90,10 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        if: steps.check_tag.outputs.exists == 'false'
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Docker Image
-        if: steps.check_tag.outputs.exists == 'false'
+      - name: Build & Push Snapshot Image
         env:
           PROJECT_NAME: ${{ env.PROJECT_NAME }}
           VERSION: ${{ env.VERSION }}
@@ -74,36 +102,17 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.AWS_ECR_REPOSITORY }}
         run: |
           set -euo pipefail
-          TAG="v${VERSION}"
+          TAG="v${VERSION}-pr-${{ github.event.number }}"
 
           DH_IMAGE="docker.io/${DOCKERHUB_ORG}/${PROJECT_NAME}:${TAG}"
-          DH_LATEST="docker.io/${DOCKERHUB_ORG}/${PROJECT_NAME}:latest"
-
           ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
-          ECR_LATEST="${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
 
           docker build --build-arg SKIP_TESTS=true -t "${DH_IMAGE}" .
-          docker tag "${DH_IMAGE}" "${DH_LATEST}"
           docker tag "${DH_IMAGE}" "${ECR_IMAGE}"
-          docker tag "${DH_IMAGE}" "${ECR_LATEST}"
 
           docker push "${DH_IMAGE}"
-          docker push "${DH_LATEST}"
           docker push "${ECR_IMAGE}"
-          docker push "${ECR_LATEST}"
 
-          echo "### Docker image pushed" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag:** \`${TAG}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Snapshot image pushed" >> $GITHUB_STEP_SUMMARY
           echo "- **DockerHub:** \`${DH_IMAGE}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **ECR:** \`${ECR_IMAGE}\`" >> $GITHUB_STEP_SUMMARY
-
-      - name: Create GitHub Release
-        if: steps.check_tag.outputs.exists == 'false'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "v${VERSION}" \
-            --repo "${{ github.repository }}" \
-            --title "v${VERSION}" \
-            --notes "Release of version v${VERSION}" \
-            --latest

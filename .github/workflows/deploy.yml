@@ -1,0 +1,79 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - stg
+
+env:
+  APP_NAME: wallet-ebw
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Force new ECS deployment
+        run: |
+          set -euo pipefail
+          ENV="${{ inputs.environment }}"
+          CLUSTER="eudistack-${ENV}-ecs-ew1"
+          SERVICE="eudistack-${ENV}-ecs-ew1-${APP_NAME}-service"
+
+          echo "Deploying **${APP_NAME}** to **${ENV}**" >> $GITHUB_STEP_SUMMARY
+          echo "- Cluster: \`${CLUSTER}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Service: \`${SERVICE}\`" >> $GITHUB_STEP_SUMMARY
+
+          # TODO: add --task-definition when apps_ci_cd IAM user has iam:PassRole permission
+          aws ecs update-service \
+            --cluster "${CLUSTER}" \
+            --service "${SERVICE}" \
+            --force-new-deployment \
+            --no-cli-pager
+
+      - name: Wait for service stability
+        run: |
+          set -euo pipefail
+          ENV="${{ inputs.environment }}"
+          CLUSTER="eudistack-${ENV}-ecs-ew1"
+          SERVICE="eudistack-${ENV}-ecs-ew1-${APP_NAME}-service"
+
+          echo "Waiting for service stability (up to 10 min)..."
+          aws ecs wait services-stable \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}"
+          echo "Service is stable."
+
+      - name: Health check
+        run: |
+          set -euo pipefail
+          ENV="${{ inputs.environment }}"
+          URL="https://${APP_NAME}-${ENV}.altia.eudistack.net/health"
+
+          echo "Health check: ${URL}"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${URL}")
+
+          if [ "$STATUS" -eq 200 ]; then
+            echo "Health check passed (HTTP ${STATUS})"
+            echo "- Health check: **PASS** (HTTP ${STATUS})" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "::error::Health check failed (HTTP ${STATUS})"
+            echo "- Health check: **FAIL** (HTTP ${STATUS})" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
