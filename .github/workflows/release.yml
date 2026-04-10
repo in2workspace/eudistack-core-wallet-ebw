@@ -15,7 +15,7 @@ jobs:
     environment: stg
     env:
       ENVIRONMENT: stg
-      APP_NAME: ebw
+      APP_NAME: wallet-ebw
       REGION_CODE: ew1
     steps:
       - name: Checkout Repository
@@ -98,8 +98,6 @@ jobs:
 
           echo "### Docker image pushed" >> $GITHUB_STEP_SUMMARY
           echo "- **Tag:** \`${TAG}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **DockerHub:** \`${DH_IMAGE}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **ECR:** \`${ECR_IMAGE}\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'
@@ -111,3 +109,11 @@ jobs:
             --title "v${VERSION}" \
             --notes "Release of version v${VERSION}" \
             --latest
+
+      - name: Trigger deploy to STG
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run deploy.yml -f environment=stg
+          echo "### Deploy triggered" >> $GITHUB_STEP_SUMMARY
