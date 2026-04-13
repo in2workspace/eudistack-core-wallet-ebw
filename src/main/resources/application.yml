@@ -29,3 +29,6 @@ management:
       enabled: true
     readinessstate:
       enabled: true
+  tracing:
+    # Local dev → true (Spring exports to Jaeger); AWS → false (ADOT agent handles X-Ray)
+    enabled: ${MANAGEMENT_TRACING_ENABLED:true}
