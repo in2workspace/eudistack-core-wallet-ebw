@@ -7,12 +7,17 @@ on:
 permissions:
   contents: write
   packages: write
+  actions: write
 
 jobs:
   release:
     name: Docker Push & GitHub Release
     runs-on: ubuntu-latest
     environment: stg
+    env:
+      ENVIRONMENT: stg
+      APP_NAME: wallet-ebw
+      REGION_CODE: ew1
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -71,7 +76,7 @@ jobs:
           VERSION: ${{ env.VERSION }}
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.AWS_ECR_REPOSITORY }}
+          ECR_REPOSITORY: eudistack-${{ env.ENVIRONMENT }}-ecr-${{ env.REGION_CODE }}-${{ env.APP_NAME }}
         run: |
           set -euo pipefail
           TAG="v${VERSION}"
@@ -94,8 +99,6 @@ jobs:
 
           echo "### Docker image pushed" >> $GITHUB_STEP_SUMMARY
           echo "- **Tag:** \`${TAG}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **DockerHub:** \`${DH_IMAGE}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **ECR:** \`${ECR_IMAGE}\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'
@@ -107,3 +110,11 @@ jobs:
             --title "v${VERSION}" \
             --notes "Release of version v${VERSION}" \
             --latest
+
+      - name: Trigger deploy to STG
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run deploy.yml -f environment=stg
+          echo "### Deploy triggered" >> $GITHUB_STEP_SUMMARY
