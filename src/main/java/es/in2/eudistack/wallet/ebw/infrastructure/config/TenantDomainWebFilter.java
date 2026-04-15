@@ -42,10 +42,12 @@ public class TenantDomainWebFilter implements WebFilter {
         if (host == null || host.isBlank()) return null;
 
         String hostname = host.contains(":") ? host.substring(0, host.indexOf(':')) : host;
-        String[] segments = hostname.split("\\.");
-        if (segments.length < 3) return null;
 
-        String tenant = segments[1];
+        // Atlassian-style: tenant is the first segment
+        int dotIndex = hostname.indexOf('.');
+        if (dotIndex <= 0) return null;
+
+        String tenant = hostname.substring(0, dotIndex);
         if (!tenant.matches("^[a-zA-Z0-9_-]+$")) {
             log.warn("EBW: Invalid tenant identifier from hostname: {}", tenant);
             return null;

@@ -1,6 +1,8 @@
 spring:
   application:
     name: eudistack-core-wallet-ebw
+  webflux:
+    base-path: ${APP_CONTEXT_PATH:/wallet-api}
   r2dbc:
     url: ${SPRING_R2DBC_URL:r2dbc:postgresql://localhost:5432/eudistack}
     username: ${SPRING_R2DBC_USERNAME:admin}
