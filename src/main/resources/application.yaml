@@ -35,6 +35,9 @@ ebw:
     refresh-per-ip: 60
     logout-per-ip: 20
     window: 1h
+  encryption:
+    key-path: ${ENCRYPTION_KEY_PATH:}
+    key: ${ENCRYPTION_KEY:}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
   security:

@@ -11,8 +11,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.core.publisher.Mono;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,15 +22,21 @@ import static org.mockito.Mockito.doAnswer;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureWebTestClient
 @ActiveProfiles("integration")
-@Testcontainers
 @Tag("integration")
 public abstract class IntegrationTestBase {
 
-    @Container
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("ebw_test")
-            .withUsername("test")
-            .withPassword("test");
+    static final PostgreSQLContainer<?> postgres;
+
+    static {
+        postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+                .withDatabaseName("ebw_test")
+                .withUsername("test")
+                .withPassword("test");
+        postgres.start();
+    }
+
+    // Base64-encoded 32-byte AES-256 key for testing
+    protected static final String TEST_ENCRYPTION_KEY = "01LvWiH/24uNc/Um3GF8n3sFUwtfv8xBmFST4bc56oc=";
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
@@ -43,6 +47,7 @@ public abstract class IntegrationTestBase {
         registry.add("spring.flyway.url", postgres::getJdbcUrl);
         registry.add("spring.flyway.user", () -> "test");
         registry.add("spring.flyway.password", () -> "test");
+        registry.add("ebw.encryption.key", () -> TEST_ENCRYPTION_KEY);
     }
 
     @Autowired
@@ -61,5 +66,27 @@ public abstract class IntegrationTestBase {
             capturedOtps.put(email, code);
             return Mono.empty();
         }).when(emailSender).sendOtp(anyString(), anyString());
+    }
+
+    @SuppressWarnings("unchecked")
+    protected String getAccessToken(String email) {
+        setupEmailCapture();
+
+        // Register
+        webClient.post().uri("/api/auth/register")
+                .bodyValue(Map.of("email", email))
+                .exchange()
+                .expectStatus().isOk();
+
+        // Verify
+        var otp = capturedOtps.get(email);
+        var tokens = webClient.post().uri("/api/auth/verify-email")
+                .bodyValue(Map.of("email", email, "code", otp))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+
+        return (String) tokens.get("accessToken");
     }
 }

@@ -3,6 +3,7 @@ package com.eudistack.ebw.infrastructure.configuration;
 import com.eudistack.ebw.domain.repository.*;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.AuthTokenService;
+import com.eudistack.ebw.domain.service.CredentialService;
 import com.eudistack.ebw.domain.service.OtpService;
 import com.eudistack.ebw.domain.spi.*;
 import com.eudistack.ebw.infrastructure.adapter.properties.JwtProperties;
@@ -36,5 +37,10 @@ public class DomainConfig {
     @Bean
     public AuditService auditService(AuditLogRepository auditLogRepository) {
         return new AuditService(auditLogRepository);
+    }
+
+    @Bean
+    public CredentialService credentialService(HashProvider hashProvider) {
+        return new CredentialService(hashProvider);
     }
 }
