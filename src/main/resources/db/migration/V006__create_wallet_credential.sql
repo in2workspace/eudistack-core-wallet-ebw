@@ -1,6 +1,6 @@
-CREATE TABLE wallet_credential (
+CREATE TABLE ebw.wallet_credential (
     id                      UUID PRIMARY KEY,
-    user_id                 UUID NOT NULL REFERENCES wallet_user(id),
+    user_id                 UUID NOT NULL REFERENCES ebw.wallet_user(id),
     credential_raw          TEXT NOT NULL,
     format                  VARCHAR(50) NOT NULL,
     credential_config_id    VARCHAR(255) NOT NULL,
@@ -17,6 +17,6 @@ CREATE TABLE wallet_credential (
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_credential_user_id ON wallet_credential(user_id);
-CREATE INDEX idx_credential_user_status ON wallet_credential(user_id, status);
-CREATE INDEX idx_credential_user_config ON wallet_credential(user_id, credential_config_id);
+CREATE INDEX idx_credential_user_id ON ebw.wallet_credential(user_id);
+CREATE INDEX idx_credential_user_status ON ebw.wallet_credential(user_id, status);
+CREATE INDEX idx_credential_user_config ON ebw.wallet_credential(user_id, credential_config_id);
