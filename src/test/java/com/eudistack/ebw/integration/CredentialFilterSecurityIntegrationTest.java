@@ -94,6 +94,72 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         assertThat(result).hasSize(1);
     }
 
+    /**
+     * The filter query {@code findAllByUserIdAndFiltersWithoutRaw} (EUDI-040 review W2) still
+     * binds {@code user_id = :userId} and MUST NOT leak another user's credentials regardless
+     * of the filter values supplied. This test seeds user B with a credential that matches
+     * every filter a malicious user A might supply, then verifies that each filtered query
+     * run as user A returns an empty list.
+     *
+     * <p>Also asserts that the projection omits {@code credential_raw} — the filter path
+     * uses a different query than the unfiltered list path, so the DTO contract must be
+     * independently verified here (the list endpoint shares the same
+     * {@code CredentialSummaryResponse} DTO).
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void filter_doesNotLeakOtherUsersCredentials() {
+        var sharedIssuer = "https://shared-leak-test.com";
+        var sharedConfigId = "shared-cfg-leak";
+
+        // User B seeds a credential that matches every filter we'll try as user A.
+        var userBToken = getAccessToken("user-b-filter-leak-" + System.nanoTime() + "@test.com");
+        var credB = CredentialCrudIntegrationTest.buildTestJwt(
+                sharedIssuer, "did:example:user-b", "TestCredential", null);
+        webClient.post().uri("/api/credentials")
+                .header("Authorization", "Bearer " + userBToken)
+                .bodyValue(Map.of(
+                        "credential_raw", credB,
+                        "format", "jwt_vc_json",
+                        "credential_configuration_id", sharedConfigId,
+                        "kid", "kid-b-" + System.nanoTime()
+                ))
+                .exchange()
+                .expectStatus().isCreated();
+
+        // User A has NO credentials with those attributes — each filter query must return empty.
+        assertFilteredListEmpty("/api/credentials?status=VALID");
+        assertFilteredListEmpty("/api/credentials?issuer=" + sharedIssuer);
+        assertFilteredListEmpty("/api/credentials?credential_configuration_id=" + sharedConfigId);
+        assertFilteredListEmpty("/api/credentials?status=VALID&issuer=" + sharedIssuer);
+        assertFilteredListEmpty("/api/credentials?status=VALID&issuer=" + sharedIssuer
+                + "&credential_configuration_id=" + sharedConfigId);
+
+        // Now user A seeds one credential and re-runs a filtered query: the projection must
+        // omit credential_raw (the filter query path uses findAllByUserIdAndFiltersWithoutRaw).
+        storeCredential("jwt_vc_json", "config-a-owned", "https://issuer-a-owned.com");
+        var ownList = webClient.get().uri("/api/credentials?status=VALID")
+                .header("Authorization", "Bearer " + accessToken)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(List.class)
+                .returnResult().getResponseBody();
+
+        assertThat(ownList).hasSize(1);
+        var first = (Map<String, Object>) ownList.get(0);
+        assertThat(first).doesNotContainKey("credential_raw");
+    }
+
+    private void assertFilteredListEmpty(String uri) {
+        var result = webClient.get().uri(uri)
+                .header("Authorization", "Bearer " + accessToken)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(List.class)
+                .returnResult().getResponseBody();
+        assertThat(result).as("filter query must not leak other users' credentials: %s", uri).isEmpty();
+    }
+
     @Test
     void filterInvalidStatus_returns400() {
         webClient.get().uri("/api/credentials?status=INVALID_STATUS")
@@ -226,9 +292,17 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
                 .expectStatus().isBadRequest();
     }
 
+    /**
+     * {@code validateFormat} runs inside the reactive chain (EUDI-040 review W3), so the
+     * resulting {@code UnsupportedFormatException} must still flow through
+     * {@code GlobalExceptionHandler} and emerge as a typed RFC 7807 {@code ProblemDetail}
+     * body — not as a generic 500 or a reactor-wrapped error surface. Asserting the
+     * {@code type} URN guards the exception-handler plumbing after the refactor.
+     */
     @Test
+    @SuppressWarnings("unchecked")
     void storeUnsupportedFormat_returns400() {
-        webClient.post().uri("/api/credentials")
+        var body = webClient.post().uri("/api/credentials")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of(
                         "credential_raw", "anything",
@@ -237,7 +311,13 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
                         "kid", "kid-unknown"
                 ))
                 .exchange()
-                .expectStatus().isBadRequest();
+                .expectStatus().isBadRequest()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+
+        assertThat(body).containsKeys("type", "status", "title", "detail");
+        assertThat(body.get("type")).isEqualTo("urn:eudistack:error:unsupported-format");
+        assertThat(body.get("status")).isEqualTo(400);
     }
 
     @Test

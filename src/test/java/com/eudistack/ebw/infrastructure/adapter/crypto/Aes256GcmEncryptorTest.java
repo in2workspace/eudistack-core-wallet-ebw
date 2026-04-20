@@ -3,7 +3,10 @@ package com.eudistack.ebw.infrastructure.adapter.crypto;
 import com.eudistack.ebw.infrastructure.adapter.properties.EncryptionProperties;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.HashSet;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,6 +36,38 @@ class Aes256GcmEncryptorTest {
         var encrypted2 = encryptor.encrypt(plaintext);
 
         assertThat(encrypted1).isNotEqualTo(encrypted2); // Random IV each time
+    }
+
+    /**
+     * After hoisting {@code SecureRandom} to a {@code static final} field (EUDI-040 review W1)
+     * the encryptor must still draw a fresh IV for every {@code encrypt} call. This test
+     * encrypts the same plaintext many times and asserts that both the resulting ciphertexts
+     * AND the extracted 12-byte IV prefixes are pairwise distinct — which is the actual
+     * observable property the hoist must preserve.
+     */
+    @Test
+    void encrypt_producesUniqueIvsAcrossManyCalls() {
+        var encryptor = createEncryptor(VALID_KEY);
+        var plaintext = "same-plaintext-many-times";
+        var iterations = 50;
+
+        var ciphertexts = new HashSet<String>();
+        var ivs = new HashSet<String>();
+
+        IntStream.range(0, iterations).forEach(i -> {
+            var encoded = encryptor.encrypt(plaintext);
+            ciphertexts.add(encoded);
+
+            // Encrypted payload layout produced by Aes256GcmEncryptor.encrypt:
+            //   Base64( iv[0..12) || ciphertext+tag[12..) )
+            // The IV is the first 12 bytes of the decoded payload.
+            var decoded = Base64.getDecoder().decode(encoded);
+            var iv = Arrays.copyOfRange(decoded, 0, 12);
+            ivs.add(Base64.getEncoder().encodeToString(iv));
+        });
+
+        assertThat(ciphertexts).as("all ciphertexts must differ").hasSize(iterations);
+        assertThat(ivs).as("all IVs must be distinct").hasSize(iterations);
     }
 
     @Test

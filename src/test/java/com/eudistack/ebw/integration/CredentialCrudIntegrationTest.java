@@ -8,6 +8,7 @@ import com.nimbusds.jwt.SignedJWT;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -122,6 +123,77 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
                 .returnResult().getResponseBody();
 
         assertThat(response.get("status")).isEqualTo("REVOKED");
+    }
+
+    /**
+     * After splitting {@code save} into {@code insert}/{@code update} (EUDI-040 review W4),
+     * the UPDATE path must preserve immutable columns — in particular {@code created_at}
+     * and {@code credential_raw} — while advancing {@code updated_at}. A regression that
+     * accidentally re-dispatched an INSERT (e.g. by setting {@code isNew=true}) would
+     * overwrite {@code created_at} with the current clock, so this test asserts that
+     * created_at, credential_raw and issuer are byte-identical in the GET detail response
+     * taken before and after the PATCH, and that updated_at has strictly advanced past
+     * its pre-PATCH value.
+     *
+     * <p>We compare two GET responses (not the POST body against the GET) because the POST
+     * response renders the in-memory domain object after encryption but before the DB
+     * round-trip, so its {@code credential_raw} is ciphertext and its {@code created_at}
+     * retains nanosecond precision, while GET returns the DB-read value (decrypted
+     * credential_raw, microsecond-rounded timestamps). Comparing GET-vs-GET sidesteps
+     * both asymmetries.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void updateStatus_preservesCreatedAtAndAdvancesUpdatedAt() {
+        var stored = storeTestCredential("jwt_vc_json", "config-status-timestamps");
+        var id = (String) stored.get("id");
+
+        // Baseline: GET before PATCH — DB-persisted values, decrypted credential_raw.
+        var before = webClient.get().uri("/api/credentials/" + id)
+                .header("Authorization", "Bearer " + accessToken)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+        var createdAtBefore = Instant.parse((String) before.get("created_at"));
+        var updatedAtBefore = Instant.parse((String) before.get("updated_at"));
+
+        // Small sleep so updated_at can observably advance past updatedAtBefore.
+        try {
+            Thread.sleep(20);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        webClient.patch().uri("/api/credentials/" + id + "/status")
+                .header("Authorization", "Bearer " + accessToken)
+                .bodyValue(Map.of("status", "SUSPENDED"))
+                .exchange()
+                .expectStatus().isOk();
+
+        var after = webClient.get().uri("/api/credentials/" + id)
+                .header("Authorization", "Bearer " + accessToken)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+
+        assertThat(after.get("status")).isEqualTo("SUSPENDED");
+        assertThat(after.get("created_at"))
+                .as("created_at must be byte-identical across UPDATE")
+                .isEqualTo(before.get("created_at"));
+        assertThat(Instant.parse((String) after.get("updated_at")))
+                .as("updated_at must advance past its pre-PATCH value after status change")
+                .isAfter(updatedAtBefore);
+        assertThat(after.get("credential_raw"))
+                .as("credential_raw must be preserved across UPDATE")
+                .isEqualTo(before.get("credential_raw"));
+        assertThat(after.get("issuer"))
+                .as("issuer must be preserved across UPDATE")
+                .isEqualTo(before.get("issuer"));
+
+        // Sanity: before and after share the same created_at AND the update really happened.
+        assertThat(createdAtBefore).isNotNull();
     }
 
     @Test
