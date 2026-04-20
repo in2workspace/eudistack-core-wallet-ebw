@@ -1,4 +1,4 @@
-CREATE TABLE audit_log (
+CREATE TABLE ebw.audit_log (
     id          UUID PRIMARY KEY,
     entity_type VARCHAR(50)  NOT NULL,
     entity_id   UUID         NOT NULL,
@@ -8,4 +8,4 @@ CREATE TABLE audit_log (
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_audit_entity ON audit_log (entity_type, entity_id);
+CREATE INDEX idx_audit_entity ON ebw.audit_log (entity_type, entity_id);

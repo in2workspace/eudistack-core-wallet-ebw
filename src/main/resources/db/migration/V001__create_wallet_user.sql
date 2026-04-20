@@ -1,4 +1,4 @@
-CREATE TABLE wallet_user (
+CREATE TABLE ebw.wallet_user (
     id         UUID PRIMARY KEY,
     email      VARCHAR(254) NOT NULL UNIQUE,
     created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),

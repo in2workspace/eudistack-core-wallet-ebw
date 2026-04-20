@@ -20,7 +20,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
         var email = "test-reg@example.com";
 
         // Step 1: Register
-        webClient.post().uri("/api/auth/register")
+        webClient.post().uri("/api/v1/auth/register")
                 .bodyValue(Map.of("email", email))
                 .exchange()
                 .expectStatus().isOk()
@@ -31,7 +31,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
         var otp = capturedOtps.get(email);
         assertThat(otp).isNotNull();
 
-        var tokens = webClient.post().uri("/api/auth/verify-email")
+        var tokens = webClient.post().uri("/api/v1/auth/verify-email")
                 .bodyValue(Map.of("email", email, "code", otp))
                 .exchange()
                 .expectStatus().isOk()
@@ -48,7 +48,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
         var email = "test-refresh@example.com";
         var tokens = registerAndVerify(email);
 
-        var newTokens = webClient.post().uri("/api/auth/refresh")
+        var newTokens = webClient.post().uri("/api/v1/auth/refresh")
                 .bodyValue(Map.of("refreshToken", tokens.get("refreshToken")))
                 .exchange()
                 .expectStatus().isOk()
@@ -66,7 +66,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
         var oldRefresh = (String) tokens.get("refreshToken");
 
         // First rotation succeeds
-        var newTokens = webClient.post().uri("/api/auth/refresh")
+        var newTokens = webClient.post().uri("/api/v1/auth/refresh")
                 .bodyValue(Map.of("refreshToken", oldRefresh))
                 .exchange()
                 .expectStatus().isOk()
@@ -74,7 +74,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
                 .returnResult().getResponseBody();
 
         // Reuse old token (compromise detection)
-        webClient.post().uri("/api/auth/refresh")
+        webClient.post().uri("/api/v1/auth/refresh")
                 .bodyValue(Map.of("refreshToken", oldRefresh))
                 .exchange()
                 .expectStatus().isUnauthorized()
@@ -82,7 +82,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
                 .jsonPath("$.error").isEqualTo("token_compromised");
 
         // Even the new token should be revoked now (all family revoked)
-        webClient.post().uri("/api/auth/refresh")
+        webClient.post().uri("/api/v1/auth/refresh")
                 .bodyValue(Map.of("refreshToken", newTokens.get("refreshToken")))
                 .exchange()
                 .expectStatus().isUnauthorized();
@@ -93,13 +93,13 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
         var email = "test-logout@example.com";
         var tokens = registerAndVerify(email);
 
-        webClient.post().uri("/api/auth/logout")
+        webClient.post().uri("/api/v1/auth/logout")
                 .bodyValue(Map.of("refreshToken", tokens.get("refreshToken")))
                 .exchange()
                 .expectStatus().isNoContent();
 
         // Refresh with revoked token should fail
-        webClient.post().uri("/api/auth/refresh")
+        webClient.post().uri("/api/v1/auth/refresh")
                 .bodyValue(Map.of("refreshToken", tokens.get("refreshToken")))
                 .exchange()
                 .expectStatus().isUnauthorized();
@@ -110,13 +110,13 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
         var email = "test-logout-idempotent@example.com";
         var tokens = registerAndVerify(email);
 
-        webClient.post().uri("/api/auth/logout")
+        webClient.post().uri("/api/v1/auth/logout")
                 .bodyValue(Map.of("refreshToken", tokens.get("refreshToken")))
                 .exchange()
                 .expectStatus().isNoContent();
 
         // Second logout — idempotent
-        webClient.post().uri("/api/auth/logout")
+        webClient.post().uri("/api/v1/auth/logout")
                 .bodyValue(Map.of("refreshToken", tokens.get("refreshToken")))
                 .exchange()
                 .expectStatus().isNoContent();
@@ -127,7 +127,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
         var email = "test-wrong-otp@example.com";
         registerUser(email);
 
-        webClient.post().uri("/api/auth/verify-email")
+        webClient.post().uri("/api/v1/auth/verify-email")
                 .bodyValue(Map.of("email", email, "code", "000000"))
                 .exchange()
                 .expectStatus().isUnauthorized()
@@ -137,7 +137,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
 
     @Test
     void register_invalidEmail_returns400() {
-        webClient.post().uri("/api/auth/register")
+        webClient.post().uri("/api/v1/auth/register")
                 .bodyValue(Map.of("email", "not-an-email"))
                 .exchange()
                 .expectStatus().isBadRequest();
@@ -145,7 +145,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
 
     @Test
     void register_missingEmail_returns400() {
-        webClient.post().uri("/api/auth/register")
+        webClient.post().uri("/api/v1/auth/register")
                 .bodyValue(Map.of())
                 .exchange()
                 .expectStatus().isBadRequest();
@@ -153,7 +153,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
 
     @Test
     void refresh_missingToken_returns400() {
-        webClient.post().uri("/api/auth/refresh")
+        webClient.post().uri("/api/v1/auth/refresh")
                 .bodyValue(Map.of("refreshToken", ""))
                 .exchange()
                 .expectStatus().isBadRequest();
@@ -174,7 +174,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
     // --- Helpers ---
 
     private void registerUser(String email) {
-        webClient.post().uri("/api/auth/register")
+        webClient.post().uri("/api/v1/auth/register")
                 .bodyValue(Map.of("email", email))
                 .exchange()
                 .expectStatus().isOk();
@@ -185,7 +185,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
         registerUser(email);
         var otp = capturedOtps.get(email);
 
-        return webClient.post().uri("/api/auth/verify-email")
+        return webClient.post().uri("/api/v1/auth/verify-email")
                 .bodyValue(Map.of("email", email, "code", otp))
                 .exchange()
                 .expectStatus().isOk()

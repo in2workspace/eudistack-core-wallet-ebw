@@ -22,4 +22,12 @@ public interface SpringRefreshTokenRepository extends ReactiveCrudRepository<Ref
 
     @Query("SELECT COUNT(*) FROM refresh_token WHERE passkey_id = $1 AND revoked = false AND expires_at > NOW()")
     Mono<Long> countActiveByPasskeyId(UUID passkeyId);
+
+    @Modifying
+    @Query("UPDATE refresh_token SET passkey_id = $2 WHERE token_hash = $1 AND revoked = false")
+    Mono<Void> updatePasskeyIdByTokenHash(String tokenHash, UUID passkeyId);
+
+    @Modifying
+    @Query("UPDATE refresh_token SET passkey_id = $2 WHERE user_id = $1 AND passkey_id IS NULL AND revoked = false")
+    Mono<Void> linkOrphanTokensToPasskey(UUID userId, UUID passkeyId);
 }

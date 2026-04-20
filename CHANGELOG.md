@@ -1,4 +1,5 @@
 # Changelog
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -6,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [v0.1.0]
+### Changed
+
+- **Health endpoint normalized to `/health`** — Added `base-path: /` and `path-mapping` so health responds at `/health` instead of `/actuator/health`. Added liveness/readiness probes, Spring Boot 3.5 `access` API, and parameterized `show-details` via env var.
+
+## [1.0.0] - 2026-03-24
+
 ### Added
+- Initial project scaffolding
+- Gradle build configuration (Java 25, Spring Boot 3, WebFlux)
+- CI/CD workflows (build, snapshot, release)
+- Dockerfile for containerized deployment
 - Email OTP verification flow (6-digit, bcrypt-hashed, 10 min expiry, max 5 attempts).
 - JWT ES256 access tokens (15 min TTL) + UUID v4 opaque refresh tokens (7 days, SHA-256 hashed).
 - Refresh token rotation with family compromise detection (revoke all on reuse).

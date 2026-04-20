@@ -36,6 +36,10 @@ public class RefreshToken {
         this.revoked = true;
     }
 
+    public void setPasskeyId(UUID passkeyId) {
+        this.passkeyId = passkeyId;
+    }
+
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public UUID getPasskeyId() { return passkeyId; }

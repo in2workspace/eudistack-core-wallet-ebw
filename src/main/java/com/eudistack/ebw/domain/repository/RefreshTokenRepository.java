@@ -16,4 +16,8 @@ public interface RefreshTokenRepository {
     Mono<Void> revokeByUserId(UUID userId);
 
     Mono<Long> countActiveByPasskeyId(UUID passkeyId);
+
+    Mono<Void> updatePasskeyIdByTokenHash(String tokenHash, UUID passkeyId);
+
+    Mono<Void> linkOrphanTokensToPasskey(UUID userId, UUID passkeyId);
 }
