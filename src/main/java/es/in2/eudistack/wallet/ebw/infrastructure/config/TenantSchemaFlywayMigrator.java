@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.flywaydb.core.Flyway;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.flyway.FlywayProperties;
 import org.springframework.boot.autoconfigure.r2dbc.R2dbcProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -20,6 +21,7 @@ import java.util.List;
 @Slf4j
 @Component
 @Order(1)
+@ConditionalOnProperty(name = "ebw.tenant-flyway.enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties({R2dbcProperties.class, FlywayProperties.class})
 public class TenantSchemaFlywayMigrator implements ApplicationRunner {
 
