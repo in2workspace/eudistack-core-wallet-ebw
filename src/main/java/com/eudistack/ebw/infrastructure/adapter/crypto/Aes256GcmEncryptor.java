@@ -23,6 +23,11 @@ public class Aes256GcmEncryptor implements CredentialEncryptor {
     private static final int IV_LENGTH = 12;
     private static final int GCM_TAG_BITS = 128;
 
+    // SecureRandom is thread-safe for nextBytes (internal state updates are serialized),
+    // so a single shared instance is safe in a reactive context and avoids the per-call
+    // self-seeding cost incurred by constructing a new SecureRandom on every encrypt().
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
     private final EncryptionProperties properties;
     private SecretKeySpec secretKey;
 
@@ -43,7 +48,7 @@ public class Aes256GcmEncryptor implements CredentialEncryptor {
     public String encrypt(String plaintext) {
         try {
             var iv = new byte[IV_LENGTH];
-            new SecureRandom().nextBytes(iv);
+            SECURE_RANDOM.nextBytes(iv);
 
             var cipher = Cipher.getInstance(ALGORITHM);
             cipher.init(Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(GCM_TAG_BITS, iv));

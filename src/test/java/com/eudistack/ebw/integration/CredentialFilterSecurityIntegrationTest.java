@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -279,6 +280,103 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isNotFound();
+    }
+
+    // --- Enumeration-prevention (RF-014) ---
+
+    /**
+     * Accessing another user's credential (exists but not owned) and accessing a
+     * nonexistent credential MUST produce structurally identical 404 responses so that
+     * an attacker cannot distinguish the two cases and enumerate valid credential ids.
+     * Applies to GET, PATCH /status and DELETE.
+     *
+     * <p>Note: the RFC 7807 {@code instance} field echoes the request URI, so it
+     * legitimately differs between the two requests (the attacker already knows the URL
+     * they sent). The leak-sensitive signal is carried by {@code type}, {@code title},
+     * {@code status}, {@code detail} and any extension properties — those MUST match.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void enumerationPrevention_otherUserVsNonexistent_sameResponseShape() {
+        // User A stores a credential
+        var storedA = storeCredential("jwt_vc_json", "config-enum-1", "https://issuer.com");
+        var credAId = (String) storedA.get("id");
+
+        // User B (different email) obtains a token
+        var userBToken = getAccessToken("user-b-enum-" + System.nanoTime() + "@test.com");
+
+        var nonexistentId = UUID.randomUUID().toString();
+
+        // GET — other user's credential
+        var getOtherUser = webClient.get().uri("/api/credentials/" + credAId)
+                .header("Authorization", "Bearer " + userBToken)
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+
+        // GET — nonexistent credential
+        var getNonexistent = webClient.get().uri("/api/credentials/" + nonexistentId)
+                .header("Authorization", "Bearer " + userBToken)
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+
+        // Leak-sensitive fields (everything except the request-URI echo in `instance`)
+        // MUST be identical — no enumeration signal leaks.
+        assertSameShapeExceptInstance(getOtherUser, getNonexistent);
+        assertThat(getOtherUser).containsKeys("type", "title", "status", "detail");
+        assertThat(getOtherUser.get("status")).isEqualTo(404);
+
+        // PATCH /status — other user's credential
+        var patchOtherUser = webClient.patch().uri("/api/credentials/" + credAId + "/status")
+                .header("Authorization", "Bearer " + userBToken)
+                .bodyValue(Map.of("status", "SUSPENDED"))
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+
+        // PATCH /status — nonexistent credential
+        var patchNonexistent = webClient.patch().uri("/api/credentials/" + nonexistentId + "/status")
+                .header("Authorization", "Bearer " + userBToken)
+                .bodyValue(Map.of("status", "SUSPENDED"))
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+
+        assertSameShapeExceptInstance(patchOtherUser, patchNonexistent);
+        assertThat(patchOtherUser.get("status")).isEqualTo(404);
+
+        // DELETE — other user's credential
+        var deleteOtherUser = webClient.delete().uri("/api/credentials/" + credAId)
+                .header("Authorization", "Bearer " + userBToken)
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+
+        // DELETE — nonexistent credential
+        var deleteNonexistent = webClient.delete().uri("/api/credentials/" + nonexistentId)
+                .header("Authorization", "Bearer " + userBToken)
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+
+        assertSameShapeExceptInstance(deleteOtherUser, deleteNonexistent);
+        assertThat(deleteOtherUser.get("status")).isEqualTo(404);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void assertSameShapeExceptInstance(Map<?, ?> a, Map<?, ?> b) {
+        var aCopy = new java.util.HashMap<Object, Object>(a);
+        var bCopy = new java.util.HashMap<Object, Object>(b);
+        aCopy.remove("instance");
+        bCopy.remove("instance");
+        assertThat(aCopy).isEqualTo(bCopy);
     }
 
     // --- Helpers ---

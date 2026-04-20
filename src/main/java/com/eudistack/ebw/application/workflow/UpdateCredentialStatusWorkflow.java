@@ -56,7 +56,7 @@ public class UpdateCredentialStatusWorkflow {
                     var decrypted = encryptor.decrypt(credential.getCredentialRaw());
                     var entityHash = credentialService.computeAuditHash(decrypted);
 
-                    return credentialRepository.save(credential)
+                    return credentialRepository.update(credential)
                             .flatMap(saved -> auditService.record("credential", credentialId,
                                             "STATUS_CHANGED", userId,
                                             Map.of("entity_hash", "sha256:" + entityHash,

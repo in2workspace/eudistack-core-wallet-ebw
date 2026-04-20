@@ -36,25 +36,24 @@ public class StoreCredentialWorkflow {
     public Mono<WalletCredential> storeCredential(UUID userId, String credentialRaw, String format,
                                                     String credentialConfigId, String kid,
                                                     Map<String, Object> issuerMetadata) {
-        var credentialFormat = credentialService.validateFormat(format);
-
-        return credentialService.parseCredential(credentialRaw, credentialFormat)
-                .map(parsed -> {
-                    var encrypted = encryptor.encrypt(credentialRaw);
-                    return WalletCredential.create(userId, encrypted, credentialFormat,
-                            credentialConfigId, kid, parsed.credentialType(), parsed.vct(),
-                            parsed.issuer(), parsed.subject(), parsed.issuanceDate(),
-                            parsed.expirationDate(), issuerMetadata);
-                })
-                .flatMap(credentialRepository::save)
-                .flatMap(saved -> {
-                    var entityHash = credentialService.computeAuditHash(credentialRaw);
-                    return auditService.record("credential", saved.getId(), "CREATED", userId,
-                                    Map.of("entity_hash", "sha256:" + entityHash,
-                                            "format", format,
-                                            "credential_type", saved.getCredentialType()))
-                            .thenReturn(saved);
-                })
+        return Mono.fromCallable(() -> credentialService.validateFormat(format))
+                .flatMap(credentialFormat -> credentialService.parseCredential(credentialRaw, credentialFormat)
+                        .map(parsed -> {
+                            var encrypted = encryptor.encrypt(credentialRaw);
+                            return WalletCredential.create(userId, encrypted, credentialFormat,
+                                    credentialConfigId, kid, parsed.credentialType(), parsed.vct(),
+                                    parsed.issuer(), parsed.subject(), parsed.issuanceDate(),
+                                    parsed.expirationDate(), issuerMetadata);
+                        })
+                        .flatMap(credentialRepository::insert)
+                        .flatMap(saved -> {
+                            var entityHash = credentialService.computeAuditHash(credentialRaw);
+                            return auditService.record("credential", saved.getId(), "CREATED", userId,
+                                            Map.of("entity_hash", "sha256:" + entityHash,
+                                                    "format", format,
+                                                    "credential_type", saved.getCredentialType()))
+                                    .thenReturn(saved);
+                        }))
                 .doOnSuccess(c -> log.info("Credential stored: id={}, userId={}, type={}",
                         c.getId(), userId, c.getCredentialType()));
     }

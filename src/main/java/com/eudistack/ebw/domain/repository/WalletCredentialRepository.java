@@ -9,7 +9,17 @@ import java.util.UUID;
 
 public interface WalletCredentialRepository {
 
-    Mono<WalletCredential> save(WalletCredential credential);
+    /**
+     * Insert a brand-new credential row. Caller MUST guarantee the credential is new
+     * (i.e. domain-generated UUID that does not yet exist in the database).
+     */
+    Mono<WalletCredential> insert(WalletCredential credential);
+
+    /**
+     * Update an existing credential row. Caller MUST guarantee the credential was
+     * previously loaded from the database (i.e. its id already exists).
+     */
+    Mono<WalletCredential> update(WalletCredential credential);
 
     Mono<WalletCredential> findByIdAndUserId(UUID id, UUID userId);
 

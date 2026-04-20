@@ -19,6 +19,33 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 
+/**
+ * Base class for integration tests.
+ *
+ * <p><b>Shared-container pattern (intentional).</b> Instead of the Testcontainers JUnit 5
+ * {@code @Testcontainers} / {@code @Container} annotations — which give per-class container
+ * lifecycle — this class starts a <em>single</em> PostgreSQL container once per JVM via a
+ * static initializer and reuses it across every integration test class in the suite. The
+ * container is never explicitly stopped; the Testcontainers Ryuk reaper cleans it up when the
+ * JVM exits.
+ *
+ * <p>Why: Postgres startup takes roughly 5 seconds. Amortizing that cost across the whole
+ * integration suite (currently four {@code Credential*} and two auth test classes) keeps the
+ * suite fast enough to run on every push without sacrificing isolation, because:
+ * <ul>
+ *   <li>Each test allocates a distinct user via an email suffix of {@code System.nanoTime()},
+ *       so state from one test cannot leak into another via primary-key collisions.</li>
+ *   <li>Flyway migrations run once on the first Spring context load and are idempotent
+ *       thereafter (CREATE TABLE IF NOT EXISTS semantics at the schema level via the
+ *       {@code ebw} namespace).</li>
+ *   <li>Every test class extends this base, so they all share the same container instance
+ *       and the same Spring context cache — no cross-context container churn.</li>
+ * </ul>
+ *
+ * <p>If future tests require strict per-class DB isolation (e.g. a destructive schema
+ * migration test), switch that specific test class back to the {@code @Testcontainers} +
+ * {@code @Container} pattern with a per-class static field rather than changing the base.
+ */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureWebTestClient
 @ActiveProfiles("integration")

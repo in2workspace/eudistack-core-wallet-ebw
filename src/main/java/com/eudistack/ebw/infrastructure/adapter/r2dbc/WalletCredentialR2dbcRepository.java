@@ -3,40 +3,45 @@ package com.eudistack.ebw.infrastructure.adapter.r2dbc;
 import com.eudistack.ebw.domain.model.CredentialStatus;
 import com.eudistack.ebw.domain.model.WalletCredential;
 import com.eudistack.ebw.domain.repository.WalletCredentialRepository;
-import com.eudistack.ebw.infrastructure.adapter.r2dbc.entity.WalletCredentialEntity;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.mapper.CredentialMapper;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.spring.SpringWalletCredentialRepository;
-import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
-import org.springframework.data.relational.core.query.Criteria;
-import org.springframework.data.relational.core.query.Query;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.ArrayList;
 import java.util.UUID;
 
+/**
+ * R2DBC adapter for {@link WalletCredentialRepository}.
+ *
+ * <p>Uses explicit {@code insert} / {@code update} ports instead of a single {@code save}
+ * (Option B per EUDI-040 review W4) because the application workflows unambiguously know
+ * whether they are creating a new credential ({@code StoreCredentialWorkflow}) or mutating
+ * an existing one ({@code UpdateCredentialStatusWorkflow}). This avoids the
+ * {@code SELECT EXISTS} round-trip previously required to drive
+ * {@link org.springframework.data.domain.Persistable#isNew()} on every save.
+ */
 @Repository
 public class WalletCredentialR2dbcRepository implements WalletCredentialRepository {
 
     private final SpringWalletCredentialRepository springRepository;
-    private final R2dbcEntityTemplate template;
 
-    public WalletCredentialR2dbcRepository(SpringWalletCredentialRepository springRepository,
-                                            R2dbcEntityTemplate template) {
+    public WalletCredentialR2dbcRepository(SpringWalletCredentialRepository springRepository) {
         this.springRepository = springRepository;
-        this.template = template;
     }
 
     @Override
-    public Mono<WalletCredential> save(WalletCredential credential) {
-        return springRepository.existsById(credential.getId())
-                .flatMap(exists -> {
-                    var entity = CredentialMapper.toEntity(credential);
-                    if (!exists) entity.markNew();
-                    return springRepository.save(entity);
-                })
-                .map(CredentialMapper::toDomain);
+    public Mono<WalletCredential> insert(WalletCredential credential) {
+        var entity = CredentialMapper.toEntity(credential);
+        entity.markNew();
+        return springRepository.save(entity).map(CredentialMapper::toDomain);
+    }
+
+    @Override
+    public Mono<WalletCredential> update(WalletCredential credential) {
+        var entity = CredentialMapper.toEntity(credential);
+        // isNew defaults to false → Spring Data R2DBC dispatches UPDATE.
+        return springRepository.save(entity).map(CredentialMapper::toDomain);
     }
 
     @Override
@@ -54,23 +59,13 @@ public class WalletCredentialR2dbcRepository implements WalletCredentialReposito
     @Override
     public Flux<WalletCredential> findAllByUserIdAndFilters(UUID userId, CredentialStatus status,
                                                              String credentialConfigId, String issuer) {
-        var criteria = new ArrayList<Criteria>();
-        criteria.add(Criteria.where("user_id").is(userId));
-
-        if (status != null) {
-            criteria.add(Criteria.where("status").is(status.name()));
-        }
-        if (credentialConfigId != null && !credentialConfigId.isBlank()) {
-            criteria.add(Criteria.where("credential_config_id").is(credentialConfigId));
-        }
-        if (issuer != null && !issuer.isBlank()) {
-            criteria.add(Criteria.where("issuer").is(issuer));
-        }
-
-        var combined = Criteria.from(criteria);
-        return template.select(WalletCredentialEntity.class)
-                .matching(Query.query(combined))
-                .all()
+        // Native @Query with (:param IS NULL OR column = :param) predicates keeps the projection
+        // consistent with findAllByUserIdWithoutRaw: credential_raw is NOT selected because list
+        // endpoints never return it (EUDI-040 review W2).
+        var statusName = status != null ? status.name() : null;
+        var configId = (credentialConfigId != null && !credentialConfigId.isBlank()) ? credentialConfigId : null;
+        var issuerFilter = (issuer != null && !issuer.isBlank()) ? issuer : null;
+        return springRepository.findAllByUserIdAndFiltersWithoutRaw(userId, statusName, configId, issuerFilter)
                 .map(CredentialMapper::toDomain);
     }
 
