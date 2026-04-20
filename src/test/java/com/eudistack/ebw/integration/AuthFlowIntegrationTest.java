@@ -152,6 +152,20 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void register_disallowedDomain_returns400_andNoOtpSent() {
+        var email = "user@evil.com";
+        webClient.post().uri("/api/v1/auth/register")
+                .bodyValue(Map.of("email", email))
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.violations[0].field").isEqualTo("email")
+                .jsonPath("$.violations[0].message").isEqualTo("email domain is not allowed");
+
+        assertThat(capturedOtps).doesNotContainKey(email);
+    }
+
+    @Test
     void refresh_missingToken_returns400() {
         webClient.post().uri("/api/v1/auth/refresh")
                 .bodyValue(Map.of("refreshToken", ""))

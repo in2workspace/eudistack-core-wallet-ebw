@@ -33,7 +33,7 @@ ebw:
   jwt:
     private-key-path: ${JWT_PRIVATE_KEY_PATH:}
     access-token-ttl: 15m
-    refresh-token-ttl: 7d
+    refresh-token-ttl: 90d
     issuer: eudistack-ebw
   otp:
     length: 6
@@ -51,6 +51,8 @@ ebw:
     allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
   security:
     max-payload-size: 65536
+  registration:
+    allowed-email-domains: ${ALLOWED_EMAIL_DOMAINS:*}
 
 management:
   endpoints:                          # ← Note: 'endpoints' (plural) for web exposure settings
