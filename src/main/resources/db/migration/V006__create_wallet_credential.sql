@@ -12,7 +12,7 @@ CREATE TABLE ebw.wallet_credential (
     issuance_date           TIMESTAMPTZ NOT NULL,
     expiration_date         TIMESTAMPTZ,
     status                  VARCHAR(20) NOT NULL DEFAULT 'VALID',
-    issuer_metadata         TEXT,
+    issuer_metadata         JSONB,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

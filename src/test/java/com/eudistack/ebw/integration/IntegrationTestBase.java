@@ -74,14 +74,14 @@ public abstract class IntegrationTestBase {
         setupEmailCapture();
 
         // Register
-        webClient.post().uri("/api/auth/register")
+        webClient.post().uri("/api/v1/auth/register")
                 .bodyValue(Map.of("email", email))
                 .exchange()
                 .expectStatus().isOk();
 
         // Verify
         var otp = capturedOtps.get(email);
-        var tokens = webClient.post().uri("/api/auth/verify-email")
+        var tokens = webClient.post().uri("/api/v1/auth/verify-email")
                 .bodyValue(Map.of("email", email, "code", otp))
                 .exchange()
                 .expectStatus().isOk()

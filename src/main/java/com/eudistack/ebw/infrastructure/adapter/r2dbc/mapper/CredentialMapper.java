@@ -7,6 +7,7 @@ import com.eudistack.ebw.infrastructure.adapter.r2dbc.entity.WalletCredentialEnt
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.r2dbc.postgresql.codec.Json;
 
 import java.util.Map;
 
@@ -59,19 +60,21 @@ public final class CredentialMapper {
         return entity;
     }
 
-    private static String serializeMetadata(Map<String, Object> metadata) {
+    private static Json serializeMetadata(Map<String, Object> metadata) {
         if (metadata == null) return null;
         try {
-            return OBJECT_MAPPER.writeValueAsString(metadata);
+            return Json.of(OBJECT_MAPPER.writeValueAsString(metadata));
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize issuer_metadata", e);
         }
     }
 
-    private static Map<String, Object> deserializeMetadata(String json) {
-        if (json == null || json.isBlank()) return null;
+    private static Map<String, Object> deserializeMetadata(Json json) {
+        if (json == null) return null;
+        var asString = json.asString();
+        if (asString == null || asString.isBlank()) return null;
         try {
-            return OBJECT_MAPPER.readValue(json, MAP_TYPE);
+            return OBJECT_MAPPER.readValue(asString, MAP_TYPE);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to deserialize issuer_metadata", e);
         }

@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.adapter.r2dbc.entity;
 
+import io.r2dbc.postgresql.codec.Json;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.domain.Persistable;
@@ -25,7 +26,7 @@ public class WalletCredentialEntity implements Persistable<UUID> {
     private Instant issuanceDate;
     private Instant expirationDate;
     private String status;
-    private String issuerMetadata;
+    private Json issuerMetadata;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -65,8 +66,8 @@ public class WalletCredentialEntity implements Persistable<UUID> {
     public void setExpirationDate(Instant expirationDate) { this.expirationDate = expirationDate; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
-    public String getIssuerMetadata() { return issuerMetadata; }
-    public void setIssuerMetadata(String issuerMetadata) { this.issuerMetadata = issuerMetadata; }
+    public Json getIssuerMetadata() { return issuerMetadata; }
+    public void setIssuerMetadata(Json issuerMetadata) { this.issuerMetadata = issuerMetadata; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
