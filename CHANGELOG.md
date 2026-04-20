@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- EUDI-040: Wallet credential CRUD endpoints (`POST/GET/PATCH/DELETE /api/credentials`)
+- AES-256-GCM at-rest encryption for `credential_raw` (IV prepended, GCM tag 128, per-encryption IV)
+- Status lifecycle management with validated transitions (VALID ↔ SUSPENDED, → REVOKED/EXPIRED terminal)
+- Audit trail: `CREATED`, `STATUS_CHANGED`, `DELETED` events with correlatable `entity_hash` (SHA-256)
+- Cross-user isolation: identical 404 responses for missing vs other-user credentials (anti-enumeration)
+
 ### Changed
 
 - **Health endpoint normalized to `/health`** — Added `base-path: /` and `path-mapping` so health responds at `/health` instead of `/actuator/health`. Added liveness/readiness probes, Spring Boot 3.5 `access` API, and parameterized `show-details` via env var.
