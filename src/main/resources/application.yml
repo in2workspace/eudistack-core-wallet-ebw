@@ -1,9 +1,20 @@
 spring:
   application:
     name: eudistack-core-wallet-ebw
+  webflux:
+    base-path: ${APP_CONTEXT_PATH:/wallet-api}
+  r2dbc:
+    url: ${SPRING_R2DBC_URL:r2dbc:postgresql://localhost:5432/eudistack}
+    username: ${SPRING_R2DBC_USERNAME:admin}
+    password: ${SPRING_R2DBC_PASSWORD:admin}
+  flyway:
+    url: ${SPRING_FLYWAY_URL:jdbc:postgresql://localhost:5432/eudistack}
+    locations: classpath:db/migration
+    default-schema: ${SPRING_FLYWAY_DEFAULT_SCHEMA:public}
 
 server:
   port: 8080
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:framework}
 
 management:
   endpoints:
