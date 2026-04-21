@@ -1,5 +1,5 @@
 -- =============================================================================
--- V1__Public_schema.sql
+-- V000__Public_schema.sql
 -- EBW: global tables in 'public' schema (shared with Issuer DB or standalone)
 -- =============================================================================
 
