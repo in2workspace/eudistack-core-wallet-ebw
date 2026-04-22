@@ -25,6 +25,8 @@ ebw:
     allowed-origins: http://localhost:4200
   security:
     max-payload-size: 65536
+  registration:
+    allowed-email-domains: example.com
 
 logging:
   level:
