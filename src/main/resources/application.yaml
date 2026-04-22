@@ -1,0 +1,84 @@
+spring:
+  application:
+    name: eudistack-core-wallet-ebw
+  webflux:
+    base-path: /wallet
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ebw}?schema=ebw
+    username: ${DB_USERNAME:ebw}
+    password: ${DB_PASSWORD:ebw}
+  flyway:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ebw}?schema=ebw
+    user: ${DB_USERNAME:ebw}
+    password: ${DB_PASSWORD:ebw}
+    default-schema: ebw
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          from: ${SMTP_FROM:noreply@eudistack.com}
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS:true}
+          ssl:
+            enable: ${SMTP_SSL_ENABLE:false}
+            trust: ${SMTP_SSL_TRUST:}
+
+server:
+  port: 8080
+
+ebw:
+  jwt:
+    private-key-path: ${JWT_PRIVATE_KEY_PATH:}
+    access-token-ttl: 15m
+    refresh-token-ttl: 90d
+    issuer: eudistack-ebw
+  otp:
+    length: 6
+    expiration: 10m
+    max-attempts: 5
+  rate-limit:
+    register-per-email: 3
+    register-per-ip: 10
+    verify-per-email: 10
+    verify-per-ip: 20
+    refresh-per-ip: 60
+    logout-per-ip: 20
+    window: 1h
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
+  security:
+    max-payload-size: 65536
+  registration:
+    allowed-email-domains: ${ALLOWED_EMAIL_DOMAINS:*}
+
+management:
+  endpoints:                          # ← Note: 'endpoints' (plural) for web exposure settings
+    web:
+      exposure:
+        include: health, info, prometheus    # ← Also missing comma between 'info' and 'prometheus'
+      base-path: /
+      path-mapping:
+        health: health
+        prometheus: prometheus
+  endpoint:                           # ← 'endpoint' (singular) for individual endpoint config
+    health:
+      access: unrestricted
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:when-authorized}
+      probes:
+        enabled: true
+    prometheus:
+      access: unrestricted
+  health:
+    livenessstate:
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+  level:
+    org.springframework.security: ${LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY:INFO}
+    com.eudistack.ebw: ${LOG_LEVEL:INFO}

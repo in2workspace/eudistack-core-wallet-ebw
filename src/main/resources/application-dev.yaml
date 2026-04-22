@@ -1,0 +1,8 @@
+spring:
+  mail:
+    host: localhost
+    port: 1025
+
+logging:
+  level:
+    com.eudistack.ebw: DEBUG
