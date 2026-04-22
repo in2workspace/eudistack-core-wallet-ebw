@@ -26,13 +26,13 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         var stored2 = storeCredential("jwt_vc_json", "config-b", "https://issuer-b.com");
 
         // Suspend second credential
-        webClient.patch().uri("/api/credentials/" + stored2.get("id") + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + stored2.get("id") + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "SUSPENDED"))
                 .exchange()
                 .expectStatus().isOk();
 
-        var result = webClient.get().uri("/api/credentials?status=SUSPENDED")
+        var result = webClient.get().uri("/api/v1/credentials?status=SUSPENDED")
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
@@ -47,7 +47,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         storeCredential("jwt_vc_json", "specific-config-id", "https://issuer.com");
         storeCredential("jwt_vc_json", "other-config-id", "https://issuer.com");
 
-        var result = webClient.get().uri("/api/credentials?credential_configuration_id=specific-config-id")
+        var result = webClient.get().uri("/api/v1/credentials?credential_configuration_id=specific-config-id")
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
@@ -62,7 +62,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         storeCredential("jwt_vc_json", "config-x", "https://issuer-alpha.com");
         storeCredential("jwt_vc_json", "config-y", "https://issuer-beta.com");
 
-        var result = webClient.get().uri("/api/credentials?issuer=https://issuer-alpha.com")
+        var result = webClient.get().uri("/api/v1/credentials?issuer=https://issuer-alpha.com")
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
@@ -78,13 +78,13 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         var stored2 = storeCredential("jwt_vc_json", "config-c2", "https://combined-issuer.com");
 
         // Suspend one
-        webClient.patch().uri("/api/credentials/" + stored2.get("id") + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + stored2.get("id") + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "SUSPENDED"))
                 .exchange()
                 .expectStatus().isOk();
 
-        var result = webClient.get().uri("/api/credentials?status=VALID&issuer=https://combined-issuer.com")
+        var result = webClient.get().uri("/api/v1/credentials?status=VALID&issuer=https://combined-issuer.com")
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
@@ -116,7 +116,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         var userBToken = getAccessToken("user-b-filter-leak-" + System.nanoTime() + "@test.com");
         var credB = CredentialCrudIntegrationTest.buildTestJwt(
                 sharedIssuer, "did:example:user-b", "TestCredential", null);
-        webClient.post().uri("/api/credentials")
+        webClient.post().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + userBToken)
                 .bodyValue(Map.of(
                         "credential_raw", credB,
@@ -138,7 +138,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         // Now user A seeds one credential and re-runs a filtered query: the projection must
         // omit credential_raw (the filter query path uses findAllByUserIdAndFiltersWithoutRaw).
         storeCredential("jwt_vc_json", "config-a-owned", "https://issuer-a-owned.com");
-        var ownList = webClient.get().uri("/api/credentials?status=VALID")
+        var ownList = webClient.get().uri("/api/v1/credentials?status=VALID")
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
@@ -162,7 +162,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
 
     @Test
     void filterInvalidStatus_returns400() {
-        webClient.get().uri("/api/credentials?status=INVALID_STATUS")
+        webClient.get().uri("/api/v1/credentials?status=INVALID_STATUS")
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isBadRequest();
@@ -176,7 +176,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         var id = (String) stored.get("id");
 
         // VALID -> SUSPENDED
-        webClient.patch().uri("/api/credentials/" + id + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "SUSPENDED"))
                 .exchange()
@@ -185,7 +185,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
                 .jsonPath("$.status").isEqualTo("SUSPENDED");
 
         // SUSPENDED -> VALID (reactivation)
-        webClient.patch().uri("/api/credentials/" + id + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "VALID"))
                 .exchange()
@@ -200,14 +200,14 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         var id = (String) stored.get("id");
 
         // VALID -> REVOKED
-        webClient.patch().uri("/api/credentials/" + id + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "REVOKED"))
                 .exchange()
                 .expectStatus().isOk();
 
         // REVOKED -> VALID (should fail)
-        webClient.patch().uri("/api/credentials/" + id + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "VALID"))
                 .exchange()
@@ -220,14 +220,14 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         var id = (String) stored.get("id");
 
         // VALID -> EXPIRED
-        webClient.patch().uri("/api/credentials/" + id + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "EXPIRED"))
                 .exchange()
                 .expectStatus().isOk();
 
         // EXPIRED -> VALID (should fail)
-        webClient.patch().uri("/api/credentials/" + id + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "VALID"))
                 .exchange()
@@ -246,20 +246,20 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         var otherToken = getAccessToken("other-user-" + System.nanoTime() + "@test.com");
 
         // Try to access the credential
-        webClient.get().uri("/api/credentials/" + id)
+        webClient.get().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + otherToken)
                 .exchange()
                 .expectStatus().isNotFound();
 
         // Try to update status
-        webClient.patch().uri("/api/credentials/" + id + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + otherToken)
                 .bodyValue(Map.of("status", "REVOKED"))
                 .exchange()
                 .expectStatus().isNotFound();
 
         // Try to delete
-        webClient.delete().uri("/api/credentials/" + id)
+        webClient.delete().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + otherToken)
                 .exchange()
                 .expectStatus().isNotFound();
@@ -267,11 +267,11 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
 
     @Test
     void noToken_returns401() {
-        webClient.get().uri("/api/credentials")
+        webClient.get().uri("/api/v1/credentials")
                 .exchange()
                 .expectStatus().isUnauthorized();
 
-        webClient.post().uri("/api/credentials")
+        webClient.post().uri("/api/v1/credentials")
                 .bodyValue(Map.of("credential_raw", "x", "format", "jwt_vc_json",
                         "credential_configuration_id", "x", "kid", "x"))
                 .exchange()
@@ -280,7 +280,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
 
     @Test
     void storeMalformedJwt_returns400() {
-        webClient.post().uri("/api/credentials")
+        webClient.post().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of(
                         "credential_raw", "not-a-jwt",
@@ -302,7 +302,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
     @Test
     @SuppressWarnings("unchecked")
     void storeUnsupportedFormat_returns400() {
-        var body = webClient.post().uri("/api/credentials")
+        var body = webClient.post().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of(
                         "credential_raw", "anything",
@@ -325,7 +325,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         // New user with no credentials
         var freshToken = getAccessToken("empty-user-" + System.nanoTime() + "@test.com");
 
-        var result = webClient.get().uri("/api/credentials")
+        var result = webClient.get().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + freshToken)
                 .exchange()
                 .expectStatus().isOk()
@@ -340,23 +340,23 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         var stored = storeCredential("jwt_vc_json", "config-deleted-1", "https://issuer.com");
         var id = (String) stored.get("id");
 
-        webClient.delete().uri("/api/credentials/" + id)
+        webClient.delete().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isNoContent();
 
-        webClient.get().uri("/api/credentials/" + id)
+        webClient.get().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isNotFound();
 
-        webClient.patch().uri("/api/credentials/" + id + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "REVOKED"))
                 .exchange()
                 .expectStatus().isNotFound();
 
-        webClient.delete().uri("/api/credentials/" + id)
+        webClient.delete().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isNotFound();
@@ -388,7 +388,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         var nonexistentId = UUID.randomUUID().toString();
 
         // GET — other user's credential
-        var getOtherUser = webClient.get().uri("/api/credentials/" + credAId)
+        var getOtherUser = webClient.get().uri("/api/v1/credentials/" + credAId)
                 .header("Authorization", "Bearer " + userBToken)
                 .exchange()
                 .expectStatus().isNotFound()
@@ -396,7 +396,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
                 .returnResult().getResponseBody();
 
         // GET — nonexistent credential
-        var getNonexistent = webClient.get().uri("/api/credentials/" + nonexistentId)
+        var getNonexistent = webClient.get().uri("/api/v1/credentials/" + nonexistentId)
                 .header("Authorization", "Bearer " + userBToken)
                 .exchange()
                 .expectStatus().isNotFound()
@@ -410,7 +410,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         assertThat(getOtherUser.get("status")).isEqualTo(404);
 
         // PATCH /status — other user's credential
-        var patchOtherUser = webClient.patch().uri("/api/credentials/" + credAId + "/status")
+        var patchOtherUser = webClient.patch().uri("/api/v1/credentials/" + credAId + "/status")
                 .header("Authorization", "Bearer " + userBToken)
                 .bodyValue(Map.of("status", "SUSPENDED"))
                 .exchange()
@@ -419,7 +419,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
                 .returnResult().getResponseBody();
 
         // PATCH /status — nonexistent credential
-        var patchNonexistent = webClient.patch().uri("/api/credentials/" + nonexistentId + "/status")
+        var patchNonexistent = webClient.patch().uri("/api/v1/credentials/" + nonexistentId + "/status")
                 .header("Authorization", "Bearer " + userBToken)
                 .bodyValue(Map.of("status", "SUSPENDED"))
                 .exchange()
@@ -431,7 +431,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         assertThat(patchOtherUser.get("status")).isEqualTo(404);
 
         // DELETE — other user's credential
-        var deleteOtherUser = webClient.delete().uri("/api/credentials/" + credAId)
+        var deleteOtherUser = webClient.delete().uri("/api/v1/credentials/" + credAId)
                 .header("Authorization", "Bearer " + userBToken)
                 .exchange()
                 .expectStatus().isNotFound()
@@ -439,7 +439,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
                 .returnResult().getResponseBody();
 
         // DELETE — nonexistent credential
-        var deleteNonexistent = webClient.delete().uri("/api/credentials/" + nonexistentId)
+        var deleteNonexistent = webClient.delete().uri("/api/v1/credentials/" + nonexistentId)
                 .header("Authorization", "Bearer " + userBToken)
                 .exchange()
                 .expectStatus().isNotFound()
@@ -466,7 +466,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         var credentialRaw = CredentialCrudIntegrationTest.buildTestJwt(
                 issuer, "did:example:subject", "TestCredential", null);
 
-        return webClient.post().uri("/api/credentials")
+        return webClient.post().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of(
                         "credential_raw", credentialRaw,

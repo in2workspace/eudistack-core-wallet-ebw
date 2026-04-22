@@ -108,7 +108,7 @@ class CredentialRepositoryInsertUpdateIntegrationTest extends IntegrationTestBas
                 "https://issuer-repo-iu.com", "did:example:repo-iu",
                 "TestCredential", null);
 
-        return webClient.post().uri("/api/credentials")
+        return webClient.post().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of(
                         "credential_raw", credentialRaw,

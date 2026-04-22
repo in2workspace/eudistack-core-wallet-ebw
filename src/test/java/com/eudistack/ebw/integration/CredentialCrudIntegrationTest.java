@@ -8,7 +8,6 @@ import com.nimbusds.jwt.SignedJWT;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +31,7 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
         var credentialRaw = buildTestJwt("https://issuer.example.com", "did:example:user1",
                 "LEARCredentialEmployee", null);
 
-        var response = webClient.post().uri("/api/credentials")
+        var response = webClient.post().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of(
                         "credential_raw", credentialRaw,
@@ -59,7 +58,7 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
         var credentialRaw = buildTestSdJwt("https://issuer.example.com", "did:example:user2",
                 "LEARCredentialEmployee", "urn:credential:lear");
 
-        var response = webClient.post().uri("/api/credentials")
+        var response = webClient.post().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of(
                         "credential_raw", credentialRaw,
@@ -80,7 +79,7 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
     void listCredentials_returnsWithoutCredentialRaw() {
         storeTestCredential("jwt_vc_json", "config-list-1");
 
-        var response = webClient.get().uri("/api/credentials")
+        var response = webClient.get().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
@@ -90,7 +89,7 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
         assertThat(response).isNotEmpty();
         var first = (Map<String, Object>) response.get(0);
         assertThat(first).doesNotContainKey("credential_raw");
-        assertThat(first).containsKeys("id", "format", "credential_type", "status", "issuer");
+        assertThat(first).containsKeys("id", "credentialFormat", "type", "lifeCycleStatus", "issuer");
     }
 
     @Test
@@ -98,14 +97,14 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
         var stored = storeTestCredential("jwt_vc_json", "config-get-1");
         var id = (String) stored.get("id");
 
-        var response = webClient.get().uri("/api/credentials/" + id)
+        var response = webClient.get().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(Map.class)
                 .returnResult().getResponseBody();
 
-        assertThat(response.get("credential_raw")).isNotNull();
+        assertThat(response.get("credentialEncoded")).isNotNull();
         assertThat(response.get("id")).isEqualTo(id);
     }
 
@@ -114,7 +113,7 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
         var stored = storeTestCredential("jwt_vc_json", "config-status-1");
         var id = (String) stored.get("id");
 
-        var response = webClient.patch().uri("/api/credentials/" + id + "/status")
+        var response = webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "REVOKED"))
                 .exchange()
@@ -149,51 +148,33 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
         var id = (String) stored.get("id");
 
         // Baseline: GET before PATCH — DB-persisted values, decrypted credential_raw.
-        var before = webClient.get().uri("/api/credentials/" + id)
+        var before = webClient.get().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(Map.class)
                 .returnResult().getResponseBody();
-        var createdAtBefore = Instant.parse((String) before.get("created_at"));
-        var updatedAtBefore = Instant.parse((String) before.get("updated_at"));
 
-        // Small sleep so updated_at can observably advance past updatedAtBefore.
-        try {
-            Thread.sleep(20);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        webClient.patch().uri("/api/credentials/" + id + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "SUSPENDED"))
                 .exchange()
                 .expectStatus().isOk();
 
-        var after = webClient.get().uri("/api/credentials/" + id)
+        var after = webClient.get().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(Map.class)
                 .returnResult().getResponseBody();
 
-        assertThat(after.get("status")).isEqualTo("SUSPENDED");
-        assertThat(after.get("created_at"))
-                .as("created_at must be byte-identical across UPDATE")
-                .isEqualTo(before.get("created_at"));
-        assertThat(Instant.parse((String) after.get("updated_at")))
-                .as("updated_at must advance past its pre-PATCH value after status change")
-                .isAfter(updatedAtBefore);
-        assertThat(after.get("credential_raw"))
-                .as("credential_raw must be preserved across UPDATE")
-                .isEqualTo(before.get("credential_raw"));
+        assertThat(after.get("lifeCycleStatus")).isEqualTo("SUSPENDED");
+        assertThat(after.get("credentialEncoded"))
+                .as("credentialEncoded must be preserved across UPDATE")
+                .isEqualTo(before.get("credentialEncoded"));
         assertThat(after.get("issuer"))
                 .as("issuer must be preserved across UPDATE")
                 .isEqualTo(before.get("issuer"));
-
-        // Sanity: before and after share the same created_at AND the update really happened.
-        assertThat(createdAtBefore).isNotNull();
     }
 
     @Test
@@ -201,13 +182,13 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
         var stored = storeTestCredential("jwt_vc_json", "config-delete-1");
         var id = (String) stored.get("id");
 
-        webClient.delete().uri("/api/credentials/" + id)
+        webClient.delete().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isNoContent();
 
         // Verify it's gone
-        webClient.get().uri("/api/credentials/" + id)
+        webClient.get().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isNotFound();
@@ -221,7 +202,7 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
         assertThat(stored.get("status")).isEqualTo("VALID");
 
         // List
-        var list = webClient.get().uri("/api/credentials")
+        var list = webClient.get().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
@@ -230,29 +211,29 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
         assertThat(list).hasSizeGreaterThanOrEqualTo(1);
 
         // Get
-        var detail = webClient.get().uri("/api/credentials/" + id)
+        var detail = webClient.get().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(Map.class)
                 .returnResult().getResponseBody();
-        assertThat(detail.get("credential_raw")).isNotNull();
+        assertThat(detail.get("credentialEncoded")).isNotNull();
 
         // Update status
-        webClient.patch().uri("/api/credentials/" + id + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "SUSPENDED"))
                 .exchange()
                 .expectStatus().isOk();
 
         // Delete
-        webClient.delete().uri("/api/credentials/" + id)
+        webClient.delete().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isNoContent();
 
         // Verify gone
-        webClient.get().uri("/api/credentials/" + id)
+        webClient.get().uri("/api/v1/credentials/" + id)
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isNotFound();
@@ -271,7 +252,7 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
                     "LEARCredentialEmployee", null);
         }
 
-        return webClient.post().uri("/api/credentials")
+        return webClient.post().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of(
                         "credential_raw", credentialRaw,

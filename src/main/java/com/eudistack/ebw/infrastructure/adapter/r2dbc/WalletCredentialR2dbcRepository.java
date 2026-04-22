@@ -52,20 +52,17 @@ public class WalletCredentialR2dbcRepository implements WalletCredentialReposito
 
     @Override
     public Flux<WalletCredential> findAllByUserId(UUID userId) {
-        return springRepository.findAllByUserIdWithoutRaw(userId)
+        return springRepository.findAllByUserId(userId)
                 .map(CredentialMapper::toDomain);
     }
 
     @Override
     public Flux<WalletCredential> findAllByUserIdAndFilters(UUID userId, CredentialStatus status,
                                                              String credentialConfigId, String issuer) {
-        // Native @Query with (:param IS NULL OR column = :param) predicates keeps the projection
-        // consistent with findAllByUserIdWithoutRaw: credential_raw is NOT selected because list
-        // endpoints never return it (EUDI-040 review W2).
         var statusName = status != null ? status.name() : null;
         var configId = (credentialConfigId != null && !credentialConfigId.isBlank()) ? credentialConfigId : null;
         var issuerFilter = (issuer != null && !issuer.isBlank()) ? issuer : null;
-        return springRepository.findAllByUserIdAndFiltersWithoutRaw(userId, statusName, configId, issuerFilter)
+        return springRepository.findAllByUserIdAndFilters(userId, statusName, configId, issuerFilter)
                 .map(CredentialMapper::toDomain);
     }
 

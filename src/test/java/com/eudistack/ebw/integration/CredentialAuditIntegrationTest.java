@@ -30,7 +30,7 @@ class CredentialAuditIntegrationTest extends IntegrationTestBase {
                 "https://issuer.example.com", "did:example:subject",
                 "LEARCredentialEmployee", null);
 
-        var stored = webClient.post().uri("/api/credentials")
+        var stored = webClient.post().uri("/api/v1/credentials")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of(
                         "credential_raw", credentialRaw,
@@ -45,7 +45,7 @@ class CredentialAuditIntegrationTest extends IntegrationTestBase {
         var id = (String) stored.get("id");
 
         // Patch status VALID -> SUSPENDED: produces a STATUS_CHANGED audit row
-        webClient.patch().uri("/api/credentials/" + id + "/status")
+        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "SUSPENDED"))
                 .exchange()

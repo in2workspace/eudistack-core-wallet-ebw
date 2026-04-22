@@ -70,6 +70,10 @@ public class CredentialService {
 
     public VerifiableCredentialResponse toVerifiableCredential(
             WalletCredential credential, CredentialEncryptor encryptor) {
+        if (credential.getCredentialRaw() == null) {
+            log.warn("credential_raw is null for credential {}, returning fallback", credential.getId());
+            return buildFallback(credential);
+        }
         String raw;
         try {
             raw = encryptor.decrypt(credential.getCredentialRaw());
