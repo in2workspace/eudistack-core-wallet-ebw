@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **DB config aligned with Issuer schema-per-tenant model (EUDI-063).** `application.yaml` defaults were pointing to a standalone DB `ebw` with schema `ebw`, but EBW is tenant-aware and reads `public.tenant_registry` (populated by Issuer) to migrate per-tenant schemas. Switched `spring.r2dbc.*` and `spring.flyway.*` to the same `SPRING_R2DBC_URL/USERNAME/PASSWORD` + `SPRING_FLYWAY_URL` + `SPRING_FLYWAY_DEFAULT_SCHEMA` overrides used by Issuer; defaults now target DB `eudistack` and schema `public`. Added `baseline-on-migrate: true` so Flyway does not refuse to run on the non-empty DB already initialized by Issuer. This unblocks the STG deployment of `wallet-ebw`, which was failing to find `tenant_registry` with the previous defaults.
 - `EudiStackWalletEbwApplicationTests > contextLoads()` was failing in CI because the Spring context tried to connect to Postgres (`localhost:5432`). The custom `TenantSchemaFlywayMigrator` (`ApplicationRunner`) ran on boot regardless of Flyway autoconfig. Gated the migrator with `@ConditionalOnProperty(ebw.tenant-flyway.enabled, matchIfMissing = true)` and added `src/test/resources/application.yml` that disables the migrator plus excludes `FlywayAutoConfiguration` / `R2dbcAutoConfiguration` so the smoke test boots without a database. Integration tests requiring DB will need their own profile + Testcontainers when added.
 
 ## [1.1.0] - 2026-04-20
