@@ -4,6 +4,7 @@ import com.eudistack.ebw.domain.model.CredentialFormat;
 import com.eudistack.ebw.domain.model.exception.MalformedCredentialException;
 import com.eudistack.ebw.domain.model.exception.UnsupportedFormatException;
 import com.eudistack.ebw.domain.spi.HashProvider;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.MACSigner;
@@ -34,7 +35,7 @@ class CredentialServiceTest {
     void setUp() {
         hashProvider = mock(HashProvider.class);
         when(hashProvider.sha256(anyString())).thenReturn("mocked-hash");
-        credentialService = new CredentialService(hashProvider);
+        credentialService = new CredentialService(hashProvider, new ObjectMapper());
     }
 
     @Test

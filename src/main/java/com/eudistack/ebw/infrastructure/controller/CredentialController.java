@@ -1,13 +1,29 @@
 package com.eudistack.ebw.infrastructure.controller;
 
-import com.eudistack.ebw.application.workflow.*;
-import com.eudistack.ebw.infrastructure.controller.dto.*;
+import com.eudistack.ebw.application.workflow.DeleteCredentialWorkflow;
+import com.eudistack.ebw.application.workflow.GetCredentialWorkflow;
+import com.eudistack.ebw.application.workflow.ListCredentialsWorkflow;
+import com.eudistack.ebw.application.workflow.StoreCredentialWorkflow;
+import com.eudistack.ebw.application.workflow.UpdateCredentialStatusWorkflow;
+import com.eudistack.ebw.infrastructure.controller.dto.CredentialDetailResponse;
+import com.eudistack.ebw.infrastructure.controller.dto.StoreCredentialRequest;
+import com.eudistack.ebw.infrastructure.controller.dto.UpdateStatusRequest;
+import com.eudistack.ebw.infrastructure.controller.dto.VerifiableCredentialResponse;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
@@ -15,7 +31,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/credentials")
+@RequestMapping("/api/v1/credentials")
 @Validated
 public class CredentialController {
 
@@ -50,20 +66,18 @@ public class CredentialController {
     }
 
     @GetMapping
-    public Mono<List<CredentialSummaryResponse>> list(
+    public Mono<List<VerifiableCredentialResponse>> list(
             @RequestParam(required = false) String status,
             @RequestParam(name = "credential_configuration_id", required = false) String credentialConfigId,
             @RequestParam(required = false) String issuer,
             JwtAuthenticationToken auth) {
         return listCredentialsWorkflow.listCredentials(auth.getUserId(), status, credentialConfigId, issuer)
-                .map(CredentialSummaryResponse::from)
                 .collectList();
     }
 
     @GetMapping("/{id}")
-    public Mono<CredentialDetailResponse> getById(@PathVariable UUID id, JwtAuthenticationToken auth) {
-        return getCredentialWorkflow.getCredential(auth.getUserId(), id)
-                .map(CredentialDetailResponse::from);
+    public Mono<VerifiableCredentialResponse> getById(@PathVariable UUID id, JwtAuthenticationToken auth) {
+        return getCredentialWorkflow.getCredential(auth.getUserId(), id);
     }
 
     @PatchMapping("/{id}/status")
