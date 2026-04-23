@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-04-23
+
+### Fixed
+
+- **CI deploy health check — command substitution under `set -e`**: 1.1.3 downgraded the step to warning-only, but the curl itself still exited with code 6 (DNS failure) inside `$(...)`, which tripped `set -euo pipefail` and failed the job before the `if` branch ran. Appended `|| echo "000"` so the command substitution always returns a value and the warning branch can execute. Same pattern as the verifier workflow. Tracked in EUDISTACK-168.
+
 ## [1.1.3] - 2026-04-23
 
 ### Changed

@@ -67,9 +67,9 @@ jobs:
           URL="https://business-wallet-${ENV}.api.altia.eudistack.net/health"
 
           echo "Health check: ${URL}"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${URL}")
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${URL}" || echo "000")
 
-          if [ "$STATUS" -eq 200 ]; then
+          if [ "$STATUS" = "200" ]; then
             echo "Health check passed (HTTP ${STATUS})"
             echo "- Health check: **PASS** (HTTP ${STATUS})" >> $GITHUB_STEP_SUMMARY
           else
