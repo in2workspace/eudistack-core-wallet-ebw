@@ -48,6 +48,7 @@ public class DeleteCredentialWorkflow {
                                             "previous_status", credential.getStatus().name()))
                             .then(credentialRepository.deleteById(credentialId));
                 })
-                .doOnSuccess(v -> log.info("Credential deleted: id={}, userId={}", credentialId, userId));
+                .doOnSuccess(v -> log.info("Credential deleted: id={}, userId={}", credentialId, userId))
+                .doOnError(e -> log.error("Failed to delete credential: id={}, userId={}, error={}", credentialId, userId, e.getMessage()));
     }
 }

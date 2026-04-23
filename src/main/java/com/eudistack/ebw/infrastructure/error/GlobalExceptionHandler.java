@@ -21,6 +21,18 @@ public class GlobalExceptionHandler {
 
     // Auth exceptions — OAuth2 format for frontend compatibility
     // AC-002.2 / AC-002.4: both invalid and expired OTP return the same generic error
+    @ExceptionHandler(UserAlreadyRegisteredException.class)
+    public ResponseEntity<Map<String, String>> handleUserAlreadyRegistered(UserAlreadyRegisteredException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", "user_already_registered", "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleUserNotFound(UserNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "user_not_found", "message", ex.getMessage()));
+    }
+
     @ExceptionHandler({InvalidOtpException.class, OtpExpiredException.class})
     public ResponseEntity<Map<String, String>> handleInvalidOrExpiredOtp(Exception ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)

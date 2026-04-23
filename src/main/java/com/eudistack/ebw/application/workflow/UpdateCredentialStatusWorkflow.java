@@ -65,6 +65,7 @@ public class UpdateCredentialStatusWorkflow {
                                     .thenReturn(saved));
                 })
                 .doOnSuccess(c -> log.info("Credential status updated: id={}, userId={}, newStatus={}",
-                        credentialId, userId, newStatusStr));
+                        credentialId, userId, newStatusStr))
+                .doOnError(e -> log.error("Failed to update credential status: id={}, userId={}, error={}", credentialId, userId, e.getMessage()));
     }
 }

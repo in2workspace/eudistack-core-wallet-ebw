@@ -6,6 +6,8 @@ import com.eudistack.ebw.domain.repository.WalletCredentialRepository;
 import com.eudistack.ebw.domain.service.CredentialService;
 import com.eudistack.ebw.domain.spi.CredentialEncryptor;
 import com.eudistack.ebw.infrastructure.controller.dto.VerifiableCredentialResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -15,6 +17,8 @@ import java.util.UUID;
 
 @Service
 public class ListCredentialsWorkflow {
+
+    private static final Logger log = LoggerFactory.getLogger(ListCredentialsWorkflow.class);
 
     private final WalletCredentialRepository credentialRepository;
     private final CredentialService credentialService;
@@ -33,7 +37,9 @@ public class ListCredentialsWorkflow {
         return resolveCredentials(userId, status, credentialConfigId, issuer)
                 .flatMap(credential -> Mono
                         .fromCallable(() -> credentialService.toVerifiableCredential(credential, encryptor))
-                        .subscribeOn(Schedulers.boundedElastic()));
+                        .subscribeOn(Schedulers.boundedElastic()))
+                .doOnComplete(() -> log.info("Credentials listed: userId={}", userId))
+                .doOnError(e -> log.error("Failed to list credentials: userId={}, error={}", userId, e.getMessage()));
     }
 
     private Flux<WalletCredential> resolveCredentials(UUID userId, String status,

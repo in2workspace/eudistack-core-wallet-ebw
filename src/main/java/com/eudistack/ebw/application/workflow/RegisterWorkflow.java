@@ -1,6 +1,9 @@
 package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.domain.model.exception.RateLimitExceededException;
+import com.eudistack.ebw.domain.model.exception.UserAlreadyRegisteredException;
+import com.eudistack.ebw.domain.model.exception.UserNotFoundException;
+import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.domain.service.OtpService;
 import com.eudistack.ebw.domain.spi.EmailRateLimiter;
 import org.slf4j.Logger;
@@ -15,17 +18,33 @@ public class RegisterWorkflow {
 
     private final OtpService otpService;
     private final EmailRateLimiter emailRateLimiter;
+    private final WalletUserRepository userRepository;
 
-    public RegisterWorkflow(OtpService otpService, EmailRateLimiter emailRateLimiter) {
+    public RegisterWorkflow(OtpService otpService, EmailRateLimiter emailRateLimiter,
+                            WalletUserRepository userRepository) {
         this.otpService = otpService;
         this.emailRateLimiter = emailRateLimiter;
+        this.userRepository = userRepository;
     }
 
-    public Mono<Void> registerUser(String email) {
+    public Mono<Void> registerUser(String email, String mode) {
+        boolean isLogin = "login".equalsIgnoreCase(mode);
+
+        Mono<Void> userCheck = isLogin
+                ? userRepository.findByEmail(email)
+                        .switchIfEmpty(Mono.error(new UserNotFoundException()))
+                        .then()
+                : userRepository.findByEmail(email)
+                        .flatMap(u -> Mono.<Void>error(new UserAlreadyRegisteredException()))
+                        .then();
+
         return emailRateLimiter.checkRegisterRate(email)
+                .then(userCheck)
                 .then(otpService.generateAndSend(email))
-                .onErrorResume(e -> !(e instanceof RateLimitExceededException), e -> {
-                    log.warn("Failed to send OTP for registration", e);
+                .onErrorResume(e -> !(e instanceof RateLimitExceededException)
+                                && !(e instanceof UserAlreadyRegisteredException)
+                                && !(e instanceof UserNotFoundException), e -> {
+                    log.warn("Failed to send OTP", e);
                     return Mono.empty();
                 });
     }

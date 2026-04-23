@@ -34,7 +34,7 @@ public class AuthController {
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.OK)
     public Mono<MessageResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return registerWorkflow.registerUser(request.email())
+        return registerWorkflow.registerUser(request.email(), request.mode())
                 .thenReturn(new MessageResponse("If the email is valid, you will receive a verification code."));
     }
 

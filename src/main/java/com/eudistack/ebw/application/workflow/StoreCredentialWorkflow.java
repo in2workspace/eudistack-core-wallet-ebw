@@ -55,6 +55,7 @@ public class StoreCredentialWorkflow {
                                     .thenReturn(saved);
                         }))
                 .doOnSuccess(c -> log.info("Credential stored: id={}, userId={}, type={}",
-                        c.getId(), userId, c.getCredentialType()));
+                        c.getId(), userId, c.getCredentialType()))
+                .doOnError(e -> log.error("Failed to store credential: userId={}, error={}", userId, e.getMessage()));
     }
 }
