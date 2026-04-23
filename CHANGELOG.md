@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-04-23
+
+### Fixed
+
+- **EBW local startup**: removed obsolete `FlywayConfig` (in `com.eudistack.ebw.infrastructure.configuration`) that declared a manual `Flyway` bean bypassing `spring.flyway.enabled: false`. Its `dataSource(url, user, password)` call used `FlywayProperties` where only `url` was injected, causing SCRAM-auth failure at boot. `TenantSchemaFlywayMigrator` is the single migration path for `public` + tenant schemas.
+
+### Changed
+
+- **OTLP configuration aligned with Verifier/Issuer**: added `management.otlp.tracing.endpoint` and `management.otlp.metrics.export.enabled: false` to `application.yaml`. EBW was sending OTLP metrics to Jaeger's `/v1/metrics` (404) because no explicit tracing endpoint was configured. Traces now go to `${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces`; metrics remain exposed via `/prometheus`.
+
 ## [1.1.1] - 2026-04-23
 
 ### Fixed
