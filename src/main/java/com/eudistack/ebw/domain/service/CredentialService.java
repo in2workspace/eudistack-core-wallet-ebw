@@ -145,7 +145,7 @@ public class CredentialService {
             }
         }
 
-        var id = resolveId(claimsMap, credential);
+        var id = resolveId(credential);
         var type = resolveType(claimsMap, disclosures);
         var context = resolveContext(claimsMap);
         var issuer = resolveIssuer(claimsMap);
@@ -178,7 +178,7 @@ public class CredentialService {
                 ? (Map<String, Object>) vcMap
                 : claimsMap;
 
-        var id = resolveId(vcClaims, credential);
+        var id = resolveId(credential);
         var type = resolveType(vcClaims);
         var context = resolveContext(vcClaims);
         var issuer = resolveIssuer(claimsMap);
@@ -199,14 +199,8 @@ public class CredentialService {
 
     // --- Private: field resolvers ---
 
-    private String resolveId(Map<String, Object> claims, WalletCredential credential) {
-        if (claims.containsKey("jti") && claims.get("jti") instanceof String jti) {
-            return jti;
-        }
-        if (claims.containsKey("id") && claims.get("id") instanceof String id) {
-            return id;
-        }
-        return "urn:uuid:" + credential.getId();
+    private String resolveId(WalletCredential credential) {
+        return credential.getId().toString();
     }
 
     @SuppressWarnings("unchecked")
@@ -363,7 +357,7 @@ public class CredentialService {
                 : null;
         return new VerifiableCredentialResponse(
                 List.of("https://www.w3.org/2018/credentials/v1"),
-                "urn:uuid:" + credential.getId(),
+                credential.getId().toString(),
                 List.of("VerifiableCredential"),
                 credential.getStatus().name(),
                 null, null, issuer, validFrom, validUntil,
