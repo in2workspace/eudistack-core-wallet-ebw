@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-04-23
+
+### Fixed
+
+- **CI deploy health check — command substitution under `set -e`**: 1.1.3 downgraded the step to warning-only, but the curl itself still exited with code 6 (DNS failure) inside `$(...)`, which tripped `set -euo pipefail` and failed the job before the `if` branch ran. Appended `|| echo "000"` so the command substitution always returns a value and the warning branch can execute. Same pattern as the verifier workflow. Tracked in EUDISTACK-168.
+
+## [1.1.3] - 2026-04-23
+
+### Changed
+
+- **CI deploy health check is now warning-only**: `deploy.yml` failed the deploy on non-200 responses, but `HEALTH_URL` points to `business-wallet-<env>.api.altia.eudistack.net`, a host that does not resolve from the GitHub runner (`altia` subdomain not published in Route53). Aligned the step to emit `::warning::` instead of `::error::` + `exit 1`, matching verifier 3.1.3 and issuer. Target-group health checks via `aws ecs wait services-stable` keep validating task health. Tracked in EUDISTACK-168.
+
+## [1.1.2] - 2026-04-23
+
+### Fixed
+
+- **EBW local startup**: removed obsolete `FlywayConfig` (in `com.eudistack.ebw.infrastructure.configuration`) that declared a manual `Flyway` bean bypassing `spring.flyway.enabled: false`. Its `dataSource(url, user, password)` call used `FlywayProperties` where only `url` was injected, causing SCRAM-auth failure at boot. `TenantSchemaFlywayMigrator` is the single migration path for `public` + tenant schemas.
+
+### Changed
+
+- **OTLP configuration aligned with Verifier/Issuer**: added `management.otlp.tracing.endpoint` and `management.otlp.metrics.export.enabled: false` to `application.yaml`. EBW was sending OTLP metrics to Jaeger's `/v1/metrics` (404) because no explicit tracing endpoint was configured. Traces now go to `${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces`; metrics remain exposed via `/prometheus`.
+
 ## [1.1.1] - 2026-04-23
 
 ### Added
