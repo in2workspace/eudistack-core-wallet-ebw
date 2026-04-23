@@ -61,6 +61,12 @@ ebw:
     allowed-email-domains: ${ALLOWED_EMAIL_DOMAINS:*}
 
 management:
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+    metrics:
+      export:
+        enabled: false
   endpoints:                          # ← Note: 'endpoints' (plural) for web exposure settings
     web:
       exposure:
