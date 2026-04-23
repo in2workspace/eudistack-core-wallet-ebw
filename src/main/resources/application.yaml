@@ -4,14 +4,18 @@ spring:
   webflux:
     base-path: /wallet
   r2dbc:
-    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ebw}?schema=ebw
-    username: ${DB_USERNAME:ebw}
-    password: ${DB_PASSWORD:ebw}
+    url: ${SPRING_R2DBC_URL:r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:eudistack}}
+    username: ${SPRING_R2DBC_USERNAME:${DB_USERNAME:postgres}}
+    password: ${SPRING_R2DBC_PASSWORD:${DB_PASSWORD:postgres}}
   flyway:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ebw}?schema=ebw
-    user: ${DB_USERNAME:ebw}
-    password: ${DB_PASSWORD:ebw}
-    default-schema: ebw
+    # Disabled: TenantSchemaFlywayMigrator runs migrations for `public` + all
+    # tenant schemas using R2DBC credentials. Spring Boot's auto-configured
+    # flywayInitializer would need its own JDBC user/password (only
+    # SPRING_FLYWAY_URL is injected in ECS) and would fail on SCRAM auth.
+    enabled: false
+    url: ${SPRING_FLYWAY_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:eudistack}}
+    default-schema: ${SPRING_FLYWAY_DEFAULT_SCHEMA:public}
+    baseline-on-migrate: true
   mail:
     host: ${SMTP_HOST:localhost}
     port: ${SMTP_PORT:587}

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-04-23
+
 ### Added
 
 - EUDI-040: Wallet credential CRUD endpoints (`POST/GET/PATCH/DELETE /api/credentials`)
@@ -17,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **EBW startup on STG**: disabled Spring Boot's auto-configured `flywayInitializer` (`spring.flyway.enabled: false`) in `application.yaml`. The auto-config was attempting a JDBC connection without user/password (only `SPRING_FLYWAY_URL` is injected in ECS), causing `SCRAM-based authentication, but no password was provided` and aborting context startup. `TenantSchemaFlywayMigrator` continues to run migrations for `public` + all tenant schemas using R2DBC credentials. Mirrors the fix already shipped in `eudistack-core-issuer` 3.4.2.
+
+## [Pending release]
+
+### Fixed
+
+- **DB config aligned with Issuer schema-per-tenant model (EUDI-063).** `application.yaml` defaults were pointing to a standalone DB `ebw` with schema `ebw`, but EBW is tenant-aware and reads `public.tenant_registry` (populated by Issuer) to migrate per-tenant schemas. Switched `spring.r2dbc.*` and `spring.flyway.*` to the same `SPRING_R2DBC_URL/USERNAME/PASSWORD` + `SPRING_FLYWAY_URL` + `SPRING_FLYWAY_DEFAULT_SCHEMA` overrides used by Issuer; defaults now target DB `eudistack` and schema `public`. Added `baseline-on-migrate: true` so Flyway does not refuse to run on the non-empty DB already initialized by Issuer. This unblocks the STG deployment of `wallet-ebw`, which was failing to find `tenant_registry` with the previous defaults.
 - `EudiStackWalletEbwApplicationTests > contextLoads()` was failing in CI because the Spring context tried to connect to Postgres (`localhost:5432`). The custom `TenantSchemaFlywayMigrator` (`ApplicationRunner`) ran on boot regardless of Flyway autoconfig. Gated the migrator with `@ConditionalOnProperty(ebw.tenant-flyway.enabled, matchIfMissing = true)` and added `src/test/resources/application.yml` that disables the migrator plus excludes `FlywayAutoConfiguration` / `R2dbcAutoConfiguration` so the smoke test boots without a database. Integration tests requiring DB will need their own profile + Testcontainers when added.
 
 ## [1.1.0] - 2026-04-20
