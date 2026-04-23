@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-04-23
+
+### Changed
+
+- **CI deploy health check is now warning-only**: `deploy.yml` failed the deploy on non-200 responses, but `HEALTH_URL` points to `business-wallet-<env>.api.altia.eudistack.net`, a host that does not resolve from the GitHub runner (`altia` subdomain not published in Route53). Aligned the step to emit `::warning::` instead of `::error::` + `exit 1`, matching verifier 3.1.3 and issuer. Target-group health checks via `aws ecs wait services-stable` keep validating task health. Tracked in EUDISTACK-168.
+
 ## [1.1.2] - 2026-04-23
 
 ### Fixed
