@@ -34,7 +34,10 @@ public class ListCredentialsWorkflow {
 
     public Flux<VerifiableCredentialResponse> listCredentials(UUID userId, String status,
                                                                String credentialConfigId, String issuer) {
-        return resolveCredentials(userId, status, credentialConfigId, issuer)
+        var normalizedStatus = (status != null && !status.isBlank()) ? status.strip() : null;
+        var normalizedConfigId = (credentialConfigId != null && !credentialConfigId.isBlank()) ? credentialConfigId.strip() : null;
+        var normalizedIssuer = (issuer != null && !issuer.isBlank()) ? issuer.strip() : null;
+        return resolveCredentials(userId, normalizedStatus, normalizedConfigId, normalizedIssuer)
                 .flatMap(credential -> Mono
                         .fromCallable(() -> credentialService.toVerifiableCredential(credential, encryptor))
                         .subscribeOn(Schedulers.boundedElastic()))

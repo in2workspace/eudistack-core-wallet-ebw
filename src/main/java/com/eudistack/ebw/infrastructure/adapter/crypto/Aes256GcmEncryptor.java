@@ -66,8 +66,15 @@ public class Aes256GcmEncryptor implements CredentialEncryptor {
 
     @Override
     public String decrypt(String encrypted) {
+        if (encrypted == null || encrypted.isBlank()) {
+            throw new IllegalStateException("Decryption failed: input is null or empty");
+        }
         try {
             var decoded = Base64.getDecoder().decode(encrypted);
+            // IV_LENGTH (12) + at least 1 byte of ciphertext + 16-byte GCM tag = minimum 29 bytes.
+            if (decoded.length <= IV_LENGTH) {
+                throw new IllegalStateException("Decryption failed: payload too short");
+            }
             var iv = new byte[IV_LENGTH];
             System.arraycopy(decoded, 0, iv, 0, IV_LENGTH);
 
@@ -76,6 +83,8 @@ public class Aes256GcmEncryptor implements CredentialEncryptor {
             var plaintext = cipher.doFinal(decoded, IV_LENGTH, decoded.length - IV_LENGTH);
 
             return new String(plaintext, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Decryption failed: invalid Base64 input", e);
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("Decryption failed", e);
         }

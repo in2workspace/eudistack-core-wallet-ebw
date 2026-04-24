@@ -9,7 +9,6 @@ import java.util.UUID;
 
 public record CredentialDetailResponse(
         UUID id,
-        @JsonProperty("credential_raw") String credentialRaw,
         String format,
         @JsonProperty("credential_configuration_id") String credentialConfigurationId,
         @JsonProperty("credential_type") String credentialType,
@@ -26,7 +25,7 @@ public record CredentialDetailResponse(
 ) {
     public static CredentialDetailResponse from(WalletCredential c) {
         return new CredentialDetailResponse(
-                c.getId(), c.getCredentialRaw(), c.getFormat().getValue(),
+                c.getId(), c.getFormat().getValue(),
                 c.getCredentialConfigId(), c.getCredentialType(), c.getVct(),
                 c.getIssuer(), c.getSubject(), c.getIssuanceDate(), c.getExpirationDate(),
                 c.getStatus().name(), c.getIssuerMetadata(), c.getKid(),
