@@ -38,7 +38,7 @@ public class SecurityConfig {
                         .pathMatchers(HttpMethod.POST, "/api/v1/auth/verify-email").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/v1/auth/logout").permitAll()
-                        .pathMatchers("/health/**").permitAll()
+                        .pathMatchers("/health", "/health/**").permitAll()
                         .anyExchange().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, SecurityWebFiltersOrder.AUTHENTICATION)

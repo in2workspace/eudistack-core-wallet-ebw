@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-04-24
+
+### Fixed
+
+- **Actuator health returning 401 on AWS**: aligned `SecurityConfig` with Issuer/Verifier Core by permitting both `/health` and `/health/**` pathMatchers. With `spring.webflux.base-path=/wallet`, Spring Security sees the path without the base-path prefix, but `pathMatchers("/health/**")` alone does not match the bare `/health` path in Spring 6 — only subpaths (`/health/liveness`, `/health/readiness`). This caused ALB target-group health checks to `/wallet/health` to return 401 Unauthorized. Also aligned the local Docker Compose healthcheck to probe `/wallet/health` (previously `/health`, which 404'd due to the WebFlux base-path). Tracked in EUDISTACK-168.
+
 ## [1.1.4] - 2026-04-23
 
 ### Fixed
