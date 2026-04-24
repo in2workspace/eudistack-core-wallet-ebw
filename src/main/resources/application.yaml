@@ -79,12 +79,31 @@ management:
     health:
       access: unrestricted
       show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:when-authorized}
+      show-components: ${MANAGEMENT_HEALTH_SHOW_COMPONENTS:when-authorized}
       probes:
         enabled: true
+      # SMTP is an informational dependency: its failure must not take the
+      # wallet-ebw out of the ALB pool. Aggregate /health still reports all
+      # indicators (incl. smtp) but readiness/liveness — used by ALB and k8s
+      # probes — only include the state indicators. Mirrors issuer-core.
+      group:
+        readiness:
+          include: readinessState
+        liveness:
+          include: livenessState
     prometheus:
       access: unrestricted
   health:
     livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    # Default Spring MailHealthIndicator hangs on implicit-TLS endpoints
+    # (port 465 / mail.smtp.ssl.enable=true) because it probes with plain
+    # "smtp" transport. Disabled in favour of the custom SmtpHealthIndicator
+    # that selects "smtps" when SSL is enabled. Mirrors issuer-core 3.4.4.
+    mail:
+      enabled: false
 
 logging:
   pattern:

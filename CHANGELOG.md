@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-04-24
+
+### Fixed
+
+- **Aggregate `/wallet/health` returned 503 on STG**: even after 1.1.5 fixed the 401, the ALB probe kept failing because Spring's default `MailHealthIndicator` was DOWN. Applied the same fix shipped in `eudistack-core-issuer` 3.4.4: (1) replaced the default indicator with a custom `SmtpHealthIndicator` that selects the `smtps` transport when SSL is enabled or port is 465 (implicit TLS) — the default always uses plain `smtp` and hangs on AWS SES `:465`; (2) disabled `management.health.mail.enabled` so the two indicators don't overlap; (3) defined `management.endpoint.health.group.readiness`/`liveness` including only `readinessState`/`livenessState`, so SMTP remains visible in the aggregate but cannot take the ECS task out of the ALB pool. Tracked in EUDISTACK-168.
+
 ## [1.1.5] - 2026-04-24
 
 ### Fixed
