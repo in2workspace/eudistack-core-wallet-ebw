@@ -1,4 +1,4 @@
-package es.in2.eudistack.wallet.ebw.infrastructure.config;
+package com.eudistack.ebw.infrastructure.configuration;
 
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
@@ -12,17 +12,18 @@ import reactor.core.publisher.Mono;
 
 import java.io.Closeable;
 
-import static es.in2.eudistack.wallet.ebw.infrastructure.config.TenantDomainWebFilter.TENANT_DOMAIN_CONTEXT_KEY;
+import static com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilter.TENANT_DOMAIN_CONTEXT_KEY;
 
 /**
  * Wraps the R2DBC ConnectionFactory with schema-per-tenant isolation
- * using {@code SET search_path TO <tenant>, public}.
+ * using {@code SET search_path TO <tenant>_business_wallet, public}.
  */
 @Slf4j
 @Configuration(proxyBeanMethods = false)
 public class TenantAwareConnectionFactoryDecorator {
 
     static final String SYSTEM_TENANT = "*";
+    private static final String SCHEMA_SUFFIX = "_business_wallet";
 
     @Bean
     static BeanPostProcessor tenantAwareConnectionFactoryPostProcessor() {
@@ -30,7 +31,7 @@ public class TenantAwareConnectionFactoryDecorator {
             @Override
             public Object postProcessAfterInitialization(Object bean, String beanName) {
                 if ("connectionFactory".equals(beanName) && bean instanceof ConnectionFactory cf) {
-                    log.info("EBW: Wrapping ConnectionFactory with schema-per-tenant decorator");
+                    log.info("Wrapping ConnectionFactory '{}' with schema-per-tenant decorator", beanName);
                     return new TenantAwareConnectionFactory(cf);
                 }
                 return bean;
@@ -72,12 +73,14 @@ public class TenantAwareConnectionFactoryDecorator {
         public void close() { dispose(); }
 
         private Mono<Connection> setSearchPath(Connection connection, String tenant) {
-            String searchPath = SYSTEM_TENANT.equals(tenant) ? "public" : sanitize(tenant) + ", public";
+            String searchPath = SYSTEM_TENANT.equals(tenant)
+                    ? "public"
+                    : sanitize(tenant) + SCHEMA_SUFFIX + ", public";
             return Mono.from(connection.createStatement("SET search_path TO " + searchPath).execute())
                     .then(Mono.just(connection))
-                    .doOnSuccess(c -> log.trace("EBW R2DBC search_path set to '{}'", searchPath))
+                    .doOnSuccess(c -> log.trace("R2DBC search_path set to '{}'", searchPath))
                     .onErrorResume(e -> {
-                        log.warn("EBW: Failed to set search_path: {}", e.getMessage());
+                        log.warn("Failed to set search_path: {}", e.getMessage());
                         return Mono.from(connection.close()).then(Mono.error(e));
                     });
         }

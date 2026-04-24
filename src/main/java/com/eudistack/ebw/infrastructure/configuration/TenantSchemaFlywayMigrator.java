@@ -1,10 +1,9 @@
-package es.in2.eudistack.wallet.ebw.infrastructure.config;
+package com.eudistack.ebw.infrastructure.configuration;
 
 import lombok.extern.slf4j.Slf4j;
 import org.flywaydb.core.Flyway;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.flyway.FlywayProperties;
 import org.springframework.boot.autoconfigure.r2dbc.R2dbcProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -21,9 +20,10 @@ import java.util.List;
 @Slf4j
 @Component
 @Order(1)
-@ConditionalOnProperty(name = "ebw.tenant-flyway.enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties({R2dbcProperties.class, FlywayProperties.class})
 public class TenantSchemaFlywayMigrator implements ApplicationRunner {
+
+    private static final String SCHEMA_SUFFIX = "_business_wallet";
 
     private final FlywayProperties flywayProperties;
     private final R2dbcProperties r2dbcProperties;
@@ -41,16 +41,17 @@ public class TenantSchemaFlywayMigrator implements ApplicationRunner {
 
         migratePublicSchema(jdbcUrl, username, password);
 
-        List<String> tenantSchemas = loadActiveTenantSchemas(jdbcUrl, username, password);
-        for (String schema : tenantSchemas) {
-            migrateTenantSchema(jdbcUrl, username, password, schema);
+        List<String> tenants = loadActiveTenants(jdbcUrl, username, password);
+        for (String tenant : tenants) {
+            migrateTenantSchema(jdbcUrl, username, password, tenant + SCHEMA_SUFFIX);
         }
 
-        log.info("EBW Flyway multi-schema migration completed: public + {} tenant schemas", tenantSchemas.size());
+        log.info("Flyway multi-schema migration completed: public + {} tenant schemas (suffix '{}')",
+                tenants.size(), SCHEMA_SUFFIX);
     }
 
     private void migratePublicSchema(String jdbcUrl, String username, String password) {
-        log.info("EBW: Migrating public schema...");
+        log.info("Migrating public schema...");
         Flyway.configure()
                 .dataSource(jdbcUrl, username, password)
                 .locations("classpath:db/migration")
@@ -61,29 +62,30 @@ public class TenantSchemaFlywayMigrator implements ApplicationRunner {
                 .migrate();
     }
 
-    private List<String> loadActiveTenantSchemas(String jdbcUrl, String username, String password) {
-        List<String> schemas = new ArrayList<>();
+    private List<String> loadActiveTenants(String jdbcUrl, String username, String password) {
+        List<String> tenants = new ArrayList<>();
         try (Connection conn = DriverManager.getConnection(jdbcUrl, username, password);
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(
                      "SELECT schema_name FROM public.tenant_registry WHERE status = 'active'")) {
             while (rs.next()) {
-                schemas.add(rs.getString("schema_name"));
+                tenants.add(rs.getString("schema_name"));
             }
         } catch (Exception e) {
-            log.warn("EBW: Could not load tenant schemas: {}. Expected on first run.", e.getMessage());
+            log.warn("Could not load tenants from tenant_registry: {}. " +
+                    "This is expected on first run before tenant_registry exists.", e.getMessage());
         }
-        log.info("EBW: Found {} active tenant schemas: {}", schemas.size(), schemas);
-        return schemas;
+        log.info("Found {} active tenants: {}", tenants.size(), tenants);
+        return tenants;
     }
 
     private void migrateTenantSchema(String jdbcUrl, String username, String password, String schema) {
-        log.info("EBW: Migrating tenant schema: {}", schema);
+        log.info("Migrating tenant schema: {}", schema);
         try (Connection conn = DriverManager.getConnection(jdbcUrl, username, password);
              Statement stmt = conn.createStatement()) {
             stmt.execute("CREATE SCHEMA IF NOT EXISTS " + sanitizeSchemaName(schema));
         } catch (Exception e) {
-            throw new IllegalStateException("EBW: Failed to create schema: " + schema, e);
+            throw new IllegalStateException("Failed to create schema: " + schema, e);
         }
 
         Flyway.configure()
