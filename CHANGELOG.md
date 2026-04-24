@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-04-24
+
+### Changed
+
+- **`spring.webflux.base-path`: `/wallet` → `/business-wallet`**: align backend base-path with the public URL published by the ALB (`https://<tenant>-stg.eudistack.net/business-wallet/...`). IaC already routed both `/wallet/*` and `/business-wallet/*` to the service but only `/business-wallet/*` is public. All endpoints (auth, actuator) move accordingly. Tracked in EUDISTACK-168.
+
 ## [1.1.6] - 2026-04-24
 
 ### Fixed
