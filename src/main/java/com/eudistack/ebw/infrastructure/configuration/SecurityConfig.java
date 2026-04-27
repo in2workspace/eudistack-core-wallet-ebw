@@ -70,10 +70,8 @@ public class SecurityConfig {
 
     private CorsConfigurationSource corsConfigurationSource() {
         var config = new CorsConfiguration();
-        var origins = corsProperties.allowedOrigins() != null
-                ? Arrays.asList(corsProperties.allowedOrigins().split(","))
-                : List.of("http://localhost:4200");
-        config.setAllowedOrigins(origins);
+        var origins = Arrays.asList(corsProperties.allowedOrigins().split(","));
+        config.setAllowedOriginPatterns(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Api-Version"));
         config.setAllowCredentials(true);

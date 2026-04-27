@@ -23,7 +23,7 @@ import java.util.List;
 @EnableConfigurationProperties({R2dbcProperties.class, FlywayProperties.class})
 public class TenantSchemaFlywayMigrator implements ApplicationRunner {
 
-    private static final String SCHEMA_SUFFIX = "_business_wallet";
+    private static final String SCHEMA_SUFFIX = TenantAwareConnectionFactoryDecorator.SCHEMA_SUFFIX;
 
     private final FlywayProperties flywayProperties;
     private final R2dbcProperties r2dbcProperties;

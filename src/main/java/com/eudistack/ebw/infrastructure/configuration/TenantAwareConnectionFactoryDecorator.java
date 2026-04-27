@@ -23,7 +23,7 @@ import static com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilt
 public class TenantAwareConnectionFactoryDecorator {
 
     static final String SYSTEM_TENANT = "*";
-    private static final String SCHEMA_SUFFIX = "_business_wallet";
+    static final String SCHEMA_SUFFIX = "_business_wallet";
 
     @Bean
     static BeanPostProcessor tenantAwareConnectionFactoryPostProcessor() {
