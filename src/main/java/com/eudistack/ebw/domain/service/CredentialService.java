@@ -373,13 +373,16 @@ public class CredentialService {
     private ParsedCredential parseJwt(String raw) throws ParseException {
         var jwt = SignedJWT.parse(raw);
         var claims = jwt.getJWTClaimsSet();
+        var claimsMap = claims.getClaims();
 
-        var issuer = claims.getIssuer();
+        // W3C JWTs set "issuer" (object) at top level, not the standard "iss" string claim.
+        // resolveIssuer() checks "issuer" first, then "iss", handling both formats.
+        var issuer = resolveIssuer(claimsMap).id();
         var subject = claims.getSubject();
         var issuanceDate = claims.getIssueTime() != null ? claims.getIssueTime().toInstant() : Instant.now();
         var expirationDate = claims.getExpirationTime() != null ? claims.getExpirationTime().toInstant() : null;
 
-        var credentialType = extractCredentialType(claims.getClaims());
+        var credentialType = extractCredentialType(claimsMap);
 
         return new ParsedCredential(issuer, subject, issuanceDate, expirationDate, credentialType, null);
     }
