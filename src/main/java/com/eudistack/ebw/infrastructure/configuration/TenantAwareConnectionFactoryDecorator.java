@@ -12,7 +12,7 @@ import reactor.core.publisher.Mono;
 
 import java.io.Closeable;
 
-import static com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilter.TENANT_DOMAIN_CONTEXT_KEY;
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 
 /**
  * Wraps the R2DBC ConnectionFactory with schema-per-tenant isolation
@@ -50,7 +50,7 @@ public class TenantAwareConnectionFactoryDecorator {
         @Override
         public Publisher<? extends Connection> create() {
             return Mono.deferContextual(ctx -> {
-                String tenant = ctx.getOrDefault(TENANT_DOMAIN_CONTEXT_KEY, SYSTEM_TENANT);
+                String tenant = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, SYSTEM_TENANT);
                 return Mono.from(delegate.create())
                         .flatMap(connection -> setSearchPath(connection, tenant));
             });

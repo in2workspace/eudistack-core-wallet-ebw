@@ -57,9 +57,10 @@ ebw:
     key-path: ${ENCRYPTION_KEY_PATH:}
     key: ${ENCRYPTION_KEY:}
   cors:
-    allowed-origins: ${CORS_ORIGINS:*}
+    allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
   security:
     max-payload-size: 65536
+    trust-forwarded-host: ${TRUST_FORWARDED_HOST:false}
 
 management:
   otlp:
