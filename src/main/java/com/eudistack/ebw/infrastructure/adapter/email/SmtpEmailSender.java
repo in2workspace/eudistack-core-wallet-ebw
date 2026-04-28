@@ -32,7 +32,7 @@ public class SmtpEmailSender implements EmailSender {
     }
 
     @Override
-    public Mono<Void> sendOtp(String email, String code) {
+    public Mono<Void> sendOtp(String email, String code, String from) {
         return Mono.fromCallable(() -> {
             var context = new Context(Locale.getDefault());
             context.setVariable("txCode", code);
@@ -42,6 +42,7 @@ public class SmtpEmailSender implements EmailSender {
 
             var mimeMessage = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mimeMessage, "UTF-8");
+            helper.setFrom(from);
             helper.setTo(email);
             helper.setSubject(subject);
             helper.setText(html, true);

@@ -60,8 +60,6 @@ ebw:
     allowed-origins: ${CORS_ORIGINS:*}
   security:
     max-payload-size: 65536
-  registration:
-    allowed-email-domains: ${ALLOWED_EMAIL_DOMAINS:*}
 
 management:
   otlp:

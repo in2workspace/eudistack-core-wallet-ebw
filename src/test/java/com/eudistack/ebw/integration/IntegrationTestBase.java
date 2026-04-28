@@ -93,7 +93,7 @@ public abstract class IntegrationTestBase {
             String code = invocation.getArgument(1);
             capturedOtps.put(email, code);
             return Mono.empty();
-        }).when(emailSender).sendOtp(anyString(), anyString());
+        }).when(emailSender).sendOtp(anyString(), anyString(), anyString());
     }
 
     @SuppressWarnings("unchecked")

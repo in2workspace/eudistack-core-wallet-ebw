@@ -20,14 +20,18 @@ import java.time.Instant;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class OtpServiceTest {
+
+    private static final String DEFAULT_FROM = "noreply@test.com";
 
     private EmailVerificationRepository verificationRepository;
     private HashProvider hashProvider;
     private SecureRandomGenerator randomGenerator;
     private EmailSender emailSender;
+    private TenantConfigService tenantConfigService;
     private OtpService otpService;
 
     @BeforeEach
@@ -36,8 +40,11 @@ class OtpServiceTest {
         hashProvider = mock(HashProvider.class);
         randomGenerator = mock(SecureRandomGenerator.class);
         emailSender = mock(EmailSender.class);
+        tenantConfigService = mock(TenantConfigService.class);
+        when(tenantConfigService.getStringOrDefault(eq("ebw.mail_from"), anyString()))
+                .thenReturn(Mono.just(DEFAULT_FROM));
         otpService = new OtpService(verificationRepository, hashProvider, randomGenerator,
-                emailSender, 6, Duration.ofMinutes(10), 5);
+                emailSender, tenantConfigService, DEFAULT_FROM, 6, Duration.ofMinutes(10), 5);
     }
 
     @Test
@@ -48,7 +55,7 @@ class OtpServiceTest {
         when(hashProvider.hash("482916")).thenReturn(Mono.just("bcrypt-hash"));
         when(verificationRepository.invalidateByEmail(email)).thenReturn(Mono.empty());
         when(verificationRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-        when(emailSender.sendOtp(email, "482916")).thenReturn(Mono.empty());
+        when(emailSender.sendOtp(email, "482916", DEFAULT_FROM)).thenReturn(Mono.empty());
 
         // Act
         var result = otpService.generateAndSend(email);
@@ -58,7 +65,7 @@ class OtpServiceTest {
                 .verifyComplete();
 
         verify(verificationRepository).invalidateByEmail(email);
-        verify(emailSender).sendOtp(email, "482916");
+        verify(emailSender).sendOtp(email, "482916", DEFAULT_FROM);
 
         var captor = ArgumentCaptor.forClass(EmailVerification.class);
         verify(verificationRepository).save(captor.capture());
