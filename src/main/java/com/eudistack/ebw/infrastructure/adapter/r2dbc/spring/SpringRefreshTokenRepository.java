@@ -13,21 +13,21 @@ public interface SpringRefreshTokenRepository extends ReactiveCrudRepository<Ref
     Mono<RefreshTokenEntity> findByTokenHash(String tokenHash);
 
     @Modifying
-    @Query("UPDATE refresh_token SET revoked = true WHERE passkey_id = $1 AND revoked = false")
+    @Query("UPDATE refresh_token SET revoked = true WHERE passkey_id = :passkeyId AND revoked = false")
     Mono<Void> revokeByPasskeyId(UUID passkeyId);
 
     @Modifying
-    @Query("UPDATE refresh_token SET revoked = true WHERE user_id = $1 AND revoked = false")
+    @Query("UPDATE refresh_token SET revoked = true WHERE user_id = :userId AND revoked = false")
     Mono<Void> revokeByUserId(UUID userId);
 
-    @Query("SELECT COUNT(*) FROM refresh_token WHERE passkey_id = $1 AND revoked = false AND expires_at > NOW()")
+    @Query("SELECT COUNT(*) FROM refresh_token WHERE passkey_id = :passkeyId AND revoked = false AND expires_at > NOW()")
     Mono<Long> countActiveByPasskeyId(UUID passkeyId);
 
     @Modifying
-    @Query("UPDATE refresh_token SET passkey_id = $2 WHERE token_hash = $1 AND revoked = false")
+    @Query("UPDATE refresh_token SET passkey_id = :passkeyId WHERE token_hash = :tokenHash AND revoked = false")
     Mono<Void> updatePasskeyIdByTokenHash(String tokenHash, UUID passkeyId);
 
     @Modifying
-    @Query("UPDATE refresh_token SET passkey_id = $2 WHERE user_id = $1 AND passkey_id IS NULL AND revoked = false")
+    @Query("UPDATE refresh_token SET passkey_id = :passkeyId WHERE user_id = :userId AND passkey_id IS NULL AND revoked = false")
     Mono<Void> linkOrphanTokensToPasskey(UUID userId, UUID passkeyId);
 }

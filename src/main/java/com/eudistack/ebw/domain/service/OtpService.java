@@ -8,11 +8,13 @@ import com.eudistack.ebw.domain.repository.EmailVerificationRepository;
 import com.eudistack.ebw.domain.spi.EmailSender;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
+import lombok.RequiredArgsConstructor;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
 
+@RequiredArgsConstructor
 public class OtpService {
 
     private final EmailVerificationRepository verificationRepository;
@@ -22,22 +24,6 @@ public class OtpService {
     private final int otpLength;
     private final Duration otpExpiration;
     private final int maxAttempts;
-
-    public OtpService(EmailVerificationRepository verificationRepository,
-                      HashProvider hashProvider,
-                      SecureRandomGenerator randomGenerator,
-                      EmailSender emailSender,
-                      int otpLength,
-                      Duration otpExpiration,
-                      int maxAttempts) {
-        this.verificationRepository = verificationRepository;
-        this.hashProvider = hashProvider;
-        this.randomGenerator = randomGenerator;
-        this.emailSender = emailSender;
-        this.otpLength = otpLength;
-        this.otpExpiration = otpExpiration;
-        this.maxAttempts = maxAttempts;
-    }
 
     public Mono<Void> generateAndSend(String email) {
         var code = randomGenerator.generateOtp(otpLength);

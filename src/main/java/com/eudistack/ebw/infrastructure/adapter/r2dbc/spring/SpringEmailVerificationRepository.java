@@ -10,10 +10,10 @@ import java.util.UUID;
 
 public interface SpringEmailVerificationRepository extends ReactiveCrudRepository<EmailVerificationEntity, UUID> {
 
-    @Query("SELECT * FROM email_verification WHERE user_email = $1 AND used = false AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1")
+    @Query("SELECT * FROM email_verification WHERE user_email = :email AND used = false AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1")
     Mono<EmailVerificationEntity> findActiveByEmail(String email);
 
     @Modifying
-    @Query("UPDATE email_verification SET used = true WHERE user_email = $1 AND used = false")
+    @Query("UPDATE email_verification SET used = true WHERE user_email = :email AND used = false")
     Mono<Void> invalidateByEmail(String email);
 }

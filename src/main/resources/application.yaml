@@ -40,7 +40,7 @@ ebw:
     private-key-path: ${JWT_PRIVATE_KEY_PATH:}
     access-token-ttl: 15m
     refresh-token-ttl: 90d
-    issuer: eudistack-ebw
+    issuer: ${EBW_JWT_ISSUER:eudistack-ebw}
   otp:
     length: 6
     expiration: 10m
@@ -53,12 +53,14 @@ ebw:
     refresh-per-ip: 60
     logout-per-ip: 20
     window: 1h
+  encryption:
+    key-path: ${ENCRYPTION_KEY_PATH:}
+    key: ${ENCRYPTION_KEY:}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
   security:
     max-payload-size: 65536
-  registration:
-    allowed-email-domains: ${ALLOWED_EMAIL_DOMAINS:*}
+    trust-forwarded-host: ${TRUST_FORWARDED_HOST:false}
 
 management:
   otlp:

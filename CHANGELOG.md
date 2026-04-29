@@ -49,6 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.1] - 2026-04-23
 
+### Added
+
+- EUDI-040: Wallet credential CRUD endpoints (`POST/GET/PATCH/DELETE /api/credentials`)
+- AES-256-GCM at-rest encryption for `credential_raw` (IV prepended, GCM tag 128, per-encryption IV)
+- Status lifecycle management with validated transitions (VALID ↔ SUSPENDED, → REVOKED/EXPIRED terminal)
+- Audit trail: `CREATED`, `STATUS_CHANGED`, `DELETED` events with correlatable `entity_hash` (SHA-256)
+- Cross-user isolation: identical 404 responses for missing vs other-user credentials (anti-enumeration)
+
 ### Fixed
 
 - **EBW startup on STG**: disabled Spring Boot's auto-configured `flywayInitializer` (`spring.flyway.enabled: false`) in `application.yaml`. The auto-config was attempting a JDBC connection without user/password (only `SPRING_FLYWAY_URL` is injected in ECS), causing `SCRAM-based authentication, but no password was provided` and aborting context startup. `TenantSchemaFlywayMigrator` continues to run migrations for `public` + all tenant schemas using R2DBC credentials. Mirrors the fix already shipped in `eudistack-core-issuer` 3.4.2.

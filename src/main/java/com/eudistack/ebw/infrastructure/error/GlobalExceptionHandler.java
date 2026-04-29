@@ -21,6 +21,18 @@ public class GlobalExceptionHandler {
 
     // Auth exceptions — OAuth2 format for frontend compatibility
     // AC-002.2 / AC-002.4: both invalid and expired OTP return the same generic error
+    @ExceptionHandler(UserAlreadyRegisteredException.class)
+    public ResponseEntity<Map<String, String>> handleUserAlreadyRegistered(UserAlreadyRegisteredException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", "user_already_registered", "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleUserNotFound(UserNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "user_not_found", "message", ex.getMessage()));
+    }
+
     @ExceptionHandler({InvalidOtpException.class, OtpExpiredException.class})
     public ResponseEntity<Map<String, String>> handleInvalidOrExpiredOtp(Exception ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -89,6 +101,34 @@ public class GlobalExceptionHandler {
         var problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         problem.setType(URI.create("urn:eudistack:error:invalid-transition"));
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(problem);
+    }
+
+    @ExceptionHandler(CredentialNotFoundException.class)
+    public ResponseEntity<ProblemDetail> handleCredentialNotFound(CredentialNotFoundException ex) {
+        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setType(URI.create("urn:eudistack:error:credential-not-found"));
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
+    }
+
+    @ExceptionHandler(UnsupportedFormatException.class)
+    public ResponseEntity<ProblemDetail> handleUnsupportedFormat(UnsupportedFormatException ex) {
+        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setType(URI.create("urn:eudistack:error:unsupported-format"));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    @ExceptionHandler(MalformedCredentialException.class)
+    public ResponseEntity<ProblemDetail> handleMalformedCredential(MalformedCredentialException ex) {
+        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setType(URI.create("urn:eudistack:error:malformed-credential"));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ProblemDetail> handleIllegalArgument(IllegalArgumentException ex) {
+        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setType(URI.create("urn:eudistack:error:bad-request"));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 
     @ExceptionHandler(WebExchangeBindException.class)
