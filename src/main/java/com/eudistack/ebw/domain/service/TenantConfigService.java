@@ -6,26 +6,23 @@ import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.model.TenantConfig;
 import com.eudistack.ebw.domain.model.exception.TenantConfigMissingException;
 import com.eudistack.ebw.domain.repository.TenantConfigRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 
 @Slf4j
+@RequiredArgsConstructor
 public class TenantConfigService {
 
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
 
     private final TenantConfigRepository tenantConfigRepository;
-    private final Cache<String, String> cache;
-
-    public TenantConfigService(TenantConfigRepository tenantConfigRepository) {
-        this.tenantConfigRepository = tenantConfigRepository;
-        this.cache = Caffeine.newBuilder()
-                .expireAfterWrite(CACHE_TTL)
-                .maximumSize(500)
-                .build();
-    }
+    private final Cache<String, String> cache = Caffeine.newBuilder()
+            .expireAfterWrite(CACHE_TTL)
+            .maximumSize(500)
+            .build();
 
     public Mono<String> getString(String key) {
         return Mono.deferContextual(ctx -> {

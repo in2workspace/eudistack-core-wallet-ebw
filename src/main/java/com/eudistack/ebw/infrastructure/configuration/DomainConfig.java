@@ -16,7 +16,6 @@ import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.infrastructure.adapter.properties.JwtProperties;
 import com.eudistack.ebw.infrastructure.adapter.properties.OtpProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -28,11 +27,8 @@ public class DomainConfig {
                                  HashProvider hashProvider,
                                  SecureRandomGenerator randomGenerator,
                                  EmailSender emailSender,
-                                 TenantConfigService tenantConfigService,
-                                 OtpProperties otpProperties,
-                                 @Value("${spring.mail.properties.mail.smtp.from:noreply@eudistack.com}") String defaultMailFrom) {
+                                 OtpProperties otpProperties) {
         return new OtpService(verificationRepository, hashProvider, randomGenerator, emailSender,
-                tenantConfigService, defaultMailFrom,
                 otpProperties.length(), otpProperties.expiration(), otpProperties.maxAttempts());
     }
 

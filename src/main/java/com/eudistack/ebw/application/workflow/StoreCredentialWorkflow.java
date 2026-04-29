@@ -7,6 +7,7 @@ import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.CredentialService;
 import com.eudistack.ebw.domain.service.TenantConfigService;
 import com.eudistack.ebw.domain.spi.CredentialEncryptor;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class StoreCredentialWorkflow {
 
     private static final Logger log = LoggerFactory.getLogger(StoreCredentialWorkflow.class);
@@ -27,18 +29,6 @@ public class StoreCredentialWorkflow {
     private final CredentialEncryptor encryptor;
     private final WalletCredentialRepository credentialRepository;
     private final AuditService auditService;
-
-    public StoreCredentialWorkflow(CredentialService credentialService,
-                                    TenantConfigService tenantConfigService,
-                                    CredentialEncryptor encryptor,
-                                    WalletCredentialRepository credentialRepository,
-                                    AuditService auditService) {
-        this.credentialService = credentialService;
-        this.tenantConfigService = tenantConfigService;
-        this.encryptor = encryptor;
-        this.credentialRepository = credentialRepository;
-        this.auditService = auditService;
-    }
 
     public Mono<WalletCredential> storeCredential(UUID userId, String credentialRaw, String format,
                                                     String credentialConfigId, String kid,
