@@ -19,6 +19,7 @@ public final class ConfigurationAuditEvent {
     public enum Event {
         CONFIG_CREATED,
         CONFIG_UPDATED,
+        CONFIG_REJECTED,
         CACHE_INVALIDATION_FAILED
     }
 
