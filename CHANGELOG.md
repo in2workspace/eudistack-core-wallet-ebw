@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **EUDISTACK-412 — Flyway migrations for the wallet discovery plane.** Added `db/migration/V2__Create_tenant_wallet_config.sql` creating `public.tenant_wallet_config` (column set aligned with `WalletTenantConfigEntity` and the `WalletTenantConfigR2dbcAdapter` UPSERT, including `updated_by`), FK to `public.tenant_registry`, browser/server CHECK constraints (FR-20), and an index on `host`. Added `db/tenant/V3__Wallet_config_audit.sql` creating `<tenant>_business_wallet.wallet_config_audit` (column set aligned with the `TenantConfigAuditR2dbcAdapter` INSERT) plus a `BEFORE UPDATE OR DELETE` trigger that makes the table append-only. These tables were previously declared in `eudistack-platform-iac/db/migration/`, which has no Flyway runner — they belong with the EBW (which owns and migrates the `public` schema via `TenantSchemaFlywayMigrator`), as `tenant_wallet_config` is a sibling of `tenant_registry` (feature-design §4.2). Corrective work on Task 8 of EUDISTACK-412.
+
 ## [1.1.7] - 2026-04-24
 
 ### Changed

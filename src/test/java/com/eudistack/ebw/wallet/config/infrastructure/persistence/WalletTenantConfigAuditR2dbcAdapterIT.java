@@ -72,17 +72,35 @@ class WalletTenantConfigAuditR2dbcAdapterIT {
                 .then()
                 .block();
 
+        // Mirrors db/tenant/V3__Wallet_config_audit.sql (column set + append-only trigger).
         dbClient.sql("CREATE TABLE IF NOT EXISTS " + AUDIT_TABLE + " ("
                 + "id UUID PRIMARY KEY DEFAULT gen_random_uuid(), "
-                + "actor VARCHAR(255), "
-                + "event TEXT, "
-                + "plane TEXT, "
-                + "field_changes JSONB, "
-                + "outcome TEXT, "
-                + "reason TEXT, "
+                + "actor VARCHAR(255) NOT NULL, "
+                + "event VARCHAR(50) NOT NULL, "
+                + "plane VARCHAR(50) NOT NULL, "
+                + "field_changes JSONB NOT NULL DEFAULT '{}'::jsonb, "
+                + "outcome VARCHAR(20) NOT NULL, "
+                + "reason VARCHAR(1000), "
                 + "correlation_id VARCHAR(255), "
                 + "occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
                 + ")")
+                .then()
+                .block();
+
+        dbClient.sql("CREATE OR REPLACE FUNCTION " + TENANT_SCHEMA + ".wallet_config_audit_append_only() "
+                + "RETURNS trigger AS $$ BEGIN "
+                + "RAISE EXCEPTION 'wallet_config_audit is append-only; % not allowed', TG_OP; "
+                + "END; $$ LANGUAGE plpgsql")
+                .then()
+                .block();
+
+        dbClient.sql("DROP TRIGGER IF EXISTS trg_wallet_config_audit_append_only ON " + AUDIT_TABLE)
+                .then()
+                .block();
+
+        dbClient.sql("CREATE TRIGGER trg_wallet_config_audit_append_only "
+                + "BEFORE UPDATE OR DELETE ON " + AUDIT_TABLE + " "
+                + "FOR EACH ROW EXECUTE FUNCTION " + TENANT_SCHEMA + ".wallet_config_audit_append_only()")
                 .then()
                 .block();
     }
