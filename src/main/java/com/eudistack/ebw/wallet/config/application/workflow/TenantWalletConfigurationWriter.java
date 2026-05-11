@@ -71,6 +71,7 @@ public class TenantWalletConfigurationWriter {
             log.warn("Configuration rejected for host={}, field={}, value={}",
                     command.host(), ex.getConflictingField(), ex.getReceivedValue());
             ConfigurationAuditEvent rejectionEvent = ConfigurationAuditEvent.create(
+                    command.schemaName(),
                     command.actor(),
                     Event.CONFIG_REJECTED,
                     Plane.DISCOVERY,
@@ -96,6 +97,7 @@ public class TenantWalletConfigurationWriter {
                 .flatMap(saved -> {
                     Event eventType = saved.getVersion() <= 1 ? Event.CONFIG_CREATED : Event.CONFIG_UPDATED;
                     ConfigurationAuditEvent permitEvent = ConfigurationAuditEvent.create(
+                            command.schemaName(),
                             command.actor(),
                             eventType,
                             Plane.DISCOVERY,
@@ -110,11 +112,12 @@ public class TenantWalletConfigurationWriter {
                             log.error("Cache invalidation failed for host={}, error={}",
                                     command.host(), cacheError.getMessage());
                             ConfigurationAuditEvent cacheFailureEvent = ConfigurationAuditEvent.create(
+                                    command.schemaName(),
                                     command.actor(),
                                     Event.CACHE_INVALIDATION_FAILED,
                                     Plane.DISCOVERY,
                                     Collections.emptyMap(),
-                                    Outcome.PERMIT,
+                                    Outcome.DENY,
                                     cacheError.getMessage(),
                                     command.correlationId());
                             return configurationAuditPort.append(cacheFailureEvent);

@@ -1,6 +1,7 @@
 package com.eudistack.ebw.infrastructure.error;
 
 import com.eudistack.ebw.domain.model.exception.*;
+import com.eudistack.ebw.wallet.config.domain.exception.ConfigInvariantViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -122,6 +123,16 @@ public class GlobalExceptionHandler {
         var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         problem.setType(URI.create("urn:eudistack:error:malformed-credential"));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    @ExceptionHandler(ConfigInvariantViolationException.class)
+    public ResponseEntity<ProblemDetail> handleConfigInvariantViolation(
+            ConfigInvariantViolationException ex) {
+        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setType(URI.create("urn:eudistack:error:config-invariant-violation"));
+        problem.setTitle("Invariant violation");
+        problem.setProperty("conflicting_field", ex.getConflictingField());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

@@ -61,6 +61,8 @@ ebw:
   security:
     max-payload-size: 65536
     trust-forwarded-host: ${TRUST_FORWARDED_HOST:false}
+  cloudfront:
+    distribution-id: ${CLOUDFRONT_DISTRIBUTION_ID:}
 
 management:
   otlp:

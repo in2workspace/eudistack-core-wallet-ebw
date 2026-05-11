@@ -9,7 +9,8 @@ import java.util.UUID;
  * Value Object representing an immutable audit entry for a wallet configuration change.
  *
  * <p>Append-only. Once created, an audit event is never modified.
- * Persisted by {@code ConfigurationAuditPort} to the tenant's audit table.
+ * Persisted by {@code ConfigurationAuditPort} to the tenant's audit table
+ * ({@code <schemaName>_business_wallet.wallet_config_audit}).
  */
 public final class ConfigurationAuditEvent {
 
@@ -46,6 +47,7 @@ public final class ConfigurationAuditEvent {
     public record FieldDelta(String from, String to) {
     }
 
+    private final String schemaName;
     private final String actor;
     private final Event event;
     private final Plane plane;
@@ -56,6 +58,7 @@ public final class ConfigurationAuditEvent {
     private final Instant occurredAt;
 
     private ConfigurationAuditEvent(
+            String schemaName,
             String actor,
             Event event,
             Plane plane,
@@ -64,6 +67,7 @@ public final class ConfigurationAuditEvent {
             String reason,
             String correlationId,
             Instant occurredAt) {
+        this.schemaName = schemaName;
         this.actor = actor;
         this.event = event;
         this.plane = plane;
@@ -75,6 +79,7 @@ public final class ConfigurationAuditEvent {
     }
 
     public static ConfigurationAuditEvent create(
+            String schemaName,
             String actor,
             Event event,
             Plane plane,
@@ -83,6 +88,7 @@ public final class ConfigurationAuditEvent {
             String reason,
             String correlationId) {
         return new ConfigurationAuditEvent(
+                schemaName,
                 actor,
                 event,
                 plane,
@@ -91,6 +97,10 @@ public final class ConfigurationAuditEvent {
                 reason,
                 correlationId != null ? correlationId : UUID.randomUUID().toString(),
                 Instant.now());
+    }
+
+    public String getSchemaName() {
+        return schemaName;
     }
 
     public String getActor() {
