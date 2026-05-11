@@ -1,6 +1,7 @@
 package com.eudistack.ebw.wallet.config.infrastructure.adapter.r2dbc;
 
 import com.eudistack.ebw.wallet.config.domain.model.ConfigurationAuditEvent;
+import com.eudistack.ebw.wallet.config.domain.model.SchemaName;
 import com.eudistack.ebw.wallet.config.domain.port.ConfigurationAuditPort;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -52,40 +53,44 @@ public class TenantConfigAuditR2dbcAdapter implements ConfigurationAuditPort {
      */
     @Override
     public Mono<Void> append(ConfigurationAuditEvent event) {
-        String schemaName = event.getSchemaName();
-        String qualifiedTable = schemaName + SCHEMA_SUFFIX + ".wallet_config_audit";
-        String fieldChangesJson = serializeFieldChanges(event);
+        return Mono.defer(() -> {
+            // SEC-B1: validate the schema name before interpolating it into the table identifier.
+            // schemaName flows from the admin PUT path variable / POST body — never trust it here.
+            String schemaName = SchemaName.requireValid(event.getSchemaName());
+            String qualifiedTable = schemaName + SCHEMA_SUFFIX + ".wallet_config_audit";
+            String fieldChangesJson = serializeFieldChanges(event);
 
-        String sql = "INSERT INTO " + qualifiedTable
-                + " (actor, event, plane, field_changes, outcome, reason, correlation_id, occurred_at)"
-                + " VALUES (:actor, :event::text, :plane::text, :fieldChanges::jsonb,"
-                + "        :outcome::text, :reason, :correlationId, :occurredAt)";
+            String sql = "INSERT INTO " + qualifiedTable
+                    + " (actor, event, plane, field_changes, outcome, reason, correlation_id, occurred_at)"
+                    + " VALUES (:actor, :event::text, :plane::text, :fieldChanges::jsonb,"
+                    + "        :outcome::text, :reason, :correlationId, :occurredAt)";
 
-        log.debug("Appending audit entry: table={}, event={}, outcome={}",
-                qualifiedTable, event.getEvent(), event.getOutcome());
+            log.debug("Appending audit entry: table={}, event={}, outcome={}",
+                    qualifiedTable, event.getEvent(), event.getOutcome());
 
-        DatabaseClient.GenericExecuteSpec spec = databaseClient.sql(sql)
-                .bind("actor", event.getActor() != null ? event.getActor() : "unknown")
-                .bind("event", event.getEvent().name())
-                .bind("plane", event.getPlane().name())
-                .bind("fieldChanges", fieldChangesJson)
-                .bind("outcome", event.getOutcome().name())
-                .bind("correlationId", event.getCorrelationId())
-                .bind("occurredAt", event.getOccurredAt());
+            DatabaseClient.GenericExecuteSpec spec = databaseClient.sql(sql)
+                    .bind("actor", event.getActor() != null ? event.getActor() : "unknown")
+                    .bind("event", event.getEvent().name())
+                    .bind("plane", event.getPlane().name())
+                    .bind("fieldChanges", fieldChangesJson)
+                    .bind("outcome", event.getOutcome().name())
+                    .bind("correlationId", event.getCorrelationId())
+                    .bind("occurredAt", event.getOccurredAt());
 
-        if (event.getReason() != null) {
-            spec = spec.bind("reason", event.getReason());
-        } else {
-            spec = spec.bindNull("reason", String.class);
-        }
+            if (event.getReason() != null) {
+                spec = spec.bind("reason", event.getReason());
+            } else {
+                spec = spec.bindNull("reason", String.class);
+            }
 
-        return spec.then()
-                .doOnSuccess(v -> log.debug(
-                        "Audit entry appended: event={}, correlationId={}",
-                        event.getEvent(), event.getCorrelationId()))
-                .doOnError(e -> log.error(
-                        "Failed to append audit entry: event={}, correlationId={}, error={}",
-                        event.getEvent(), event.getCorrelationId(), e.getMessage()));
+            return spec.then()
+                    .doOnSuccess(v -> log.debug(
+                            "Audit entry appended: event={}, correlationId={}",
+                            event.getEvent(), event.getCorrelationId()))
+                    .doOnError(e -> log.error(
+                            "Failed to append audit entry: event={}, correlationId={}, error={}",
+                            event.getEvent(), event.getCorrelationId(), e.getMessage()));
+        });
     }
 
     private String serializeFieldChanges(ConfigurationAuditEvent event) {
