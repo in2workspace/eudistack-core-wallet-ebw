@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.config.annotation.method.configuration.EnableReactiveMethodSecurity;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -20,7 +21,11 @@ import java.util.List;
 
 @Configuration
 @EnableWebFluxSecurity
+@EnableReactiveMethodSecurity
 public class SecurityConfig {
+
+    /** Authority required to call the admin wallet-tenant-config endpoints (SEC-B2). */
+    private static final String TENANT_CONFIG_WRITE = "SCOPE_tenant.config.write";
 
     private final JwtAuthenticationWebFilter jwtAuthFilter;
     private final CorsProperties corsProperties;
@@ -54,6 +59,10 @@ public class SecurityConfig {
                         .pathMatchers(HttpMethod.POST, "/api/v1/auth/logout").permitAll()
                         .pathMatchers("/health", "/health/**").permitAll()
                         .pathMatchers(HttpMethod.GET, "/.well-known/wallet-tenant-config").permitAll()
+                        // SEC-B2: the admin write endpoints must require an explicit admin scope —
+                        // an ordinary EBW user JWT (no scope claim) authenticates with zero
+                        // authorities and is therefore rejected here with 403.
+                        .pathMatchers("/admin/**").hasAuthority(TENANT_CONFIG_WRITE)
                         .anyExchange().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, SecurityWebFiltersOrder.AUTHENTICATION)
