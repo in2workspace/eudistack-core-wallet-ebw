@@ -145,6 +145,10 @@ tasks.jacocoTestReport {
 
 // Integration tests (separate task)
 tasks.register('integrationTest', Test) {
+    description = 'Runs tests tagged with @Tag("integration") (requires Docker/Testcontainers).'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform {
         includeTags 'integration'
     }
