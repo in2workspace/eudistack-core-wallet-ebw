@@ -33,8 +33,9 @@ CREATE TABLE IF NOT EXISTS public.tenant_wallet_config (
     created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_twc_wallet_mode CHECK (wallet_mode IN ('browser', 'server')),
+    -- Values are kebab-case, matching KeyManager#getValue() — 'db-tde', not 'db_tde'.
     CONSTRAINT chk_twc_key_manager CHECK (
-        key_manager IS NULL OR key_manager IN ('db_tde', 'hybrid', 'hsm', 'qtsp')
+        key_manager IS NULL OR key_manager IN ('db-tde', 'hybrid', 'hsm', 'qtsp')
     ),
     -- FR-20: browser-mode tenants always have key_manager = NULL.
     CONSTRAINT chk_twc_browser_no_key_manager CHECK (
