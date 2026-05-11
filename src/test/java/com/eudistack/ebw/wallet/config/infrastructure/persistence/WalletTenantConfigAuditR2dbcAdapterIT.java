@@ -1,6 +1,7 @@
 package com.eudistack.ebw.wallet.config.infrastructure.persistence;
 
 import com.eudistack.ebw.wallet.config.domain.model.ConfigurationAuditEvent;
+import com.eudistack.ebw.wallet.config.domain.model.ConfigurationAuditEvent.FieldDelta;
 import com.eudistack.ebw.wallet.config.infrastructure.adapter.r2dbc.TenantConfigAuditR2dbcAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
@@ -10,6 +11,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.data.r2dbc.core.DefaultReactiveDataAccessStrategy;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.data.r2dbc.dialect.PostgresDialect;
@@ -168,6 +171,99 @@ class WalletTenantConfigAuditR2dbcAdapterIT {
         assertThat(fieldChangesJson).doesNotContain("password");
         assertThat(fieldChangesJson).doesNotContain("secret");
         assertThat(fieldChangesJson).doesNotContain("token");
+    }
+
+    // ------------------------------------------------------------------
+    // B1: field_changes from/to deltas are persisted as queryable jsonb
+    // ------------------------------------------------------------------
+
+    /**
+     * B1: a {@code CONFIG_CREATED} event with concrete from/to deltas stores them in the
+     * {@code field_changes} jsonb so the audit trail has "valor anterior y valor nuevo" (AC-3a).
+     */
+    @Test
+    void append_withFieldDeltas_storesFromToInJsonb() {
+        // Given
+        String correlationId = "corr-deltas-001";
+        Map<String, FieldDelta> fieldChanges = Map.of(
+                "wallet_mode", new FieldDelta(null, "browser"),
+                "natural_persons_only", new FieldDelta("false", "true"));
+
+        ConfigurationAuditEvent event = ConfigurationAuditEvent.create(
+                TEST_SCHEMA, "devops@example.com", ConfigurationAuditEvent.Event.CONFIG_CREATED,
+                ConfigurationAuditEvent.Plane.DISCOVERY, fieldChanges,
+                ConfigurationAuditEvent.Outcome.PERMIT, null, correlationId);
+
+        // When
+        StepVerifier.create(adapter.append(event)).verifyComplete();
+
+        // Then: the jsonb carries the from/to structure for the changed fields
+        Map<String, Object> row = dbClient
+                .sql("SELECT field_changes->'wallet_mode'->>'to' AS wallet_mode_to, "
+                        + "field_changes->'natural_persons_only'->>'from' AS npo_from, "
+                        + "field_changes->'natural_persons_only'->>'to' AS npo_to "
+                        + "FROM " + AUDIT_TABLE + " WHERE correlation_id = :corrId")
+                .bind("corrId", correlationId)
+                .fetch()
+                .one()
+                .block();
+
+        assertThat(row).isNotNull();
+        assertThat(row.get("wallet_mode_to")).isEqualTo("browser");
+        assertThat(row.get("npo_from")).isEqualTo("false");
+        assertThat(row.get("npo_to")).isEqualTo("true");
+    }
+
+    // ------------------------------------------------------------------
+    // SEC-B1: a malicious schemaName is rejected at the adapter boundary
+    // ------------------------------------------------------------------
+
+    /**
+     * SEC-B1: {@code append()} validates the schema name before interpolating it into the table
+     * identifier. A schema name that is not a strict PostgreSQL identifier is rejected with
+     * {@link IllegalArgumentException} (→ HTTP 400) and no SQL is ever executed.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "x_business_wallet.victim_business_wallet.wallet_config_audit; --",
+            "../x",
+            "DROP",
+            "a b",
+            "acme;DROP TABLE x",
+            ""
+    })
+    void append_maliciousSchemaName_isRejected(String maliciousSchema) {
+        ConfigurationAuditEvent event = ConfigurationAuditEvent.create(
+                maliciousSchema, "attacker", ConfigurationAuditEvent.Event.CONFIG_REJECTED,
+                ConfigurationAuditEvent.Plane.DISCOVERY, Collections.emptyMap(),
+                ConfigurationAuditEvent.Outcome.DENY, "rejected", "corr-sec-b1");
+
+        StepVerifier.create(adapter.append(event))
+                .expectError(IllegalArgumentException.class)
+                .verify();
+
+        // And nothing was written for this correlation id (or any malicious-schema row at all).
+        Long count = dbClient
+                .sql("SELECT COUNT(*) FROM " + AUDIT_TABLE + " WHERE correlation_id = 'corr-sec-b1'")
+                .map((r, m) -> r.get(0, Long.class))
+                .one()
+                .block();
+        assertThat(count).isZero();
+    }
+
+    /**
+     * SEC-B1: a {@code null} schema name is also rejected (defence against a missing-context bug).
+     */
+    @Test
+    void append_nullSchemaName_isRejected() {
+        ConfigurationAuditEvent event = ConfigurationAuditEvent.create(
+                null, "attacker", ConfigurationAuditEvent.Event.CONFIG_REJECTED,
+                ConfigurationAuditEvent.Plane.DISCOVERY, Collections.emptyMap(),
+                ConfigurationAuditEvent.Outcome.DENY, "rejected", "corr-sec-b1-null");
+
+        StepVerifier.create(adapter.append(event))
+                .expectError(IllegalArgumentException.class)
+                .verify();
     }
 
     // ------------------------------------------------------------------

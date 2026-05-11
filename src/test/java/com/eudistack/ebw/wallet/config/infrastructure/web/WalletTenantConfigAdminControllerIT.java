@@ -7,6 +7,7 @@ import com.eudistack.ebw.wallet.config.domain.model.TenantWalletConfigDescriptor
 import com.eudistack.ebw.wallet.config.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.config.infrastructure.controller.WalletTenantConfigAdminController;
 import com.eudistack.ebw.wallet.config.infrastructure.controller.dto.AdminConfigRequestDto;
+import com.eudistack.ebw.wallet.config.infrastructure.controller.dto.AdminConfigResponseDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -81,11 +82,17 @@ class WalletTenantConfigAdminControllerIT {
         // When
         Mono<ResponseEntity<Object>> result = controller.create(request, null, null);
 
-        // Then
+        // Then: 201 + body is the response DTO (not the domain aggregate — W1), snake_case fields
         StepVerifier.create(result)
                 .assertNext(response -> {
                     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-                    assertThat(response.getBody()).isNotNull();
+                    assertThat(response.getBody()).isInstanceOf(AdminConfigResponseDto.class);
+                    var dto = (AdminConfigResponseDto) response.getBody();
+                    assertThat(dto.schemaName()).isEqualTo("acme_bw");
+                    assertThat(dto.walletMode()).isEqualTo("browser");
+                    assertThat(dto.keyManager()).isNull();
+                    assertThat(dto.naturalPersonsOnly()).isFalse();
+                    assertThat(dto.version()).isEqualTo(1L);
                 })
                 .verifyComplete();
     }

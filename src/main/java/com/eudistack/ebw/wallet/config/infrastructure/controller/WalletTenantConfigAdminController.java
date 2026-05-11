@@ -4,15 +4,17 @@ import com.eudistack.ebw.wallet.config.application.command.ApplyConfigurationCom
 import com.eudistack.ebw.wallet.config.application.workflow.TenantWalletConfigurationWriter;
 import com.eudistack.ebw.wallet.config.domain.exception.ConfigInvariantViolationException;
 import com.eudistack.ebw.wallet.config.domain.model.KeyManager;
-import com.eudistack.ebw.wallet.config.domain.model.TenantWalletConfigDescriptor;
 import com.eudistack.ebw.wallet.config.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.config.infrastructure.controller.dto.AdminConfigRequestDto;
+import com.eudistack.ebw.wallet.config.infrastructure.controller.dto.AdminConfigResponseDto;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,18 +32,28 @@ import java.util.UUID;
 /**
  * Admin endpoint for creating and updating wallet tenant configurations.
  *
- * <p>Both endpoints require authentication with the {@code tenant.config.write} scope.
- * DPoP token binding is enforced by the upstream JWT filter already installed in the
- * {@link com.eudistack.ebw.infrastructure.configuration.SecurityConfig} filter chain.
+ * <p><strong>Authorization:</strong> both endpoints require an authenticated principal that
+ * carries the {@code tenant.config.write} authority (i.e. a {@code SCOPE_tenant.config.write}
+ * granted authority). This is enforced both at the URL level
+ * ({@code SecurityConfig#securityWebFilterChain} maps {@code /admin/**}) and at the method level
+ * ({@code @PreAuthorize} below) as defence in depth. See SEC-B2 — the auth mechanism that mints
+ * an admin-scoped token for DevOps Leads is still to be defined (no such token type exists yet).
  *
  * <p>HTTP 409 Conflict is returned when the domain invariant validator
  * ({@code TenantWalletConfigInvariants}) rejects the {@code walletMode}/{@code keyManager}
  * pairing (AC-2a, AC-2b). The response body follows RFC 9457 with a custom
  * {@code conflicting_field} property.
+ *
+ * <p>The {@code schemaName} path variable is validated as a strict PostgreSQL identifier
+ * ({@code ^[a-z][a-z0-9_]{0,62}$}) — see SEC-B1 — before it ever reaches the persistence or
+ * audit adapters.
  */
 @RestController
 @RequestMapping("/admin/wallet-tenant-config")
 public class WalletTenantConfigAdminController {
+
+    /** Strict PostgreSQL identifier pattern, matching {@code AdminConfigRequestDto.schemaName}. */
+    private static final String SCHEMA_NAME_PATTERN = "^[a-z][a-z0-9_]{0,62}$";
 
     private static final Logger log =
             LoggerFactory.getLogger(WalletTenantConfigAdminController.class);
@@ -65,6 +77,7 @@ public class WalletTenantConfigAdminController {
      * @return a reactive response entity
      */
     @PostMapping
+    @PreAuthorize("hasAuthority('SCOPE_tenant.config.write')")
     public Mono<ResponseEntity<Object>> create(
             @Valid @RequestBody AdminConfigRequestDto request,
             Authentication authentication,
@@ -75,10 +88,11 @@ public class WalletTenantConfigAdminController {
         log.debug("Admin create config: schemaName={}, walletMode={}, actor={}",
                 request.schemaName(), request.walletMode(), actor);
 
-        ApplyConfigurationCommand command = buildCommand(request, actor, corrId);
+        // POST is a create — the body's version (if any) is not an optimistic-lock check here.
+        ApplyConfigurationCommand command = buildCommand(request, actor, corrId, null);
         return writer.applyConfiguration(command)
                 .map(saved -> ResponseEntity.status(HttpStatus.CREATED)
-                        .<Object>body(saved))
+                        .<Object>body(AdminConfigResponseDto.from(saved)))
                 .onErrorResume(ConfigInvariantViolationException.class,
                         ex -> Mono.just(invariantViolationResponse(ex)));
     }
@@ -97,8 +111,13 @@ public class WalletTenantConfigAdminController {
      * @return a reactive response entity
      */
     @PutMapping("/{schemaName}")
+    @PreAuthorize("hasAuthority('SCOPE_tenant.config.write')")
     public Mono<ResponseEntity<Object>> update(
-            @PathVariable String schemaName,
+            @PathVariable
+            @Pattern(regexp = SCHEMA_NAME_PATTERN,
+                    message = "schema_name must be a valid PostgreSQL identifier "
+                            + "(lowercase, starts with a letter, max 63 chars)")
+            String schemaName,
             @Valid @RequestBody AdminConfigRequestDto request,
             Authentication authentication,
             @RequestHeader(value = "X-Correlation-ID", required = false) String correlationId) {
@@ -117,9 +136,10 @@ public class WalletTenantConfigAdminController {
                 request.naturalPersonsOnly(),
                 request.version());
 
-        ApplyConfigurationCommand command = buildCommand(normalized, actor, corrId);
+        // On PUT the body's version (when present) is the optimistic-lock expectation (W3).
+        ApplyConfigurationCommand command = buildCommand(normalized, actor, corrId, request.version());
         return writer.applyConfiguration(command)
-                .map(saved -> ResponseEntity.ok().<Object>body(saved))
+                .map(saved -> ResponseEntity.ok().<Object>body(AdminConfigResponseDto.from(saved)))
                 .onErrorResume(ConfigInvariantViolationException.class,
                         ex -> Mono.just(invariantViolationResponse(ex)));
     }
@@ -129,7 +149,7 @@ public class WalletTenantConfigAdminController {
     // ------------------------------------------------------------------
 
     private static ApplyConfigurationCommand buildCommand(
-            AdminConfigRequestDto dto, String actor, String correlationId) {
+            AdminConfigRequestDto dto, String actor, String correlationId, Long expectedVersion) {
         WalletMode walletMode = WalletMode.fromValue(dto.walletMode());
         Optional<KeyManager> keyManager = dto.keyManager() != null
                 ? Optional.of(KeyManager.fromValue(dto.keyManager()))
@@ -140,6 +160,7 @@ public class WalletTenantConfigAdminController {
                 dto.host().toLowerCase(),
                 walletMode,
                 keyManager,
+                expectedVersion,
                 actor,
                 correlationId);
     }

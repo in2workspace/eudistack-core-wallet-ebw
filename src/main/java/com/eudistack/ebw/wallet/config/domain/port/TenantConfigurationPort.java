@@ -29,14 +29,33 @@ public interface TenantConfigurationPort {
     Mono<TenantWalletConfigDescriptor> findByHost(String host);
 
     /**
+     * Looks up a tenant's wallet configuration by its schema name (the aggregate key).
+     *
+     * <p>Used by the write path to fetch the "before image" so the audit trail can record the
+     * actual from/to deltas (AC-3a / AC-3b / FR-30) and to distinguish create vs update.
+     *
+     * @param schemaName the tenant schema name (validated PostgreSQL identifier)
+     * @return a {@link Mono} emitting the descriptor, or an empty {@link Mono} if the tenant has
+     *         no configuration yet
+     */
+    Mono<TenantWalletConfigDescriptor> findBySchemaName(String schemaName);
+
+    /**
      * Persists a new or updated {@link TenantWalletConfigDescriptor}.
      *
      * <p>The adapter performs an UPSERT ({@code ON CONFLICT (schema_name) DO UPDATE}) and
      * increments the {@code version} column atomically. The returned descriptor reflects the
      * version stored in the database after the operation.
      *
-     * @param descriptor the descriptor to persist; must have passed invariant validation
+     * <p>When {@code expectedVersion} is non-null AND the row already exists, the update is
+     * conditional on {@code version = expectedVersion}; if it does not match, the {@link Mono}
+     * errors with {@code ConfigVersionConflictException} (→ HTTP 409). On an INSERT (new row)
+     * there is no version to check and {@code expectedVersion} is ignored.
+     *
+     * @param descriptor      the descriptor to persist; must have passed invariant validation
+     * @param expectedVersion the optimistic-lock version, or {@code null} for an unconditional
+     *                        create/update
      * @return a {@link Mono} emitting the persisted descriptor (with updated {@code version})
      */
-    Mono<TenantWalletConfigDescriptor> save(TenantWalletConfigDescriptor descriptor);
+    Mono<TenantWalletConfigDescriptor> save(TenantWalletConfigDescriptor descriptor, Long expectedVersion);
 }

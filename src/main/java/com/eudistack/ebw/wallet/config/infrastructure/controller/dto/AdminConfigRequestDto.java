@@ -16,8 +16,10 @@ import jakarta.validation.constraints.Pattern;
  * {@code TenantWalletConfigInvariants} in the domain layer, not by a Bean Validation
  * constraint here, so that a precise RFC 9457 409 Conflict response can be returned.
  *
- * <p>The {@code version} field is used for optimistic locking on PUT.
- * For POST (create) it should be absent or {@code 0}.
+ * <p>The {@code version} field is the optimistic-lock expectation on PUT: when present and the
+ * tenant already exists, the update only succeeds if the stored version matches; otherwise the
+ * endpoint returns HTTP 409 {@code urn:eudistack:error:config-version-conflict}. On POST (create)
+ * the field is ignored.
  */
 public record AdminConfigRequestDto(
 

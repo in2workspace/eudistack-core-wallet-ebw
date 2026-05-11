@@ -83,7 +83,8 @@ class TenantWalletConfigInvariantsTest {
 
         // Then: no port must have been called (T-5 — invariant fires before any I/O)
         verify(tenantConfigurationPort, never()).findByHost(any());
-        verify(tenantConfigurationPort, never()).save(any());
+        verify(tenantConfigurationPort, never()).findBySchemaName(any());
+        verify(tenantConfigurationPort, never()).save(any(), any());
         verify(configurationAuditPort, never()).append(any());
         verify(discoveryCacheInvalidationPort, never()).invalidate(any());
     }
