@@ -56,9 +56,10 @@ public class WalletTenantConfigDiscoveryController {
      * by the {@code Host} request header.
      *
      * <ul>
-     *   <li>HTTP 200 — tenant found; body is a {@link DiscoveryResponseDto} (no {@code key_manager}).</li>
-     *   <li>HTTP 400 — {@code Host} header absent (E-9).</li>
-     *   <li>HTTP 404 — host not registered; opaque RFC 9457 body (AC-1c, E-1).</li>
+     *   <li>HTTP 200 — tenant found; body is a {@link DiscoveryResponseDto} (no {@code key_manager});
+     *       headers {@code Cache-Control: public, max-age=60}, {@code ETag: "<version>"}, {@code Vary: Host}.</li>
+     *   <li>HTTP 400 — {@code Host} header absent or blank (E-2, E-3).</li>
+     *   <li>HTTP 404 — host not registered; opaque RFC 9457 body (AC-3a, E-1).</li>
      * </ul>
      *
      * @param host the value of the HTTP {@code Host} header
@@ -84,6 +85,7 @@ public class WalletTenantConfigDiscoveryController {
                     return ResponseEntity.ok()
                             .header(HttpHeaders.CACHE_CONTROL, CACHE_CONTROL_VALUE)
                             .header(HttpHeaders.ETAG, etag)
+                            .header(HttpHeaders.VARY, HttpHeaders.HOST)
                             .<Object>body(dto);
                 });
 
@@ -96,10 +98,11 @@ public class WalletTenantConfigDiscoveryController {
     }
 
     private static ProblemDetail missingHostProblem() {
+        // RFC 9457 body, matching AC-4a exactly.
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         problem.setType(URI.create("urn:eudistack:error:missing-host-header"));
-        problem.setTitle("Bad Request");
-        problem.setDetail("The Host header is required to identify the tenant.");
+        problem.setTitle("Missing Host header");
+        problem.setDetail("A Host header is required to resolve the tenant");
         return problem;
     }
 

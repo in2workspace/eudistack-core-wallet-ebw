@@ -4,12 +4,14 @@ import com.eudistack.ebw.wallet.config.application.workflow.WalletTenantConfigRe
 import com.eudistack.ebw.wallet.config.domain.model.TenantWalletConfigDescriptor;
 import com.eudistack.ebw.wallet.config.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.config.infrastructure.controller.WalletTenantConfigDiscoveryController;
+import com.eudistack.ebw.wallet.config.infrastructure.controller.dto.DiscoveryResponseDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -20,25 +22,37 @@ import java.util.Collections;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * Controller unit tests for {@link WalletTenantConfigDiscoveryController}.
+ * Controller tests for {@link WalletTenantConfigDiscoveryController} — covers T-4 (tech-design §2.3).
  *
- * <p>Covers T-6 (AC-1a, AC-1e), T-7 (AC-1c), T-14 (E-9) from tech-design §2.3.
+ * <p><strong>Why Mockito, not {@code @SpringBootTest}.</strong> {@code src/test/resources/application.yml}
+ * excludes {@code R2dbcAutoConfiguration} / {@code R2dbcRepositoriesAutoConfiguration} /
+ * {@code FlywayAutoConfiguration} so the {@code ApplicationTests.contextLoads()} smoke test can boot
+ * without Postgres. A {@code @SpringBootTest} over this controller would therefore not get an R2DBC
+ * stack. So the controller is exercised at the method level with a mocked
+ * {@link WalletTenantConfigReadService}; the DB-level contract (CHECK constraints, migration) is
+ * covered separately by {@code TenantWalletConfigSchemaMigrationIT} which spins up a real Postgres
+ * via Testcontainers without a Spring context.
  *
- * <p>Tests the controller's HTTP contract at the method level (without a running WebFlux
- * context), verifying: status codes, DTO projection (no key_manager), Cache-Control header,
- * ETag header, and RFC 9457 error body format.
+ * <p>Covers: 200 with the 4-field projection (no {@code key_manager}/{@code activation_status}) +
+ * headers {@code Cache-Control: public, max-age=60} / {@code ETag: "<version>"} / {@code Vary: Host}
+ * (AC-1a, AC-1c, AC-1d); uppercase {@code Host} → 200 normalised (AC-1e, E-4); unregistered host →
+ * opaque 404 RFC 9457, going through the same number of read-service calls as the 200 (AC-3a, AC-3b,
+ * E-1); missing / blank {@code Host} → 400 RFC 9457 {@code urn:eudistack:error:missing-host-header}
+ * with no port call (AC-4a, AC-4b, E-2, E-3).
  *
- * <p>This focused approach avoids the overhead of spinning up the full WebFlux infrastructure
- * while still exercising the controller's end-to-end request handling logic.
- *
- * <p>Tagged {@code integration} per tech-design §2.3 test matrix (T-6, T-7, T-14).
+ * <p>Tagged {@code integration} per tech-design §2.3 (runs under {@code ./gradlew integrationTest}).
  */
 @ExtendWith(MockitoExtension.class)
 @Tag("integration")
 class WalletTenantConfigDiscoveryControllerIT {
+
+    private static final String HOST = "acme.eudiw.example.com";
 
     @Mock
     WalletTenantConfigReadService readService;
@@ -51,71 +65,71 @@ class WalletTenantConfigDiscoveryControllerIT {
     }
 
     // ------------------------------------------------------------------
-    // T-6: discover() with known host → 200 + correct body + headers (AC-1a, AC-1e)
+    // 200 — known browser tenant: 4-field projection + caching headers (AC-1a, AC-1c, AC-1d)
     // ------------------------------------------------------------------
 
-    /**
-     * T-6: Known browser tenant → HTTP 200 with correct payload and caching headers.
-     *
-     * <p>Verifies:
-     * <ul>
-     *   <li>Response status 200.</li>
-     *   <li>Body is a {@code DiscoveryResponseDto} with {@code wallet_mode="browser"},
-     *       {@code natural_persons_only=false}, {@code supported_credentials=[]},
-     *       {@code version=3}.</li>
-     *   <li>Body does NOT carry a {@code key_manager} field (AC-1e, AD-1bis) — verified
-     *       by using the type-safe DTO class which intentionally omits the field.</li>
-     *   <li>{@code Cache-Control: public, max-age=60} header present.</li>
-     *   <li>{@code ETag} header present and equals {@code "3"} (version-based).</li>
-     * </ul>
-     */
     @Test
-    void getBrowserTenantReturns200WithCorrectPayload() {
+    void getBrowserTenant_returns200WithFourFieldProjectionAndCachingHeaders() {
         // Given
-        String host = "acme.eudiw.example.com";
         TenantWalletConfigDescriptor descriptor = TenantWalletConfigDescriptor.of(
-                "acme_bw", host, WalletMode.BROWSER,
+                "acme_business_wallet", HOST, WalletMode.BROWSER,
                 Optional.empty(), false, Collections.emptyList(), 3L);
-        when(readService.retrieveDescriptor(host)).thenReturn(Mono.just(descriptor));
+        when(readService.retrieveDescriptor(HOST)).thenReturn(Mono.just(descriptor));
 
         // When
-        Mono<ResponseEntity<Object>> result = controller.discover(host);
+        Mono<ResponseEntity<Object>> result = controller.discover(HOST);
 
         // Then
         StepVerifier.create(result)
                 .assertNext(response -> {
                     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-                    assertThat(response.getHeaders().getCacheControl())
-                            .contains("max-age=60");
-                    assertThat(response.getHeaders().getETag()).isEqualTo("\"3\"");
 
-                    // AC-1e: body is a DiscoveryResponseDto (no key_manager field in type)
-                    var dto = (com.eudistack.ebw.wallet.config.infrastructure.controller.dto.DiscoveryResponseDto) response.getBody();
-                    assertThat(dto).isNotNull();
+                    HttpHeaders headers = response.getHeaders();
+                    assertThat(headers.getCacheControl()).contains("max-age=60").contains("public");
+                    assertThat(headers.getETag()).isEqualTo("\"3\"");
+                    assertThat(headers.getVary()).containsExactly(HttpHeaders.HOST);
+
+                    // 4-field projection: no key_manager, no activation_status (AD-1bis).
+                    assertThat(response.getBody()).isInstanceOf(DiscoveryResponseDto.class);
+                    DiscoveryResponseDto dto = (DiscoveryResponseDto) response.getBody();
                     assertThat(dto.walletMode()).isEqualTo("browser");
                     assertThat(dto.naturalPersonsOnly()).isFalse();
                     assertThat(dto.supportedCredentials()).isEmpty();
                     assertThat(dto.version()).isEqualTo(3L);
                 })
                 .verifyComplete();
+
+        verify(readService, times(1)).retrieveDescriptor(HOST);
     }
 
     // ------------------------------------------------------------------
-    // T-7: discover() with unknown host → 404 RFC 9457 opaque (AC-1c)
+    // AC-1e / E-4 — uppercase Host (and Host with port) → normalised → 200
     // ------------------------------------------------------------------
 
-    /**
-     * T-7: Unknown host → HTTP 404 with opaque RFC 9457 body (AC-1c).
-     *
-     * <p>Verifies:
-     * <ul>
-     *   <li>Response status 404.</li>
-     *   <li>Body is a {@link ProblemDetail} with {@code type=about:blank} (opaque).</li>
-     *   <li>Body {@code title} is "Not Found".</li>
-     * </ul>
-     */
     @Test
-    void getUnknownHostReturns404Opaque() {
+    void getBrowserTenant_uppercaseHost_isNormalisedToLowercaseAndReturns200() {
+        // Given — the service is stubbed for the *lowercase* host only
+        TenantWalletConfigDescriptor descriptor =
+                TenantWalletConfigDescriptor.forBrowserTenant("acme_business_wallet", HOST);
+        when(readService.retrieveDescriptor(HOST)).thenReturn(Mono.just(descriptor));
+
+        // When — caller sends the uppercase variant
+        Mono<ResponseEntity<Object>> result = controller.discover(HOST.toUpperCase());
+
+        // Then — the controller lowercased it before the lookup, so the stub matched → 200
+        StepVerifier.create(result)
+                .assertNext(response -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK))
+                .verifyComplete();
+
+        verify(readService, times(1)).retrieveDescriptor(HOST);
+    }
+
+    // ------------------------------------------------------------------
+    // AC-3a / AC-3b / E-1 — unregistered host → opaque 404, same #DB calls as the 200
+    // ------------------------------------------------------------------
+
+    @Test
+    void getUnregisteredHost_returns404OpaqueRfc9457_throughSameNumberOfReadCallsAsThe200() {
         // Given
         String unknownHost = "unknown.eudiw.example.com";
         when(readService.retrieveDescriptor(unknownHost)).thenReturn(Mono.empty());
@@ -123,37 +137,33 @@ class WalletTenantConfigDiscoveryControllerIT {
         // When
         Mono<ResponseEntity<Object>> result = controller.discover(unknownHost);
 
-        // Then
+        // Then — opaque RFC 9457 body, no caching headers
         StepVerifier.create(result)
                 .assertNext(response -> {
                     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+                    assertThat(response.getHeaders().getCacheControl()).isNull();
 
-                    var problem = (ProblemDetail) response.getBody();
-                    assertThat(problem).isNotNull();
+                    assertThat(response.getBody()).isInstanceOf(ProblemDetail.class);
+                    ProblemDetail problem = (ProblemDetail) response.getBody();
                     assertThat(problem.getType().toString()).isEqualTo("about:blank");
                     assertThat(problem.getTitle()).isEqualTo("Not Found");
                     assertThat(problem.getStatus()).isEqualTo(404);
+                    // No cause discriminator — the body must not reveal whether the host exists.
+                    assertThat(problem.getDetail()).isNull();
                 })
                 .verifyComplete();
+
+        // AC-3b: the 404 path makes exactly one read-service call — the same as the 200 path.
+        verify(readService, times(1)).retrieveDescriptor(unknownHost);
     }
 
     // ------------------------------------------------------------------
-    // T-14: discover() with null/blank host → 400 RFC 9457 (E-9)
+    // AC-4a / E-2 — missing Host header → 400, no port call
     // ------------------------------------------------------------------
 
-    /**
-     * T-14: {@code null} host → HTTP 400 with RFC 9457 body identifying missing-host-header (E-9).
-     *
-     * <p>Verifies:
-     * <ul>
-     *   <li>Response status 400.</li>
-     *   <li>Body {@code type} identifies the missing-host-header error.</li>
-     *   <li>No interaction with the read service (guard fires first).</li>
-     * </ul>
-     */
     @Test
-    void missingHostHeaderReturns400() {
-        // Given: null host (simulates missing Host header — Spring maps absent @RequestHeader to null)
+    void missingHostHeader_returns400Rfc9457_withoutTouchingThePort() {
+        // Given: Spring maps an absent @RequestHeader(required=false) to null.
         // When
         Mono<ResponseEntity<Object>> result = controller.discover(null);
 
@@ -162,20 +172,24 @@ class WalletTenantConfigDiscoveryControllerIT {
                 .assertNext(response -> {
                     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 
-                    var problem = (ProblemDetail) response.getBody();
-                    assertThat(problem).isNotNull();
-                    assertThat(problem.getType().toString())
-                            .isEqualTo("urn:eudistack:error:missing-host-header");
+                    assertThat(response.getBody()).isInstanceOf(ProblemDetail.class);
+                    ProblemDetail problem = (ProblemDetail) response.getBody();
+                    assertThat(problem.getType().toString()).isEqualTo("urn:eudistack:error:missing-host-header");
+                    assertThat(problem.getTitle()).isEqualTo("Missing Host header");
                     assertThat(problem.getStatus()).isEqualTo(400);
+                    assertThat(problem.getDetail()).isEqualTo("A Host header is required to resolve the tenant");
                 })
                 .verifyComplete();
+
+        verifyNoInteractions(readService);
     }
 
-    /**
-     * T-14 (blank variant): blank host → HTTP 400 with RFC 9457 body.
-     */
+    // ------------------------------------------------------------------
+    // AC-4b / E-3 — blank / whitespace-only Host header → 400, no port call
+    // ------------------------------------------------------------------
+
     @Test
-    void blankHostHeaderReturns400() {
+    void blankHostHeader_returns400Rfc9457_withoutTouchingThePort() {
         // When
         Mono<ResponseEntity<Object>> result = controller.discover("   ");
 
@@ -184,35 +198,11 @@ class WalletTenantConfigDiscoveryControllerIT {
                 .assertNext(response -> {
                     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(response.getBody()).isInstanceOf(ProblemDetail.class);
+                    ProblemDetail problem = (ProblemDetail) response.getBody();
+                    assertThat(problem.getType().toString()).isEqualTo("urn:eudistack:error:missing-host-header");
                 })
                 .verifyComplete();
-    }
 
-    // ------------------------------------------------------------------
-    // AC-1d: host normalisation — uppercase host is lowercased before lookup
-    // ------------------------------------------------------------------
-
-    /**
-     * AC-1d: Uppercase host is normalised to lowercase before calling the service.
-     *
-     * <p>Verifies that the service is called with the lowercase version of the host,
-     * and the response is 200.
-     */
-    @Test
-    void upperCaseHostIsNormalisedAndReturns200() {
-        // Given
-        String lowerHost = "acme-upper.eudiw.example.com";
-        TenantWalletConfigDescriptor descriptor = TenantWalletConfigDescriptor.forBrowserTenant(
-                "acme_upper_bw", lowerHost);
-        // The controller normalizes to lowercase — so the service is called with lowerHost
-        when(readService.retrieveDescriptor(lowerHost)).thenReturn(Mono.just(descriptor));
-
-        // When: pass uppercase host to the controller
-        Mono<ResponseEntity<Object>> result = controller.discover(lowerHost.toUpperCase());
-
-        // Then
-        StepVerifier.create(result)
-                .assertNext(response -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK))
-                .verifyComplete();
+        verifyNoInteractions(readService);
     }
 }
