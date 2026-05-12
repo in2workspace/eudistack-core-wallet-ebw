@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit;
  * CloudFront with a TTL of 60 seconds.
  *
  * <p>This controller has no authentication requirement — the path
- * {@code /.well-known/wallet-tenant-config} is added to the {@code permitAll()}
+ * {@code /.well-known/wallet-config-metadata} is added to the {@code permitAll()}
  * list in {@link com.eudistack.ebw.infrastructure.configuration.SecurityConfig}.
  *
  * <p>Security invariant (AD-1, AD-S2): this controller MUST NOT depend on
@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit;
  * ArchUnit rule T-12 enforces this at compile time.
  */
 @RestController
-@RequestMapping("/.well-known/wallet-tenant-config")
+@RequestMapping("/.well-known/wallet-config-metadata")
 public class WalletTenantConfigDiscoveryController {
 
     private static final Logger log = LoggerFactory.getLogger(WalletTenantConfigDiscoveryController.class);

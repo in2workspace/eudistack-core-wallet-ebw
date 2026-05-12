@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
- * Public discovery response DTO for {@code GET /.well-known/wallet-tenant-config}.
+ * Public discovery response DTO for {@code GET /.well-known/wallet-config-metadata}.
  *
  * <p>Intentionally omits the {@code key_manager} field (AD-1bis: topology reconnaissance
  * prevention). The JSON serialisation uses snake_case names as defined in the discovery
