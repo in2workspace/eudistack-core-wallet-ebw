@@ -8,8 +8,7 @@
 -- (TenantSchemaFlywayMigrator#migratePublicSchema). See feature-design §4.2
 -- "Reuse-before-invention".
 --
--- Read path: EUDIW on bootstrap via GET /business-wallet/.well-known/wallet-tenant-config.
--- Write path: POST /business-wallet/admin/wallet-tenant-config (UPSERT, bumps version).
+-- Read path: EUDIW on bootstrap via GET /business-wallet/.well-known/wallet-config-metadata.
 --
 -- Column set mirrors WalletTenantConfigEntity and the UPSERT in
 -- WalletTenantConfigR2dbcAdapter exactly. `supported_credentials` is NOT
