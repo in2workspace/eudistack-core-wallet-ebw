@@ -61,13 +61,6 @@ ebw:
   security:
     max-payload-size: 65536
     trust-forwarded-host: ${TRUST_FORWARDED_HOST:false}
-  admin:
-    # Static admin API key for the /admin/** endpoints (SEC-B2). Required: when blank/unset the
-    # admin filter rejects ALL /admin/** requests with 401 (fail-closed). STG/PROD must supply this
-    # via an SSM parameter; the local dev value lives in eudistack-platform-dev/compose.yaml.
-    api-key: ${ADMIN_API_KEY:}
-  cloudfront:
-    distribution-id: ${CLOUDFRONT_DISTRIBUTION_ID:}
 
 management:
   otlp:

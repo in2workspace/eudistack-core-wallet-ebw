@@ -1,9 +1,6 @@
 package com.eudistack.ebw.infrastructure.error;
 
 import com.eudistack.ebw.domain.model.exception.*;
-import com.eudistack.ebw.wallet.config.domain.exception.ConfigInvariantViolationException;
-import com.eudistack.ebw.wallet.config.domain.exception.ConfigVersionConflictException;
-import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -12,10 +9,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.support.WebExchangeBindException;
-import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 import java.net.URI;
-import java.util.List;
 import java.util.Map;
 
 @ControllerAdvice
@@ -128,26 +123,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 
-    @ExceptionHandler(ConfigInvariantViolationException.class)
-    public ResponseEntity<ProblemDetail> handleConfigInvariantViolation(
-            ConfigInvariantViolationException ex) {
-        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
-        problem.setType(URI.create("urn:eudistack:error:config-invariant-violation"));
-        problem.setTitle("Invariant violation");
-        problem.setProperty("conflicting_field", ex.getConflictingField());
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
-    }
-
-    @ExceptionHandler(ConfigVersionConflictException.class)
-    public ResponseEntity<ProblemDetail> handleConfigVersionConflict(
-            ConfigVersionConflictException ex) {
-        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
-        problem.setType(URI.create("urn:eudistack:error:config-version-conflict"));
-        problem.setTitle("Version conflict");
-        problem.setProperty("expected_version", ex.getExpectedVersion());
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
-    }
-
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ProblemDetail> handleIllegalArgument(IllegalArgumentException ex) {
         var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
@@ -163,15 +138,6 @@ public class GlobalExceptionHandler {
         var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
         problem.setType(URI.create("urn:eudistack:error:validation-error"));
         problem.setProperty("violations", violations);
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
-    }
-
-    // SEC-B1: a @Pattern/@NotBlank/... violation on a @PathVariable / @RequestParam / @RequestHeader
-    // (e.g. an invalid schemaName on PUT /admin/wallet-tenant-config/{schemaName}) → 400, not 500.
-    @ExceptionHandler({HandlerMethodValidationException.class, ConstraintViolationException.class})
-    public ResponseEntity<ProblemDetail> handleMethodValidation(Exception ex) {
-        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
-        problem.setType(URI.create("urn:eudistack:error:validation-error"));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 

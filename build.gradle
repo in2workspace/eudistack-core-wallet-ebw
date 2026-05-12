@@ -56,10 +56,6 @@ dependencies {
     implementation 'org.flywaydb:flyway-database-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
 
-    // --- AWS SDK v2 ---
-    implementation platform('software.amazon.awssdk:bom:2.29.52')
-    implementation 'software.amazon.awssdk:cloudfront'
-
     // --- Cache ---
     implementation 'com.github.ben-manes.caffeine:caffeine'
 

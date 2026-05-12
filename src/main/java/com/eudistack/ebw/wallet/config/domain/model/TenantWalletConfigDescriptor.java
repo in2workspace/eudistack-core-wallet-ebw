@@ -5,12 +5,13 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Aggregate root representing the wallet configuration of a single tenant.
+ * Aggregate root representing the wallet configuration of a single tenant — read model.
  *
- * <p>Immutable. All mutation produces a new instance via factory/builder patterns.
+ * <p>Immutable. Built from a {@code public.tenant_wallet_config} row on the discovery read path.
  *
  * <p>Invariant (FR-20): {@code walletMode=BROWSER} requires {@code keyManager} to be empty.
- * This is enforced by {@code TenantWalletConfigInvariants} before any persistence call.
+ * In EUDISTACK-412 this invariant is enforced by a CHECK constraint on the table; the on-write
+ * validation moved to EUDISTACK-55 along with the rest of the discovery-plane write side.
  *
  * <p>Invariant: {@code naturalPersonsOnly} is always derived —
  * it is {@code true} if and only if {@code keyManager = HYBRID}.
@@ -63,9 +64,8 @@ public final class TenantWalletConfigDescriptor {
     }
 
     /**
-     * Full-parameter factory for all wallet modes. Callers are responsible for
-     * ensuring invariants hold (use {@code TenantWalletConfigInvariants.validatePairing}
-     * before calling this method in any write path).
+     * Full-parameter factory for all wallet modes (used to reconstruct a row read from
+     * {@code public.tenant_wallet_config}).
      */
     public static TenantWalletConfigDescriptor of(
             String schemaName,
@@ -83,20 +83,6 @@ public final class TenantWalletConfigDescriptor {
                 naturalPersonsOnly,
                 supportedCredentials,
                 version);
-    }
-
-    /**
-     * Returns a new descriptor with the same values but an incremented {@code version}.
-     */
-    public TenantWalletConfigDescriptor withIncrementedVersion() {
-        return new TenantWalletConfigDescriptor(
-                schemaName,
-                host,
-                walletMode,
-                keyManager,
-                naturalPersonsOnly,
-                supportedCredentials,
-                version + 1);
     }
 
     public String getSchemaName() {

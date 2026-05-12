@@ -31,8 +31,8 @@ public class WalletConfigArchitectureTest {
      *
      * <p>No class anywhere in the {@code wallet.config} infrastructure layer may depend on
      * {@code TenantAwareConnectionFactoryDecorator} — not even indirectly through a static import.
-     * The adapter {@code TenantConfigAuditR2dbcAdapter} uses the {@code publicSchemaRw}
-     * connection factory with explicit schema qualification in SQL, not via the tenant-aware decorator.
+     * The discovery read adapter ({@code WalletTenantConfigR2dbcAdapter}) connects exclusively
+     * through the {@code publicSchema} read-only pool.
      *
      * <p>AD-1 invariant: a cross-schema access bug introduced here would allow the discovery
      * endpoint to expose data from a tenant's private schema — a critical security violation.
