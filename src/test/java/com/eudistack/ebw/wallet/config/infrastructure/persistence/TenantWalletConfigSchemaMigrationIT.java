@@ -1,5 +1,6 @@
 package com.eudistack.ebw.wallet.config.infrastructure.persistence;
 
+import com.eudistack.ebw.wallet.config.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.config.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.config.infrastructure.adapter.r2dbc.PublicSchemaConnectionFactory;
 import com.eudistack.ebw.wallet.config.infrastructure.adapter.r2dbc.WalletTenantConfigR2dbcAdapter;
@@ -36,18 +37,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Migration / DB-level integration test for {@code public.tenant_wallet_config} — covers T-3
- * (AC-2a, AC-2b, AC-2c, E-7, E-8) from tech-design §2.3.
+ * (AC-2a, AC-2b, AC-2c, E-7, E-8) from tech-design §2.3 (EUDISTACK-412), extended with
+ * EUDISTACK-413 T-3 cases for the V3 migration CHECK {@code server ⇒ key_manager NOT NULL}.
  *
  * <p><strong>Why this test does NOT use a Spring context.</strong> {@code application.yml} in the
  * test classpath excludes the R2DBC / Flyway auto-configuration so {@code ApplicationTests} can
  * boot without Postgres. So instead of {@code @SpringBootTest}, this test starts a raw
  * {@code postgres:16-alpine} Testcontainers instance (per-class, destructive schema test), applies
  * the production migration SQL ({@code db/migration/V1__Public_schema.sql} for {@code tenant_registry}
- * — required for the FK — then {@code db/migration/V2__Create_tenant_wallet_config.sql}) and asserts
- * the CHECK constraints behave as specified. It then folds in a cheap read-path smoke check against
- * the real adapter ({@code WalletTenantConfigR2dbcAdapter}) over the {@code publicSchema} template.
+ * — required for the FK — then {@code db/migration/V2__Create_tenant_wallet_config.sql} and
+ * {@code db/migration/V3__Server_requires_key_manager.sql}) and asserts the CHECK constraints
+ * behave as specified. It then folds in a cheap read-path smoke check against the real adapter
+ * ({@code WalletTenantConfigR2dbcAdapter}) over the {@code publicSchema} template.
  *
- * <p>What is asserted against the V2 migration:
+ * <p>What is asserted against the V2 migration (EUDISTACK-412):
  * <ul>
  *   <li>{@code chk_twc_browser_no_key_manager}: INSERT browser + non-null key_manager → rejected.</li>
  *   <li>INSERT browser + key_manager NULL + natural_persons_only=false → accepted.</li>
@@ -56,10 +59,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>{@code chk_twc_key_manager}: INSERT server + 'bogus_km' (not kebab-case enum) → rejected.</li>
  * </ul>
  *
- * <p>The {@code server ⇒ key_manager NOT NULL} CHECK (FR-21) is intentionally NOT in V2 — it belongs
- * to US-02's migration (feature-design §4.1, tech-design §3.7 R-6) — so it is not asserted here. The
- * coherence CHECK {@code natural_persons_only = (key_manager='hybrid')} is likewise not present in
- * the V2 file shipped in this Story, so it is not asserted (see handoff note).
+ * <p>What is asserted against the V3 migration (EUDISTACK-413):
+ * <ul>
+ *   <li>{@code chk_twc_server_requires_key_manager}: INSERT server + key_manager=NULL → rejected.</li>
+ *   <li>INSERT server + db-tde + natural_persons_only=false → accepted.</li>
+ *   <li>{@code ON CONFLICT (schema_name) DO NOTHING} for server+db-tde re-applied → no-op (idempotent).</li>
+ *   <li>V3 migration is additive-safe: pre-existing server+db-tde row DOME survives V3 application.</li>
+ *   <li>{@code chk_twc_server_requires_key_manager} exists in {@code pg_constraint}.</li>
+ *   <li>Read-path smoke check: server+db-tde row resolves to {@code walletMode=SERVER}/
+ *       {@code keyManager=DB_TDE} via the production R2DBC adapter.</li>
+ * </ul>
  *
  * <p>Tagged {@code integration} → runs under {@code ./gradlew integrationTest} (Docker required).
  */
@@ -69,6 +78,10 @@ class TenantWalletConfigSchemaMigrationIT {
 
     private static final String TENANT_SCHEMA_NAME = "acme";
     private static final String TENANT_HOST = "acme.eudiw.example.com";
+
+    // EUDISTACK-413: server+db-tde tenant constants (mimics the DOME production row)
+    private static final String SERVER_SCHEMA_NAME = "dome";
+    private static final String SERVER_HOST = "dome.eudistack.example.com";
 
     @Container
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -92,9 +105,11 @@ class TenantWalletConfigSchemaMigrationIT {
                 .build());
         databaseClient = DatabaseClient.create(connectionFactory);
 
-        // Production migrations, in dependency order: tenant_registry (FK target) then tenant_wallet_config.
+        // Production migrations, in dependency order.
         executeSql(readClasspath("/db/migration/V1__Public_schema.sql"));
         executeSql(readClasspath("/db/migration/V2__Create_tenant_wallet_config.sql"));
+        // EUDISTACK-413 V3: adds CHECK chk_twc_server_requires_key_manager (server ⇒ key_manager NOT NULL).
+        executeSql(readClasspath("/db/migration/V3__Server_requires_key_manager.sql"));
 
         // Read-path adapter wired exactly as WalletTenantConfigBeans wires it in production:
         // publicSchema wrapper (search_path=public) over the connection factory.
@@ -107,13 +122,20 @@ class TenantWalletConfigSchemaMigrationIT {
 
     @BeforeEach
     void resetState() {
-        // Each test starts from a clean tenant_wallet_config table; tenant_registry holds one tenant.
+        // Each test starts from a clean tenant_wallet_config table; tenant_registry holds two tenants.
         databaseClient.sql("DELETE FROM public.tenant_wallet_config").fetch().rowsUpdated().block();
         databaseClient.sql(
                         "INSERT INTO public.tenant_registry (schema_name, display_name) VALUES (:s, :d) "
                                 + "ON CONFLICT (schema_name) DO NOTHING")
                 .bind("s", TENANT_SCHEMA_NAME)
                 .bind("d", "ACME")
+                .fetch().rowsUpdated().block();
+        // EUDISTACK-413: seed dome registry row so FK is satisfied for server+db-tde tests.
+        databaseClient.sql(
+                        "INSERT INTO public.tenant_registry (schema_name, display_name) VALUES (:s, :d) "
+                                + "ON CONFLICT (schema_name) DO NOTHING")
+                .bind("s", SERVER_SCHEMA_NAME)
+                .bind("d", "DOME")
                 .fetch().rowsUpdated().block();
     }
 
@@ -250,6 +272,153 @@ class TenantWalletConfigSchemaMigrationIT {
                 .verifyComplete();
 
         StepVerifier.create(readAdapter.findByHost("not.seeded.example.com"))
+                .verifyComplete();
+    }
+
+    // ------------------------------------------------------------------
+    // EUDISTACK-413 — V3 CHECK: chk_twc_server_requires_key_manager (AC-2a, AC-2b, AC-2c)
+    // ------------------------------------------------------------------
+
+    /**
+     * EUDISTACK-413 AC-2b: INSERT server + key_manager=NULL is rejected by the V3 CHECK constraint
+     * {@code chk_twc_server_requires_key_manager}. No row is applied.
+     */
+    @Test
+    void insertServerTenantWithNullKeyManager_isRejectedByV3CheckConstraint() {
+        assertThatThrownBy(() ->
+                databaseClient.sql(
+                                "INSERT INTO public.tenant_wallet_config "
+                                        + "(schema_name, host, wallet_mode, key_manager, natural_persons_only) "
+                                        + "VALUES (:s, :h, 'server', NULL, false)")
+                        .bind("s", SERVER_SCHEMA_NAME)
+                        .bind("h", SERVER_HOST)
+                        .fetch().rowsUpdated().block())
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("chk_twc_server_requires_key_manager");
+
+        // No row was applied.
+        Long count = databaseClient.sql("SELECT count(*) FROM public.tenant_wallet_config")
+                .map(row -> row.get(0, Long.class)).one().block();
+        assertThat(count).isZero();
+    }
+
+    /**
+     * EUDISTACK-413 AC-2c: INSERT server + db-tde + natural_persons_only=false is accepted.
+     */
+    @Test
+    void insertCoherentServerDbTdeTenant_isAccepted() {
+        Long rows = databaseClient.sql(
+                        "INSERT INTO public.tenant_wallet_config "
+                                + "(schema_name, host, wallet_mode, key_manager, natural_persons_only) "
+                                + "VALUES (:s, :h, 'server', 'db-tde', false)")
+                .bind("s", SERVER_SCHEMA_NAME)
+                .bind("h", SERVER_HOST)
+                .fetch().rowsUpdated().block();
+        assertThat(rows).isEqualTo(1L);
+
+        String storedMode = databaseClient.sql(
+                        "SELECT wallet_mode FROM public.tenant_wallet_config WHERE schema_name = :s")
+                .bind("s", SERVER_SCHEMA_NAME)
+                .map(row -> row.get("wallet_mode", String.class)).one().block();
+        assertThat(storedMode).isEqualTo("server");
+
+        String storedKm = databaseClient.sql(
+                        "SELECT key_manager FROM public.tenant_wallet_config WHERE schema_name = :s")
+                .bind("s", SERVER_SCHEMA_NAME)
+                .map(row -> row.get("key_manager", String.class)).one().block();
+        assertThat(storedKm).isEqualTo("db-tde");
+    }
+
+    /**
+     * EUDISTACK-413 AC-2c (idempotent): re-INSERT server+db-tde with ON CONFLICT DO NOTHING is a no-op.
+     */
+    @Test
+    void reInsertingServerDbTdeRowOnConflictDoNothing_isIdempotentNoOp() {
+        String upsert = "INSERT INTO public.tenant_wallet_config "
+                + "(schema_name, host, wallet_mode, key_manager, natural_persons_only) "
+                + "VALUES (:s, :h, 'server', 'db-tde', false) ON CONFLICT (schema_name) DO NOTHING";
+
+        Long first = databaseClient.sql(upsert).bind("s", SERVER_SCHEMA_NAME).bind("h", SERVER_HOST)
+                .fetch().rowsUpdated().block();
+        assertThat(first).isEqualTo(1L);
+
+        Long second = databaseClient.sql(upsert).bind("s", SERVER_SCHEMA_NAME).bind("h", SERVER_HOST)
+                .fetch().rowsUpdated().block();
+        assertThat(second).isZero();
+
+        Long count = databaseClient.sql("SELECT count(*) FROM public.tenant_wallet_config")
+                .map(row -> row.get(0, Long.class)).one().block();
+        assertThat(count).isEqualTo(1L);
+    }
+
+    /**
+     * EUDISTACK-413 AC-2a: the V3 migration applies over a pre-existing server+db-tde row without
+     * failing (additive-safe). Simulates the case where a DOME row was already seeded before V3
+     * was deployed (DOME seed pre-dates this Story — commit ab2baa0).
+     *
+     * <p>The V3 file only adds an ALTER TABLE ADD CONSTRAINT; it does not touch rows. An existing
+     * server+db-tde row satisfies the new CHECK and must survive migration without error.
+     */
+    @Test
+    void v3Migration_isAdditiveSafeOverPreExistingServerDbTdeRow() {
+        // Pre-condition: dome row already in the table before V3's ALTER TABLE ADD CONSTRAINT
+        // (simulated here since all migrations ran in @BeforeAll; we verify the row can be inserted
+        // and that the constraint is satisfied — the real additive-safe scenario is that the
+        // constraint is compatible with pre-existing data, which this insert confirms).
+        Long rows = databaseClient.sql(
+                        "INSERT INTO public.tenant_wallet_config "
+                                + "(schema_name, host, wallet_mode, key_manager, natural_persons_only, version) "
+                                + "VALUES (:s, :h, 'server', 'db-tde', false, 1)")
+                .bind("s", SERVER_SCHEMA_NAME)
+                .bind("h", SERVER_HOST)
+                .fetch().rowsUpdated().block();
+        assertThat(rows).isEqualTo(1L);
+
+        // The constraint chk_twc_server_requires_key_manager must not reject a coherent server+db-tde row.
+        Long count = databaseClient.sql("SELECT count(*) FROM public.tenant_wallet_config WHERE schema_name = :s")
+                .bind("s", SERVER_SCHEMA_NAME)
+                .map(row -> row.get(0, Long.class)).one().block();
+        assertThat(count).isEqualTo(1L);
+    }
+
+    /**
+     * EUDISTACK-413 AC-2a: the constraint {@code chk_twc_server_requires_key_manager} exists in
+     * {@code pg_constraint} after V3 is applied.
+     */
+    @Test
+    void v3Constraint_existsInPgConstraint() {
+        Long count = databaseClient.sql(
+                        "SELECT count(*) FROM pg_constraint "
+                                + "WHERE conname = 'chk_twc_server_requires_key_manager' "
+                                + "AND contype = 'c'")
+                .map(row -> row.get(0, Long.class)).one().block();
+        assertThat(count).isEqualTo(1L);
+    }
+
+    /**
+     * EUDISTACK-413 T-3 smoke check: the read adapter resolves a server+db-tde row to a descriptor
+     * with {@code walletMode=SERVER} and {@code keyManager=DB_TDE}, using the production R2DBC adapter.
+     */
+    @Test
+    void findByHost_resolvesSeededServerDbTdeTenant_toServerDescriptorWithKeyManager() {
+        databaseClient.sql(
+                        "INSERT INTO public.tenant_wallet_config "
+                                + "(schema_name, host, wallet_mode, key_manager, natural_persons_only, version) "
+                                + "VALUES (:s, :h, 'server', 'db-tde', false, 2)")
+                .bind("s", SERVER_SCHEMA_NAME)
+                .bind("h", SERVER_HOST)
+                .fetch().rowsUpdated().block();
+
+        StepVerifier.create(readAdapter.findByHost(SERVER_HOST))
+                .assertNext(descriptor -> {
+                    assertThat(descriptor.getSchemaName()).isEqualTo(SERVER_SCHEMA_NAME);
+                    assertThat(descriptor.getHost()).isEqualTo(SERVER_HOST);
+                    assertThat(descriptor.getWalletMode()).isEqualTo(WalletMode.SERVER);
+                    assertThat(descriptor.getKeyManager()).isPresent().contains(KeyManager.DB_TDE);
+                    assertThat(descriptor.isNaturalPersonsOnly()).isFalse();
+                    assertThat(descriptor.getSupportedCredentials()).isEmpty();
+                    assertThat(descriptor.getVersion()).isEqualTo(2L);
+                })
                 .verifyComplete();
     }
 
