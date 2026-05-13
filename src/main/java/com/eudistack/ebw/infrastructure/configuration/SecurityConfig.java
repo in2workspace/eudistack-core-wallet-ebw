@@ -13,7 +13,6 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
-import reactor.core.publisher.Mono;
 
 import java.util.Arrays;
 import java.util.List;
@@ -25,7 +24,8 @@ public class SecurityConfig {
     private final JwtAuthenticationWebFilter jwtAuthFilter;
     private final CorsProperties corsProperties;
 
-    public SecurityConfig(JwtAuthenticationWebFilter jwtAuthFilter, CorsProperties corsProperties) {
+    public SecurityConfig(JwtAuthenticationWebFilter jwtAuthFilter,
+                          CorsProperties corsProperties) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.corsProperties = corsProperties;
     }
@@ -53,6 +53,7 @@ public class SecurityConfig {
                         .pathMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/v1/auth/logout").permitAll()
                         .pathMatchers("/health", "/health/**").permitAll()
+                        .pathMatchers(HttpMethod.GET, "/.well-known/wallet-config-metadata").permitAll()
                         .anyExchange().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, SecurityWebFiltersOrder.AUTHENTICATION)
@@ -72,7 +73,7 @@ public class SecurityConfig {
         var config = new CorsConfiguration();
         var origins = Arrays.asList(corsProperties.allowedOrigins().split(","));
         config.setAllowedOriginPatterns(origins);
-        config.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Api-Version"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);

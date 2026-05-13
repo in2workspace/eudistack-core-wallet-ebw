@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.support.WebExchangeBindException;
 
 import java.net.URI;
-import java.util.List;
 import java.util.Map;
 
 @ControllerAdvice
