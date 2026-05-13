@@ -91,23 +91,28 @@ public class OperationalConfigWriter {
      * extract it; the {@link com.eudistack.ebw.wallet.config.domain.port.EnvelopeEncryptionPort}
      * is the only authorized consumer of that material.
      *
+     * <p>The fast-fail validators run inside a {@link Mono#fromCallable} so that
+     * {@code onErrorResume} can intercept their throws and emit a DENY audit before
+     * re-signaling (tech-design §3 sequence diagram — audit happens before the error
+     * propagates to the caller).
+     *
      * @param command the write command; must not be null
      * @return a {@link Mono} emitting the persisted descriptor
-     * @throws UnsupportedKeyManagerException      (synchronous, before reactive chain) if
-     *                                             {@code key_manager != DB_TDE}
-     * @throws IncompleteOperationalConfigException (synchronous) if domain invariants are not met
-     * @throws ProbeFailedException                 (reactive) if the connectivity probe fails
      */
     public Mono<OperationalConfigDescriptor> apply(ApplyOperationalConfigCommand command) {
-        // --- Phase 1: synchronous fast-fail validators ---
-        validateKeyManagerSupported(command);
-        validateOperationalConfigInvariants(command);
-
-        log.info("Applying operational config: keyManager={}, actor={}, correlationId={}",
-                command.keyManager(), command.actor(), command.correlationId());
-
-        // --- Phase 2: connectivity probe (outside the main transaction) ---
-        return connectivityPort.probe(command.keyManager(), command.operationalConfig())
+        // --- Phase 1 + 2 + 3 inside a single reactive chain ---
+        // Validators run inside Mono.fromCallable so onErrorResume catches their throws
+        // and can emit a DENY audit before re-signaling (closes the audit gap — tech-design §3).
+        return Mono.fromCallable(() -> {
+                    validateKeyManagerSupported(command);
+                    validateOperationalConfigInvariants(command);
+                    return command;
+                })
+                .doOnSuccess(cmd -> log.info(
+                        "Applying operational config: keyManager={}, actor={}, correlationId={}",
+                        cmd.keyManager(), cmd.actor(), cmd.correlationId()))
+                // --- Phase 2: connectivity probe (outside the main transaction) ---
+                .flatMap(cmd -> connectivityPort.probe(cmd.keyManager(), cmd.operationalConfig()))
                 .flatMap(probeResult -> switch (probeResult) {
                     case ProbeResult.Ok ok -> {
                         log.info("Connectivity probe passed: keyManager={}, latencyMs={}, correlationId={}",
@@ -132,20 +137,39 @@ public class OperationalConfigWriter {
                                 .then(Mono.error(new ProbeFailedException(reason)));
                     }
                 })
-                .onErrorResume(ex -> {
-                    if (ex instanceof ProbeFailedException) {
-                        // Audit was already emitted in the probe handling above.
-                        return Mono.error(ex);
-                    }
-                    // Mid-transaction errors (OptimisticLockingFailureException,
-                    // DataIntegrityViolationException, etc.) — emit DENY audit in REQUIRES_NEW
-                    // so the audit persists even though the main tx rolled back (AD-S4, AC-4c).
-                    String reason = resolveAuditReason(ex);
-                    log.error("Operational config write failed: keyManager={}, correlationId={}, error={}",
-                            command.keyManager(), command.correlationId(), ex.getMessage());
-                    return auditDeny(command, OperationalAuditEvent.EventType.CONFIG_REJECTED, reason)
-                            .then(Mono.error(ex));
-                });
+                .onErrorResume(ex -> emitDenyAuditAndRethrow(ex, command));
+    }
+
+    /**
+     * Intercepts any error in the reactive chain and emits a DENY audit before re-signaling.
+     *
+     * <p>Handles three categories:
+     * <ul>
+     *   <li>{@link ProbeFailedException} — audit was already emitted inside the probe handling
+     *       switch; re-signal without a second audit insert.</li>
+     *   <li>{@link UnsupportedKeyManagerException} / {@link IncompleteOperationalConfigException}
+     *       — thrown by the fast-fail validators (now inside {@code Mono.fromCallable}); emit
+     *       {@code config.rejected} DENY audit in {@code REQUIRES_NEW} before re-signaling.</li>
+     *   <li>Any other error (e.g. {@code OptimisticLockingFailureException},
+     *       {@code DataIntegrityViolationException} from mid-transaction) — emit
+     *       {@code config.rejected} DENY audit in {@code REQUIRES_NEW} (AD-S4, AC-4c) before
+     *       re-signaling.</li>
+     * </ul>
+     *
+     * <p>The {@code reason} string never contains secret values — for
+     * {@link IncompleteOperationalConfigException} it lists missing field <em>names</em> only.
+     */
+    private Mono<OperationalConfigDescriptor> emitDenyAuditAndRethrow(
+            Throwable ex, ApplyOperationalConfigCommand command) {
+        if (ex instanceof ProbeFailedException) {
+            // Audit was already emitted in the probe handling above.
+            return Mono.error(ex);
+        }
+        String reason = resolveAuditReason(ex);
+        log.error("Operational config write failed: keyManager={}, correlationId={}, error={}",
+                command.keyManager(), command.correlationId(), ex.getMessage());
+        return auditDeny(command, OperationalAuditEvent.EventType.CONFIG_REJECTED, reason)
+                .then(Mono.error(ex));
     }
 
     // --- Private helpers ---
@@ -342,8 +366,17 @@ public class OperationalConfigWriter {
     /**
      * Produces a safe functional reason string from an exception, without exposing
      * infrastructure details or secret values.
+     *
+     * <p>For {@link IncompleteOperationalConfigException} the reason lists the missing field
+     * <em>names</em> only — never field values (AC-4d).
      */
     private String resolveAuditReason(Throwable ex) {
+        if (ex instanceof IncompleteOperationalConfigException ice) {
+            return "missing required fields: " + String.join(", ", ice.invalidFields());
+        }
+        if (ex instanceof UnsupportedKeyManagerException uke) {
+            return "key_manager '" + uke.offendingKeyManager().getValue() + "' not supported in US-03";
+        }
         String className = ex.getClass().getSimpleName();
         // Map known Spring Data / R2DBC exception class names to functional messages.
         return switch (className) {
