@@ -75,7 +75,10 @@ public class WalletTenantConfigDiscoveryController {
                     .<Object>body(missingHostProblem()));
         }
 
-        String normalizedHost = host.toLowerCase();
+        // Normalise: lowercase + strip optional port suffix (e.g. ":443") — CloudFront strips the
+        // port before forwarding in production, but direct / test callers may include it (AC-1e).
+        String hostWithoutPort = host.contains(":") ? host.substring(0, host.lastIndexOf(':')) : host;
+        String normalizedHost = hostWithoutPort.toLowerCase();
         log.debug("Discovery request for host={}", normalizedHost);
 
         Mono<ResponseEntity<Object>> found = readService.retrieveDescriptor(normalizedHost)

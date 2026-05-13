@@ -1,6 +1,7 @@
 package com.eudistack.ebw.wallet.config.application;
 
 import com.eudistack.ebw.wallet.config.application.workflow.WalletTenantConfigReadService;
+import com.eudistack.ebw.wallet.config.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.config.domain.model.TenantWalletConfigDescriptor;
 import com.eudistack.ebw.wallet.config.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.config.domain.port.TenantConfigurationPort;
@@ -21,9 +22,9 @@ import static org.mockito.Mockito.when;
 /**
  * Unit tests for {@link WalletTenantConfigReadService}.
  *
- * <p>Covers T-1 (AC-1a, AC-1c, AC-1d) and T-2 (AC-1e) from tech-design §2.3. No Spring context —
- * uses Mockito only. The discovery read path is read-only: the service mocks only
- * {@link TenantConfigurationPort#findByHost} — there is no write side in EUDISTACK-412.
+ * <p>Covers T-1 (AC-1a, AC-1c, AC-1d) and T-2 (AC-1e) from tech-design §2.3 (EUDISTACK-412),
+ * plus T-1/T-2 for the {@code server}+{@code db-tde} case (EUDISTACK-413 AC-1a). No Spring
+ * context — uses Mockito only. The discovery read path is mode-agnostic and read-only.
  */
 class WalletTenantConfigReadServiceTest {
 
@@ -124,6 +125,76 @@ class WalletTenantConfigReadServiceTest {
         Mono<TenantWalletConfigDescriptor> result = readService.retrieveDescriptor(normalisedHost);
 
         // Then — single port interaction, argument forwarded verbatim
+        StepVerifier.create(result)
+                .expectNext(descriptor)
+                .verifyComplete();
+
+        verify(tenantConfigurationPort).findByHost(normalisedHost);
+        verifyNoMoreInteractions(tenantConfigurationPort);
+    }
+
+    // ------------------------------------------------------------------
+    // EUDISTACK-413 — T-1/T-2 server+db-tde: service is mode-agnostic (AC-1a)
+    // ------------------------------------------------------------------
+
+    /**
+     * EUDISTACK-413 T-1 (server case): {@code retrieveDescriptor(host)} for a {@code server}+
+     * {@code db-tde} tenant returns the descriptor with {@code walletMode=SERVER},
+     * {@code keyManager=Optional.of(DB_TDE)}, {@code naturalPersonsOnly=false},
+     * {@code supportedCredentials=[]}, and the correct {@code version}.
+     *
+     * <p>The service is a thin pass-through regardless of mode — the domain aggregate already
+     * carries {@code keyManager} internally; the public DTO layer (DiscoveryResponseDto) is what
+     * omits it from the HTTP response body (AD-1bis). Keeping this assertion at the service layer
+     * verifies that the service does not accidentally strip or alter the {@code keyManager} field.
+     */
+    @Test
+    void retrieveDescriptor_serverDbTdeTenantExists_returnsDescriptorWithKeyManagerPresent() {
+        // Given
+        String host = "dome.eudistack.example.com";
+        TenantWalletConfigDescriptor descriptor = TenantWalletConfigDescriptor.of(
+                "dome", host, WalletMode.SERVER,
+                Optional.of(KeyManager.DB_TDE), false, Collections.emptyList(), 1L);
+        when(tenantConfigurationPort.findByHost(host)).thenReturn(Mono.just(descriptor));
+
+        // When
+        Mono<TenantWalletConfigDescriptor> result = readService.retrieveDescriptor(host);
+
+        // Then — descriptor surfaces server mode with db-tde key manager intact
+        StepVerifier.create(result)
+                .assertNext(d -> {
+                    assertThat(d.getHost()).isEqualTo(host);
+                    assertThat(d.getWalletMode()).isEqualTo(WalletMode.SERVER);
+                    assertThat(d.getKeyManager()).contains(KeyManager.DB_TDE);
+                    assertThat(d.isNaturalPersonsOnly()).isFalse();
+                    assertThat(d.getSupportedCredentials()).isEmpty();
+                    assertThat(d.getVersion()).isEqualTo(1L);
+                })
+                .verifyComplete();
+
+        verify(tenantConfigurationPort).findByHost(host);
+        verifyNoMoreInteractions(tenantConfigurationPort);
+    }
+
+    /**
+     * EUDISTACK-413 T-2 (server, port-strip normalisation): the service forwards the host
+     * argument to the port unchanged. An uppercase host with port ({@code DOME.EUDISTACK.EXAMPLE.COM:443})
+     * has already been normalised by the controller before reaching the service — this test verifies
+     * that the service itself does not perform any additional transformation.
+     */
+    @Test
+    void retrieveDescriptor_serverTenant_forwardsNormalisedHostToPortUnchanged() {
+        // Given — controller has already lowercased and stripped the port
+        String normalisedHost = "dome.eudistack.example.com";
+        TenantWalletConfigDescriptor descriptor = TenantWalletConfigDescriptor.of(
+                "dome", normalisedHost, WalletMode.SERVER,
+                Optional.of(KeyManager.DB_TDE), false, Collections.emptyList(), 2L);
+        when(tenantConfigurationPort.findByHost(normalisedHost)).thenReturn(Mono.just(descriptor));
+
+        // When
+        Mono<TenantWalletConfigDescriptor> result = readService.retrieveDescriptor(normalisedHost);
+
+        // Then — single port call, argument forwarded verbatim
         StepVerifier.create(result)
                 .expectNext(descriptor)
                 .verifyComplete();
