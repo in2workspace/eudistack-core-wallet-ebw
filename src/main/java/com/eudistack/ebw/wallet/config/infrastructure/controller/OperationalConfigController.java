@@ -58,7 +58,7 @@ import java.util.UUID;
  * (scoped {@code @RestControllerAdvice} — AD-1).
  */
 @RestController
-@RequestMapping("/business-wallet/admin/wallet-operational-config")
+@RequestMapping("/admin/wallet-operational-config")
 public class OperationalConfigController {
 
     private static final Logger log = LoggerFactory.getLogger(OperationalConfigController.class);
