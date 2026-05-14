@@ -64,6 +64,9 @@ dependencies {
 	// JWT ES256 signing/verification
 	implementation 'com.nimbusds:nimbus-jose-jwt:10.3'
 
+    // --- AWS SDK v2 ---
+    implementation 'software.amazon.awssdk:kms:2.31.78'
+
     // --- Cryptography ---
     implementation 'com.nimbusds:nimbus-jose-jwt:9.40'
     implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
