@@ -11,7 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.r2dbc.core.DatabaseClient;
-import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
@@ -33,8 +32,11 @@ import java.util.UUID;
  * <p>This adapter does <strong>not</strong> open its own transaction. The caller
  * ({@code OperationalConfigWriter}) wraps calls in {@code TransactionalOperator.execute},
  * and the reactive transaction propagates through the Reactor context.
+ *
+ * <p>This class is NOT annotated with {@code @Component}. It is instantiated by
+ * {@code OperationalConfigBeans} (Task 9) following the explicit-wiring pattern established
+ * by {@code WalletTenantConfigR2dbcAdapter}.
  */
-@Component
 public class OperationalConfigR2dbcAdapter implements OperationalConfigPort {
 
     private static final Logger log = LoggerFactory.getLogger(OperationalConfigR2dbcAdapter.class);

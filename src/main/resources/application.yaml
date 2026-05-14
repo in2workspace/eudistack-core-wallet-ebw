@@ -1,3 +1,21 @@
+aws:
+  region: ${AWS_REGION:eu-west-1}
+  endpoint-override: ${AWS_ENDPOINT_OVERRIDE:#{null}}
+
+wallet-ebw:
+  probe:
+    timeout-ms: 5000
+  operational-plane:
+    # Feature flag for the operational-config runtime consumer (default OFF — deploy-safe).
+    # Future consumers of OperationalConfigPort#findActive() gate on this property via
+    # @ConditionalOnProperty. Operator sets to true once TDE is fully provisioned (Task 18 IaC).
+    enabled: false
+  kms:
+    # Operator-supplied CMK ARN; must be set in production via ECS task definition env var
+    # WALLET_EBW_KMS_CMK_ARN (Task 18 IaC). Left empty here — the writer receives the ARN
+    # per-call from the command payload, not from this property (US-03 design).
+    cmk-arn: ${WALLET_EBW_KMS_CMK_ARN:}
+
 spring:
   application:
     name: eudistack-core-wallet-ebw
