@@ -110,9 +110,13 @@ public class Es256TokenSigner implements TokenSigner {
             result.put("iss", claimsSet.getIssuer());
             result.put("iat", claimsSet.getIssueTime());
             result.put("exp", claimsSet.getExpirationTime());
-            // Pass through OAuth2-style scope claims if present so the security filter can map
-            // them to granted authorities (SEC-B2). EBW user tokens currently carry neither
-            // claim, so this is purely additive — no behaviour change for existing tokens.
+            // Pass through PBAC powers and OAuth2-style scope claims if present so the
+            // security filter can map them to granted authorities. Additive — no behaviour
+            // change for existing tokens that carry neither claim.
+            var powers = claimsSet.getClaim("powers");
+            if (powers != null) {
+                result.put("powers", powers);
+            }
             var scope = claimsSet.getClaim("scope");
             if (scope != null) {
                 result.put("scope", scope);
