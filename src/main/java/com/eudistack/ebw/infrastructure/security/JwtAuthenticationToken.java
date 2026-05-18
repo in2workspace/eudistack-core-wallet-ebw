@@ -1,8 +1,9 @@
 package com.eudistack.ebw.infrastructure.security;
 
 import org.springframework.security.authentication.AbstractAuthenticationToken;
-import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.GrantedAuthority;
 
+import java.util.Collection;
 import java.util.UUID;
 
 public class JwtAuthenticationToken extends AbstractAuthenticationToken {
@@ -10,8 +11,8 @@ public class JwtAuthenticationToken extends AbstractAuthenticationToken {
     private final UUID userId;
     private final String email;
 
-    public JwtAuthenticationToken(UUID userId, String email) {
-        super(AuthorityUtils.NO_AUTHORITIES);
+    public JwtAuthenticationToken(UUID userId, String email, Collection<? extends GrantedAuthority> authorities) {
+        super(authorities);
         this.userId = userId;
         this.email = email;
         setAuthenticated(true);

@@ -2,6 +2,8 @@ package com.eudistack.ebw.wallet.config.infrastructure.controller;
 
 import com.eudistack.ebw.wallet.config.application.operational.OperationalConfigReader;
 import com.eudistack.ebw.wallet.config.application.operational.OperationalConfigWriter;
+import com.eudistack.ebw.wallet.config.application.operational.exception.IfMatchRequiredException;
+import com.eudistack.ebw.wallet.config.application.operational.exception.OperationalConfigNotFoundException;
 import com.eudistack.ebw.wallet.config.infrastructure.controller.dto.OperationalConfigRequestDto;
 import com.eudistack.ebw.wallet.config.infrastructure.controller.dto.OperationalConfigResponseDto;
 import jakarta.validation.Valid;
@@ -9,7 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,7 +22,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
-import java.net.URI;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -98,11 +98,11 @@ public class OperationalConfigController {
 
         String resolvedCorrelationId = resolveCorrelationId(correlationId);
         log.info("POST operational-config: keyManager={}, correlationId={}",
-                body.keyManager(), resolvedCorrelationId);
+                body.keyManager(), sanitizeHeader(resolvedCorrelationId));
 
         return resolveActor()
                 .flatMap(actor -> writer.apply(
-                        body.toCommand(actor, resolvedCorrelationId, Optional.empty())))
+                        body.toCommand(actor, sanitizeHeader(resolvedCorrelationId), Optional.empty())))
                 .map(descriptor -> {
                     OperationalConfigResponseDto dto = OperationalConfigResponseDto.from(descriptor);
                     String etag = "\"" + descriptor.version() + "\"";
@@ -142,24 +142,23 @@ public class OperationalConfigController {
 
         if (ifMatch == null) {
             log.debug("PUT rejected: missing If-Match header");
-            return Mono.just(ResponseEntity.status(HttpStatus.PRECONDITION_REQUIRED)
-                    .<OperationalConfigResponseDto>build());
+            return Mono.error(new IfMatchRequiredException());
         }
 
         Optional<Long> ifMatchVersion = parseIfMatch(ifMatch);
         if (ifMatchVersion.isEmpty()) {
-            log.debug("PUT rejected: malformed If-Match header value='{}'", ifMatch);
+            log.debug("PUT rejected: malformed If-Match header value='{}'", sanitizeHeader(ifMatch));
             return Mono.error(new IllegalArgumentException(
                     "If-Match header must be a quoted long integer (e.g. \"3\"); received: " + ifMatch));
         }
 
         String resolvedCorrelationId = resolveCorrelationId(correlationId);
         log.info("PUT operational-config: keyManager={}, ifMatch={}, correlationId={}",
-                body.keyManager(), ifMatchVersion.get(), resolvedCorrelationId);
+                body.keyManager(), ifMatchVersion.get(), sanitizeHeader(resolvedCorrelationId));
 
         return resolveActor()
                 .flatMap(actor -> writer.apply(
-                        body.toCommand(actor, resolvedCorrelationId, ifMatchVersion)))
+                        body.toCommand(actor, sanitizeHeader(resolvedCorrelationId), ifMatchVersion)))
                 .map(descriptor -> {
                     OperationalConfigResponseDto dto = OperationalConfigResponseDto.from(descriptor);
                     String etag = "\"" + descriptor.version() + "\"";
@@ -184,7 +183,7 @@ public class OperationalConfigController {
     public Mono<ResponseEntity<OperationalConfigResponseDto>> retrieve(
             @RequestHeader(value = CORRELATION_ID_HEADER, required = false) String correlationId) {
 
-        String resolvedCorrelationId = resolveCorrelationId(correlationId);
+        String resolvedCorrelationId = sanitizeHeader(resolveCorrelationId(correlationId));
         log.debug("GET operational-config: correlationId={}", resolvedCorrelationId);
 
         return reader.findActive()
@@ -192,12 +191,8 @@ public class OperationalConfigController {
                     if (optDescriptor.isEmpty()) {
                         log.debug("GET operational-config: no active config found, correlationId={}",
                                 resolvedCorrelationId);
-                        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
-                        problem.setType(URI.create("urn:eudistack:error:operational-config-not-found"));
-                        problem.setTitle("Not Found");
-                        problem.setDetail("No active operational configuration has been applied for this tenant.");
-                        return Mono.<ResponseEntity<OperationalConfigResponseDto>>just(
-                                ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+                        return Mono.<ResponseEntity<OperationalConfigResponseDto>>error(
+                                new OperationalConfigNotFoundException());
                     }
                     var descriptor = optDescriptor.get();
                     OperationalConfigResponseDto dto = OperationalConfigResponseDto.from(descriptor);
@@ -237,6 +232,12 @@ public class OperationalConfigController {
             return correlationId;
         }
         return UUID.randomUUID().toString();
+    }
+
+    /** Strips CR/LF and truncates to 32 chars before logging to prevent log injection. */
+    private static String sanitizeHeader(String value) {
+        if (value == null) return null;
+        return value.replace("\r", "").replace("\n", "").substring(0, Math.min(value.length(), 32));
     }
 
     /**

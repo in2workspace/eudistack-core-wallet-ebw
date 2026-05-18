@@ -39,7 +39,7 @@ public record OperationalConfigRequestDto(
 
         @JsonProperty("wrapped_dek")
         @NotNull(message = "wrapped_dek must not be null")
-        @Size(min = 1, message = "wrapped_dek must contain at least one byte")
+        @Size(min = 1, max = 4096, message = "wrapped_dek must be between 1 and 4096 bytes")
         byte[] wrappedDek,
 
         @JsonProperty("algorithm")

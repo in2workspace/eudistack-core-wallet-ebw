@@ -1,6 +1,8 @@
 package com.eudistack.ebw.wallet.config.infrastructure.controller.exception;
 
+import com.eudistack.ebw.wallet.config.application.operational.exception.IfMatchRequiredException;
 import com.eudistack.ebw.wallet.config.application.operational.exception.IncompleteOperationalConfigException;
+import com.eudistack.ebw.wallet.config.application.operational.exception.OperationalConfigNotFoundException;
 import com.eudistack.ebw.wallet.config.application.operational.exception.ProbeFailedException;
 import com.eudistack.ebw.wallet.config.application.operational.exception.UnsupportedKeyManagerException;
 import com.eudistack.ebw.wallet.config.infrastructure.adapter.kms.KmsAccessException;
@@ -29,6 +31,8 @@ import java.util.stream.Collectors;
  *
  * <p>HTTP status mapping (per tech-design §3.2 and TASKS.md task 8):
  * <ul>
+ *   <li>{@link OperationalConfigNotFoundException} → {@code 404 Not Found}</li>
+ *   <li>{@link IfMatchRequiredException} → {@code 428 Precondition Required}</li>
  *   <li>{@link IncompleteOperationalConfigException} → {@code 409 Conflict}</li>
  *   <li>{@link UnsupportedKeyManagerException} → {@code 409 Conflict}</li>
  *   <li>{@link ProbeFailedException} → {@code 424 Failed Dependency}</li>
@@ -43,6 +47,28 @@ import java.util.stream.Collectors;
 public class OperationalConfigExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(OperationalConfigExceptionHandler.class);
+
+    /**
+     * Maps {@link OperationalConfigNotFoundException} to {@code 404 Not Found} (AC-5).
+     */
+    @ExceptionHandler(OperationalConfigNotFoundException.class)
+    public ResponseEntity<ProblemDetail> handleNotFound(OperationalConfigNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setType(URI.create("urn:eudistack:error:operational-config-not-found"));
+        problem.setTitle("Not Found");
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
+    }
+
+    /**
+     * Maps {@link IfMatchRequiredException} to {@code 428 Precondition Required} (RFC 9457).
+     */
+    @ExceptionHandler(IfMatchRequiredException.class)
+    public ResponseEntity<ProblemDetail> handleIfMatchRequired(IfMatchRequiredException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.PRECONDITION_REQUIRED, ex.getMessage());
+        problem.setType(URI.create("urn:eudistack:error:precondition-required"));
+        problem.setTitle("Precondition Required");
+        return ResponseEntity.status(HttpStatus.PRECONDITION_REQUIRED).body(problem);
+    }
 
     /**
      * Maps {@link IncompleteOperationalConfigException} to {@code 409 Conflict}.
