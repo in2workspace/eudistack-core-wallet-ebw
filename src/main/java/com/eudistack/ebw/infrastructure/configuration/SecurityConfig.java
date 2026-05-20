@@ -53,8 +53,6 @@ public class SecurityConfig {
                         .pathMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/v1/auth/logout").permitAll()
                         .pathMatchers("/health", "/health/**").permitAll()
-                        .pathMatchers(HttpMethod.GET, "/.well-known/wallet-config-metadata").permitAll()
-                        .pathMatchers("/admin/wallet-operational-config", "/admin/wallet-operational-config/**").hasAuthority("tenant.config.write")
                         .anyExchange().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, SecurityWebFiltersOrder.AUTHENTICATION)
