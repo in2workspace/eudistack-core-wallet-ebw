@@ -44,7 +44,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
 
     // --- Database ---
-    runtimeOnly 'org.postgresql:r2dbc-postgresql'
+    implementation 'org.postgresql:r2dbc-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
