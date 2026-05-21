@@ -51,15 +51,22 @@ CREATE TABLE IF NOT EXISTS tenant_wallet_profile (
 --                       deactivated is flagged, never deleted (architecture.md AD-2
 --                       Consequences). This is enforced by the absence of GRANT.
 --
--- The GRANT to config_manager_role is wrapped in a DO block (AD-412-4) so that
--- this migration runs cleanly in dev-local environments where the role has not
--- been provisioned yet (IaC + US-09 runbook are responsible for that role in
--- STG/PROD). In CI, TestContainers creates the role explicitly before applying
--- the migration, ensuring full ACL coverage is exercised (WalletProfileRoleAclIT).
+-- Both GRANTs are wrapped in DO blocks (AD-412-4) so that this migration runs
+-- cleanly in dev-local Docker environments where neither role has been provisioned
+-- yet (IaC is responsible for those roles in STG/PROD). In CI, TestContainers
+-- creates both roles explicitly before applying the migration, ensuring full ACL
+-- coverage is exercised (WalletProfileRoleAclIT).
 -- -----------------------------------------------------------------------------
 REVOKE ALL ON tenant_wallet_profile FROM PUBLIC;
 
-GRANT SELECT ON tenant_wallet_profile TO ebw_app_role;
+DO $$
+BEGIN
+    GRANT SELECT ON tenant_wallet_profile TO ebw_app_role;
+EXCEPTION
+    WHEN undefined_object THEN
+        NULL; -- ebw_app_role not provisioned in this environment (dev-local); skip silently
+END
+$$;
 
 DO $$
 BEGIN
