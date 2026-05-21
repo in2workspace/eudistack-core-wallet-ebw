@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS tenant_wallet_profile (
     CONSTRAINT chk_wallet_profile_mode_manager CHECK (
         (wallet_mode = 'browser' AND key_manager IS NULL)
         OR
-        (wallet_mode = 'server' AND key_manager IN ('db', 'hybrid', 'hsm', 'qtsp'))
+        (wallet_mode = 'server' AND key_manager IS NOT NULL
+            AND key_manager IN ('db', 'hybrid', 'hsm', 'qtsp'))
     )
 );
 
