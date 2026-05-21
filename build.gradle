@@ -39,46 +39,36 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
-	implementation 'org.springframework.boot:spring-boot-starter-actuator'
-	implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'
-	implementation 'org.springframework.boot:spring-boot-starter-mail'
-	implementation 'org.springframework.boot:spring-boot-starter-security'
-	implementation 'org.springframework.boot:spring-boot-starter-validation'
-	implementation 'org.springframework.boot:spring-boot-starter-webflux'
-	implementation 'org.flywaydb:flyway-core'
-	implementation 'org.flywaydb:flyway-database-postgresql'
-	implementation 'org.springframework:spring-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
 
     // --- Database ---
     runtimeOnly 'org.postgresql:r2dbc-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
-    runtimeOnly 'org.postgresql:postgresql'
+    implementation 'org.springframework:spring-jdbc'
 
     // --- Cache ---
     implementation 'com.github.ben-manes.caffeine:caffeine'
 
     // --- Serialization ---
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.18.2'
-	// JWT ES256 signing/verification
-	implementation 'com.nimbusds:nimbus-jose-jwt:10.3'
+    implementation 'com.nimbusds:nimbus-jose-jwt:10.3'
 
     // --- AWS SDK v2 ---
     implementation 'software.amazon.awssdk:kms:2.31.78'
 
     // --- Cryptography ---
-    implementation 'com.nimbusds:nimbus-jose-jwt:9.40'
     implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
-	// BouncyCastle — required by nimbus-jose-jwt for PEM parsing
-	implementation 'org.bouncycastle:bcpkix-jdk18on:1.80'
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.80'
 
     // --- Monitoring & Telemetry ---
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+    runtimeOnly 'io.micrometer:micrometer-registry-otlp'
     implementation 'io.micrometer:micrometer-tracing-bridge-otel'
     implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
-	// Rate limiting cache
-	implementation 'com.github.ben-manes.caffeine:caffeine'
 
     // --- DevTools ---
     compileOnly 'org.projectlombok:lombok'
@@ -87,16 +77,8 @@ dependencies {
     // --- Testing ---
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'io.projectreactor:reactor-test'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
-
-    runtimeOnly 'io.micrometer:micrometer-registry-otlp'
-    runtimeOnly 'org.postgresql:postgresql'
-    implementation 'org.postgresql:r2dbc-postgresql'
-
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'io.projectreactor:reactor-test'
     testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
     testImplementation 'org.testcontainers:junit-jupiter'
     testImplementation 'org.testcontainers:localstack'
     testImplementation 'org.testcontainers:postgresql'
