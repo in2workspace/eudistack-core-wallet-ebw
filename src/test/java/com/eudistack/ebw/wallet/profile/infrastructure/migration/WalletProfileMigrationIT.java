@@ -74,10 +74,10 @@ class WalletProfileMigrationIT {
      * Creates the database roles required by the migration and the target schema,
      * then runs all tenant-level Flyway migrations against the schema.
      *
-     * <p>The V3 migration contains an unconditional {@code GRANT SELECT TO ebw_app_role}
-     * and a conditional (DO-block) {@code GRANT ... TO config_manager_role}. In
-     * production, {@code ebw_app_role} is provisioned by IaC and always present;
-     * in TestContainers, roles do not exist unless explicitly created here.
+     * <p>Both V3 GRANTs ({@code ebw_app_role} SELECT and {@code config_manager_role}
+     * SELECT/INSERT/UPDATE) are wrapped in DO-block exception handlers (AD-412-4).
+     * Both roles are created here so both GRANTs succeed and the full ACL matrix
+     * is exercised. In production both roles are provisioned by IaC.
      *
      * <p>Both role creation statements use {@code DO ... EXCEPTION} so this method
      * is safe to call multiple times (NFR-S-412-01 multi-run tests). The same
