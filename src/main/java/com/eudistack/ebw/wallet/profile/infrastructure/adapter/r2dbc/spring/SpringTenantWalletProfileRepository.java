@@ -1,26 +1,25 @@
 package com.eudistack.ebw.wallet.profile.infrastructure.adapter.r2dbc.spring;
 
 import com.eudistack.ebw.wallet.profile.infrastructure.adapter.r2dbc.entity.TenantWalletProfileEntity;
-import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import org.springframework.data.repository.Repository;
 import reactor.core.publisher.Mono;
 
 /**
- * Spring Data R2DBC repository for {@link TenantWalletProfileEntity}.
+ * Read-only Spring Data R2DBC repository for {@link TenantWalletProfileEntity} (D-001).
  *
- * <p>The table {@code tenant_wallet_profile} has at most one row per tenant schema
- * (enforced by the {@code pk_tenant_wallet_profile} primary key on the {@code tenant}
- * column). Schema selection is transparent — it is handled by the existing
- * {@code TenantAwareConnectionFactory} (provisioned by EUDISTACK-480) via Reactor
- * Context, so callers of this repository do not pass a tenant parameter.
+ * <p>Extends the marker {@link Repository} interface (not {@code ReactiveCrudRepository})
+ * so only the declared {@link #findFirstBy()} method is exposed — write operations are
+ * not accessible from Java code, matching the operator-only write contract.
+ *
+ * <p>Schema selection is transparent — handled by {@code TenantAwareConnectionFactory}
+ * (EUDISTACK-480) via Reactor Context; callers do not pass a tenant parameter.
  *
  * <p>{@link #findFirstBy()} issues {@code SELECT … FROM tenant_wallet_profile LIMIT 1}
- * against whichever schema the current Reactor Context has established. The result is
- * {@link Mono#empty()} when no row exists for the current tenant (ES-02 in
- * {@code acceptance-criteria.md}) — Spring Data R2DBC returns empty naturally for
- * a query that matches no rows.
+ * against the current tenant schema. Returns {@link Mono#empty()} when no row exists
+ * (ES-02) — Spring Data R2DBC produces empty naturally for a zero-row result.
  */
 public interface SpringTenantWalletProfileRepository
-        extends ReactiveCrudRepository<TenantWalletProfileEntity, String> {
+        extends Repository<TenantWalletProfileEntity, String> {
 
     /**
      * Retrieves the single wallet-profile row for the current tenant schema.
