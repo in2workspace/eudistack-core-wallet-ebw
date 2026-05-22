@@ -40,14 +40,14 @@ public class WalletProfileQueryTelemetry {
 
     private static final Logger log = LoggerFactory.getLogger(WalletProfileQueryTelemetry.class);
 
-    static final String SPAN_NAME = "wallet_profile.read";
-    static final String METRIC_COUNTER = "wallet_profile_query_total";
-    static final String METRIC_TIMER = "wallet_profile_query_latency_ms";
-    static final String TAG_TENANT = "tenant";
-    static final String TAG_RESULT = "result";
-    static final String RESULT_SUCCESS = "success";
-    static final String RESULT_NOT_FOUND = "not_found";
-    static final String RESULT_ERROR = "error";
+    public static final String SPAN_NAME = "wallet_profile.read";
+    public static final String METRIC_COUNTER = "wallet_profile_query_total";
+    public static final String METRIC_TIMER = "wallet_profile_query_latency_ms";
+    public static final String TAG_TENANT = "tenant";
+    public static final String TAG_RESULT = "result";
+    public static final String RESULT_SUCCESS = "success";
+    public static final String RESULT_NOT_FOUND = "not_found";
+    public static final String RESULT_ERROR = "error";
 
     private final Tracer tracer;
     private final MeterRegistry meterRegistry;
