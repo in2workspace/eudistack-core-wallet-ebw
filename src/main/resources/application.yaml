@@ -7,6 +7,8 @@ spring:
     url: ${SPRING_R2DBC_URL:r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:eudistack}}
     username: ${SPRING_R2DBC_USERNAME:${DB_USERNAME:postgres}}
     password: ${SPRING_R2DBC_PASSWORD:${DB_PASSWORD:postgres}}
+    properties:
+      statementTimeout: PT1S
   flyway:
     # Disabled: TenantSchemaFlywayMigrator runs migrations for `public` + all
     # tenant schemas using R2DBC credentials. Spring Boot's auto-configured

@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ServerWebExchange;
 
 /**
  * Exception handler scoped exclusively to {@link WalletProfileQueryController}.
@@ -44,6 +45,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(assignableTypes = WalletProfileQueryController.class)
 public class WalletProfileQueryExceptionHandler {
 
+    /** Request attribute key storing {@code System.nanoTime()} captured at router entry (AD-413-3). */
+    public static final String ATTR_START_NANOS = "ebw.startNanos";
+
     private static final String HEADER_CACHE_CONTROL = "Cache-Control";
     private static final String HEADER_CACHE_CONTROL_VALUE = "public, max-age=60, must-revalidate";
     private static final String HEADER_X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options";
@@ -64,9 +68,9 @@ public class WalletProfileQueryExceptionHandler {
      * response body (byte-exact anti-enumeration — AD-413-2).
      */
     @ExceptionHandler(TenantUnknownException.class)
-    public ResponseEntity<ErrorResponse> handleTenantUnknown(TenantUnknownException ex) {
-        long startNanos = System.nanoTime();
-        telemetry.recordNotFound("unknown", ex.getReason(), startNanos);
+    public ResponseEntity<ErrorResponse> handleTenantUnknown(TenantUnknownException ex,
+            ServerWebExchange exchange) {
+        telemetry.recordNotFound("unknown", ex.getReason(), startNanosFrom(exchange));
         return buildOpaque404Response();
     }
 
@@ -74,9 +78,9 @@ public class WalletProfileQueryExceptionHandler {
      * Handles domain validation failures from the compact constructor (ES-03).
      */
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
-        long startNanos = System.nanoTime();
-        telemetry.recordError("unknown", ex, startNanos);
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex,
+            ServerWebExchange exchange) {
+        telemetry.recordError("unknown", ex, startNanosFrom(exchange));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .headers(securityAndCacheHeaders())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -87,9 +91,9 @@ public class WalletProfileQueryExceptionHandler {
      * Handles R2DBC connection/timeout errors (ES-04/ES-05) — maps to 503.
      */
     @ExceptionHandler(R2dbcException.class)
-    public ResponseEntity<ErrorResponse> handleR2dbcException(R2dbcException ex) {
-        long startNanos = System.nanoTime();
-        telemetry.recordError("unknown", ex, startNanos);
+    public ResponseEntity<ErrorResponse> handleR2dbcException(R2dbcException ex,
+            ServerWebExchange exchange) {
+        telemetry.recordError("unknown", ex, startNanosFrom(exchange));
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .headers(securityAndCacheHeaders())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -100,13 +104,18 @@ public class WalletProfileQueryExceptionHandler {
      * Catch-all for any unexpected throwable — maps to 500.
      */
     @ExceptionHandler(Throwable.class)
-    public ResponseEntity<ErrorResponse> handleThrowable(Throwable ex) {
-        long startNanos = System.nanoTime();
-        telemetry.recordError("unknown", ex, startNanos);
+    public ResponseEntity<ErrorResponse> handleThrowable(Throwable ex,
+            ServerWebExchange exchange) {
+        telemetry.recordError("unknown", ex, startNanosFrom(exchange));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .headers(securityAndCacheHeaders())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(ErrorResponse.INTERNAL_ERROR);
+    }
+
+    private long startNanosFrom(ServerWebExchange exchange) {
+        Long stored = exchange.getAttribute(ATTR_START_NANOS);
+        return stored != null ? stored : System.nanoTime();
     }
 
     /**

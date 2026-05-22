@@ -46,18 +46,23 @@ public class WalletProfileQueryWebConfig {
             WalletProfileQueryController controller) {
         return RouterFunctions.route()
                 .GET(WalletProfileQueryController.WELL_KNOWN_PATH,
-                        request -> controller.getWalletConfigMetadata()
-                                .flatMap(responseEntity -> {
-                                    ServerResponse.BodyBuilder builder =
-                                            ServerResponse.status(responseEntity.getStatusCode());
-                                    responseEntity.getHeaders().forEach(
-                                            (name, values) -> values.forEach(
-                                                    value -> builder.header(name, value)));
-                                    if (responseEntity.getBody() != null) {
-                                        return builder.bodyValue(responseEntity.getBody());
-                                    }
-                                    return builder.build();
-                                }))
+                        request -> {
+                            request.attributes().put(
+                                    WalletProfileQueryExceptionHandler.ATTR_START_NANOS,
+                                    System.nanoTime());
+                            return controller.getWalletConfigMetadata()
+                                    .flatMap(responseEntity -> {
+                                        ServerResponse.BodyBuilder builder =
+                                                ServerResponse.status(responseEntity.getStatusCode());
+                                        responseEntity.getHeaders().forEach(
+                                                (name, values) -> values.forEach(
+                                                        value -> builder.header(name, value)));
+                                        if (responseEntity.getBody() != null) {
+                                            return builder.bodyValue(responseEntity.getBody());
+                                        }
+                                        return builder.build();
+                                    });
+                        })
                 .build();
     }
 }

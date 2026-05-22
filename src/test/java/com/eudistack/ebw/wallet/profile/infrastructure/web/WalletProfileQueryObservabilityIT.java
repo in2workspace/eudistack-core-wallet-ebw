@@ -5,8 +5,10 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.eudistack.ebw.wallet.profile.infrastructure.observability.WalletProfileQueryTelemetry;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
@@ -224,6 +226,46 @@ class WalletProfileQueryObservabilityIT {
         assertThat(foundQueryLog)
                 .as("not-found path must log wallet_profile.query with result=not_found")
                 .isTrue();
+    }
+
+    // -------------------------------------------------------------------------
+    // AC-07 + NFR-S-413-02 — OTEL span name and attributes
+    // -------------------------------------------------------------------------
+
+    @Test
+    void getWalletConfigMetadata_success_emitsSpanWithCorrectAttributes() {
+        webClient.get()
+                .uri(WalletProfileQueryController.WELL_KNOWN_PATH)
+                .header("Host", BROWSER_TENANT + ".eudistack.net")
+                .exchange()
+                .expectStatus().isOk();
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems().stream()
+                .filter(s -> WalletProfileQueryTelemetry.SPAN_NAME.equals(s.getName()))
+                .toList();
+        assertThat(spans).as("span '%s' emitted on success", WalletProfileQueryTelemetry.SPAN_NAME)
+                .isNotEmpty();
+        SpanData span = spans.get(0);
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(WalletProfileQueryTelemetry.TAG_RESULT)))
+                .as("span result attribute").isEqualTo(WalletProfileQueryTelemetry.RESULT_SUCCESS);
+    }
+
+    @Test
+    void getWalletConfigMetadata_notFound_emitsSpanWithCorrectAttributes() {
+        webClient.get()
+                .uri(WalletProfileQueryController.WELL_KNOWN_PATH)
+                .header("Host", "unknowntenantobservability.eudistack.net")
+                .exchange()
+                .expectStatus().isNotFound();
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems().stream()
+                .filter(s -> WalletProfileQueryTelemetry.SPAN_NAME.equals(s.getName()))
+                .toList();
+        assertThat(spans).as("span '%s' emitted on not-found", WalletProfileQueryTelemetry.SPAN_NAME)
+                .isNotEmpty();
+        SpanData span = spans.get(0);
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(WalletProfileQueryTelemetry.TAG_RESULT)))
+                .as("span result attribute").isEqualTo(WalletProfileQueryTelemetry.RESULT_NOT_FOUND);
     }
 
     @Test
