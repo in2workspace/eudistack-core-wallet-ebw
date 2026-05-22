@@ -45,7 +45,7 @@ public class WalletProfileQueryTelemetry {
     public static final String METRIC_TIMER = "wallet_profile_query_latency_ms";
     public static final String TAG_TENANT = "tenant";
     public static final String TAG_RESULT = "result";
-    public static final String RESULT_SUCCESS = "success";
+    public static final String RESULT_SUCCESS = "miss_origin"; // AC-07: result ∈ {miss_origin, not_found}
     public static final String RESULT_NOT_FOUND = "not_found";
     public static final String RESULT_ERROR = "error";
 

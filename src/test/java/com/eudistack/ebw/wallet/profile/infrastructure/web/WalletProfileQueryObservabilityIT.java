@@ -203,9 +203,10 @@ class WalletProfileQueryObservabilityIT {
 
         boolean foundQueryLog = events.stream().anyMatch(e ->
                 e.getMessage().contains("wallet_profile.query")
-                && e.getFormattedMessage().contains("result=success"));
+                && e.getFormattedMessage().contains("result=" + WalletProfileQueryTelemetry.RESULT_SUCCESS));
         assertThat(foundQueryLog)
-                .as("success path must log wallet_profile.query with result=success")
+                .as("success path must log wallet_profile.query with result=%s",
+                        WalletProfileQueryTelemetry.RESULT_SUCCESS)
                 .isTrue();
     }
 
