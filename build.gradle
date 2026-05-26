@@ -10,7 +10,7 @@ plugins {
 }
 
 group = 'com.eudistack'
-version = '1.5.0'
+version = '1.6.0'
 
 java {
     toolchain {
@@ -75,6 +75,7 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
 
     // --- Testing ---
+    testImplementation 'io.opentelemetry:opentelemetry-sdk-testing'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'io.projectreactor:reactor-test'
     testImplementation 'org.springframework.security:spring-security-test'
