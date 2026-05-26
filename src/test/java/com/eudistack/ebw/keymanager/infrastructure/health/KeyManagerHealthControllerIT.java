@@ -11,6 +11,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -40,7 +41,8 @@ class KeyManagerHealthControllerIT {
     @Test
     void getHealthKeymanager_returns200WithStatusUp_whenDbConnectable() {
         Connection connection = mock(Connection.class);
-        when(connectionFactory.create()).thenReturn(Mono.just(connection));
+        // Publisher<? extends Connection> return type requires doAnswer to avoid Mockito generic bounds issue
+        doAnswer(inv -> Mono.just(connection)).when(connectionFactory).create();
         when(connection.close()).thenReturn(Mono.empty());
 
         webTestClient.get().uri("/health/keymanager")
@@ -52,7 +54,7 @@ class KeyManagerHealthControllerIT {
 
     @Test
     void getHealthKeymanager_returns503WithStatusDown_whenDbNotConnectable() {
-        when(connectionFactory.create()).thenReturn(Mono.error(new RuntimeException("connection refused")));
+        doAnswer(inv -> Mono.error(new RuntimeException("connection refused"))).when(connectionFactory).create();
 
         webTestClient.get().uri("/health/keymanager")
                 .exchange()

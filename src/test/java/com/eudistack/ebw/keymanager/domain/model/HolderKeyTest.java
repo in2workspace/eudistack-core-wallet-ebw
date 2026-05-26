@@ -1,9 +1,10 @@
 package com.eudistack.ebw.keymanager.domain.model;
 
-import com.eudistack.ebw.domain.model.CredentialFormat;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -12,39 +13,78 @@ class HolderKeyTest {
 
     private static final Instant NOW = Instant.parse("2026-05-26T10:00:00Z");
     private static final byte[] FAKE_KEY = new byte[]{1, 2, 3, 4, 5};
-    private static final String JWK = "{\"kty\":\"EC\",\"crv\":\"P-256\"}";
+    private static final JwkPublic JWK = new JwkPublic(
+            Map.of("kty", "EC", "crv", "P-256", "x", "abc", "y", "def"));
 
     private HolderKey validKey() {
-        return new HolderKey("kid-1", "holder-1", "cred-1", "tenant-1",
-                FAKE_KEY.clone(), JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null);
+        return new HolderKey(
+                HolderKeyId.generate(),
+                "tenant-1",
+                "holder-1",
+                "cred-1",
+                CredentialFormat.SD_JWT_VC,
+                KeyAlgorithm.ES256,
+                FAKE_KEY.clone(),
+                JWK,
+                NOW,
+                null);
     }
 
     @Test
     void constructor_allValidFields_succeeds() {
-        var key = validKey();
-        assertThat(key.keyId()).isEqualTo("kid-1");
+        HolderKeyId id = HolderKeyId.generate();
+        var key = new HolderKey(
+                id, "tenant-1", "holder-1", "cred-1",
+                CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                FAKE_KEY.clone(), JWK, NOW, null);
+
+        assertThat(key.id()).isEqualTo(id);
         assertThat(key.holderId()).isEqualTo("holder-1");
         assertThat(key.credentialId()).isEqualTo("cred-1");
         assertThat(key.tenantId()).isEqualTo("tenant-1");
         assertThat(key.publicJwk()).isEqualTo(JWK);
-        assertThat(key.algorithm()).isEqualTo("ES256");
-        assertThat(key.format()).isEqualTo(CredentialFormat.DC_SD_JWT);
+        assertThat(key.algorithm()).isEqualTo(KeyAlgorithm.ES256);
+        assertThat(key.format()).isEqualTo(CredentialFormat.SD_JWT_VC);
         assertThat(key.createdAt()).isEqualTo(NOW);
         assertThat(key.revokedAt()).isNull();
     }
 
     @Test
-    void constructor_nullKeyId_throwsNullPointerException() {
+    void constructor_nullId_throwsNullPointerException() {
         assertThatThrownBy(() ->
-                new HolderKey(null, "h", "c", "t", FAKE_KEY, JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null))
+                new HolderKey(null, "t", "h", "c",
+                        CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                        FAKE_KEY, JWK, NOW, null))
                 .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("keyId");
+                .hasMessageContaining("id");
+    }
+
+    @Test
+    void constructor_nullTenantId_throwsNullPointerException() {
+        assertThatThrownBy(() ->
+                new HolderKey(HolderKeyId.generate(), null, "h", "c",
+                        CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                        FAKE_KEY, JWK, NOW, null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("tenantId");
+    }
+
+    @Test
+    void constructor_blankTenantId_throwsIllegalArgumentException() {
+        assertThatThrownBy(() ->
+                new HolderKey(HolderKeyId.generate(), "  ", "h", "c",
+                        CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                        FAKE_KEY, JWK, NOW, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("tenantId");
     }
 
     @Test
     void constructor_nullHolderId_throwsNullPointerException() {
         assertThatThrownBy(() ->
-                new HolderKey("k", null, "c", "t", FAKE_KEY, JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null))
+                new HolderKey(HolderKeyId.generate(), "t", null, "c",
+                        CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                        FAKE_KEY, JWK, NOW, null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("holderId");
     }
@@ -52,31 +92,29 @@ class HolderKeyTest {
     @Test
     void constructor_nullCredentialId_throwsNullPointerException() {
         assertThatThrownBy(() ->
-                new HolderKey("k", "h", null, "t", FAKE_KEY, JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null))
+                new HolderKey(HolderKeyId.generate(), "t", "h", null,
+                        CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                        FAKE_KEY, JWK, NOW, null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("credentialId");
     }
 
     @Test
-    void constructor_nullTenantId_throwsNullPointerException() {
+    void constructor_nullPrivateKey_throwsNullPointerException() {
         assertThatThrownBy(() ->
-                new HolderKey("k", "h", "c", null, FAKE_KEY, JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null))
-                .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("tenantId");
-    }
-
-    @Test
-    void constructor_nullEncryptedPrivateKey_throwsNullPointerException() {
-        assertThatThrownBy(() ->
-                new HolderKey("k", "h", "c", "t", null, JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null))
+                new HolderKey(HolderKeyId.generate(), "t", "h", "c",
+                        CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                        null, JWK, NOW, null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("privateKey");
     }
 
     @Test
-    void constructor_emptyEncryptedPrivateKey_throwsIllegalArgumentException() {
+    void constructor_emptyPrivateKey_throwsIllegalArgumentException() {
         assertThatThrownBy(() ->
-                new HolderKey("k", "h", "c", "t", new byte[0], JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null))
+                new HolderKey(HolderKeyId.generate(), "t", "h", "c",
+                        CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                        new byte[0], JWK, NOW, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("privateKey");
     }
@@ -84,7 +122,9 @@ class HolderKeyTest {
     @Test
     void constructor_nullPublicJwk_throwsNullPointerException() {
         assertThatThrownBy(() ->
-                new HolderKey("k", "h", "c", "t", FAKE_KEY, null, "ES256", CredentialFormat.DC_SD_JWT, NOW, null))
+                new HolderKey(HolderKeyId.generate(), "t", "h", "c",
+                        CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                        FAKE_KEY, null, NOW, null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("publicJwk");
     }
@@ -92,7 +132,9 @@ class HolderKeyTest {
     @Test
     void constructor_nullAlgorithm_throwsNullPointerException() {
         assertThatThrownBy(() ->
-                new HolderKey("k", "h", "c", "t", FAKE_KEY, JWK, null, CredentialFormat.DC_SD_JWT, NOW, null))
+                new HolderKey(HolderKeyId.generate(), "t", "h", "c",
+                        CredentialFormat.SD_JWT_VC, null,
+                        FAKE_KEY, JWK, NOW, null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("algorithm");
     }
@@ -100,7 +142,9 @@ class HolderKeyTest {
     @Test
     void constructor_nullFormat_throwsNullPointerException() {
         assertThatThrownBy(() ->
-                new HolderKey("k", "h", "c", "t", FAKE_KEY, JWK, "ES256", null, NOW, null))
+                new HolderKey(HolderKeyId.generate(), "t", "h", "c",
+                        null, KeyAlgorithm.ES256,
+                        FAKE_KEY, JWK, NOW, null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("format");
     }
@@ -108,7 +152,9 @@ class HolderKeyTest {
     @Test
     void constructor_nullCreatedAt_throwsNullPointerException() {
         assertThatThrownBy(() ->
-                new HolderKey("k", "h", "c", "t", FAKE_KEY, JWK, "ES256", CredentialFormat.DC_SD_JWT, null, null))
+                new HolderKey(HolderKeyId.generate(), "t", "h", "c",
+                        CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                        FAKE_KEY, JWK, null, null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("createdAt");
     }
@@ -116,7 +162,9 @@ class HolderKeyTest {
     @Test
     void constructor_storesDefensiveCopy_mutatingOriginalArrayHasNoEffect() {
         byte[] original = new byte[]{10, 20, 30};
-        var key = new HolderKey("k", "h", "c", "t", original, JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null);
+        var key = new HolderKey(HolderKeyId.generate(), "t", "h", "c",
+                CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                original, JWK, NOW, null);
 
         original[0] = (byte) 99;
 
@@ -127,7 +175,9 @@ class HolderKeyTest {
 
     @Test
     void privateKey_accessor_returnsDefensiveCopy_mutatingReturnedArrayHasNoEffect() {
-        var key = new HolderKey("k", "h", "c", "t", new byte[]{10, 20, 30}, JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null);
+        var key = new HolderKey(HolderKeyId.generate(), "t", "h", "c",
+                CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                new byte[]{10, 20, 30}, JWK, NOW, null);
         byte[] returned = key.privateKey();
 
         returned[0] = (byte) 99;
@@ -138,16 +188,18 @@ class HolderKeyTest {
     }
 
     @Test
-    void toString_redactsHolderIdAndEncryptedPrivateKey() {
+    void toString_redactsPrivateKey_includesOtherFields() {
         String s = validKey().toString();
 
         assertThat(s)
-                .as("toString must not expose holderId")
-                .contains("holderId=[REDACTED]")
-                .as("toString must not expose privateKey")
+                .as("toString must redact privateKey bytes")
                 .contains("privateKey=[REDACTED]")
-                .as("toString must not expose the literal holder-1 value")
-                .doesNotContain("holder-1");
+                .as("toString must include holderId (not redacted per spec)")
+                .contains("holderId=holder-1")
+                .as("toString must include tenantId")
+                .contains("tenantId=tenant-1")
+                .as("toString must not expose raw byte array contents")
+                .doesNotContain("[B@");
     }
 
     @Test
@@ -157,8 +209,22 @@ class HolderKeyTest {
 
     @Test
     void isRevoked_returnsTrue_whenRevokedAtIsNotNull() {
-        var key = new HolderKey("k", "h", "c", "t", FAKE_KEY.clone(), JWK, "ES256",
-                CredentialFormat.DC_SD_JWT, NOW, NOW.plusSeconds(3600));
+        var key = new HolderKey(HolderKeyId.generate(), "t", "h", "c",
+                CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256,
+                FAKE_KEY.clone(), JWK, NOW, NOW.plusSeconds(3600));
         assertThat(key.isRevoked()).isTrue();
+    }
+
+    @Test
+    void holderKeyId_generate_producesUniqueValues() {
+        HolderKeyId first = HolderKeyId.generate();
+        HolderKeyId second = HolderKeyId.generate();
+        assertThat(first).isNotEqualTo(second);
+    }
+
+    @Test
+    void holderKeyId_of_roundTrips_uuid() {
+        UUID uuid = UUID.randomUUID();
+        assertThat(HolderKeyId.of(uuid).value()).isEqualTo(uuid);
     }
 }

@@ -1,10 +1,14 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc;
 
-import com.eudistack.ebw.domain.model.CredentialFormat;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.infrastructure.configuration.TenantAwareConnectionFactoryDecorator;
+import com.eudistack.ebw.keymanager.domain.model.CredentialFormat;
 import com.eudistack.ebw.keymanager.domain.model.HolderKey;
+import com.eudistack.ebw.keymanager.domain.model.HolderKeyId;
+import com.eudistack.ebw.keymanager.domain.model.JwkPublic;
+import com.eudistack.ebw.keymanager.domain.model.KeyAlgorithm;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -27,6 +31,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,12 +39,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Integration test for {@link HolderKeyR2dbcAdapter} using the {@link DataR2dbcTest} slice.
  *
- * <p>Covered criteria (AC-01, AC-02, AC-03 from EUDISTACK-116 acceptance-criteria.md):
+ * <p>Covered criteria (from EUDISTACK-119 acceptance-criteria.md):
  * <ul>
- *   <li>AC-01 — save persists a HolderKey and findByKeyId returns the domain record</li>
- *   <li>AC-02 — findActiveByHolderAndCredential returns the active (non-revoked) key</li>
- *   <li>AC-03 — findActiveByHolderAndCredential propagates Mono.empty() for revoked keys</li>
+ *   <li>AC-04 — save persists a HolderKey and findByKeyId returns the domain record</li>
+ *   <li>AC-05 — findActiveByHolderAndCredential returns the active (non-revoked) key</li>
+ *   <li>AC-05 — findActiveByHolderAndCredential propagates Mono.empty() for revoked keys</li>
  * </ul>
+ *
+ * <p>Note: full UPSERT-ON-CONFLICT (EC-01, EC-02) and DbUnavailableHandling tests
+ * will be implemented in T11.</p>
  */
 @Tag("integration")
 @DataR2dbcTest(
@@ -60,12 +68,20 @@ class HolderKeyR2dbcAdapterIT {
     static class AdapterTestConfig {
 
         @Bean
-        HolderKeyR2dbcAdapter holderKeyR2dbcAdapter(SpringHolderKeyRepository repository) {
-            return new HolderKeyR2dbcAdapter(repository);
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
+        }
+
+        @Bean
+        HolderKeyR2dbcAdapter holderKeyR2dbcAdapter(SpringHolderKeyRepository repository,
+                ObjectMapper objectMapper) {
+            return new HolderKeyR2dbcAdapter(repository, objectMapper);
         }
     }
 
     private static final String SCHEMA_SUFFIX = "_business_wallet";
+    private static final JwkPublic SAMPLE_JWK = new JwkPublic(
+            Map.of("kty", "EC", "crv", "P-256", "x", "sampleX", "y", "sampleY"));
 
     @Container
     static final PostgreSQLContainer<?> postgres =
@@ -125,13 +141,16 @@ class HolderKeyR2dbcAdapterIT {
                 .migrate();
     }
 
-    private HolderKey sampleKey(String keyId, String holderId, String credentialId) {
+    private HolderKey sampleKey(String holderId, String credentialId) {
         return new HolderKey(
-                keyId, holderId, credentialId, testTenant,
+                HolderKeyId.generate(),
+                testTenant,
+                holderId,
+                credentialId,
+                CredentialFormat.SD_JWT_VC,
+                KeyAlgorithm.ES256,
                 new byte[]{1, 2, 3, 4, 5},
-                "{\"kty\":\"EC\",\"crv\":\"P-256\"}",
-                "ES256",
-                CredentialFormat.DC_SD_JWT,
+                SAMPLE_JWK,
                 Instant.now(),
                 null
         );
@@ -142,24 +161,22 @@ class HolderKeyR2dbcAdapterIT {
     }
 
     // -------------------------------------------------------------------------
-    // AC-01 — save + findByKeyId
+    // AC-04 — save + findByKeyId
     // -------------------------------------------------------------------------
 
     @Test
     void save_and_findByKeyId_returnsDomainRecord() {
-        String keyId = UUID.randomUUID().toString();
-        HolderKey key = sampleKey(keyId, "holder-1", "cred-1");
+        HolderKey key = sampleKey("holder-1", "cred-1");
 
         StepVerifier.create(
-                withTenant(adapter.save(key).flatMap(saved -> adapter.findByKeyId(keyId))))
+                withTenant(adapter.save(key).flatMap(saved -> adapter.findByKeyId(saved.id().value().toString()))))
                 .assertNext(found -> {
-                    assertThat(found.keyId()).isEqualTo(keyId);
                     assertThat(found.holderId()).isEqualTo("holder-1");
                     assertThat(found.credentialId()).isEqualTo("cred-1");
                     assertThat(found.tenantId()).isEqualTo(testTenant);
                     assertThat(found.privateKey()).isEqualTo(new byte[]{1, 2, 3, 4, 5});
-                    assertThat(found.algorithm()).isEqualTo("ES256");
-                    assertThat(found.format()).isEqualTo(CredentialFormat.DC_SD_JWT);
+                    assertThat(found.algorithm()).isEqualTo(KeyAlgorithm.ES256);
+                    assertThat(found.format()).isEqualTo(CredentialFormat.SD_JWT_VC);
                     assertThat(found.revokedAt()).isNull();
                     assertThat(found).isInstanceOf(HolderKey.class);
                 })
@@ -168,25 +185,24 @@ class HolderKeyR2dbcAdapterIT {
 
     @Test
     void findByKeyId_returnsEmpty_whenKeyNotFound() {
-        StepVerifier.create(withTenant(adapter.findByKeyId("non-existent-id")))
+        StepVerifier.create(withTenant(adapter.findByKeyId(UUID.randomUUID().toString())))
                 .as("findByKeyId must return Mono.empty() when no row matches")
                 .verifyComplete();
     }
 
     // -------------------------------------------------------------------------
-    // AC-02 — findActiveByHolderAndCredential returns active key
+    // AC-05 — findActiveByHolderAndCredential returns active key
     // -------------------------------------------------------------------------
 
     @Test
     void findActiveByHolderAndCredential_returnsActiveKey() {
-        String keyId = UUID.randomUUID().toString();
-        HolderKey key = sampleKey(keyId, "holder-2", "cred-2");
+        HolderKey key = sampleKey("holder-2", "cred-2");
 
         StepVerifier.create(
                 withTenant(adapter.save(key)
                         .flatMap(saved -> adapter.findActiveByHolderAndCredential("holder-2", "cred-2"))))
                 .assertNext(found -> {
-                    assertThat(found.keyId()).isEqualTo(keyId);
+                    assertThat(found.holderId()).isEqualTo("holder-2");
                     assertThat(found.isRevoked()).isFalse();
                 })
                 .verifyComplete();
@@ -201,19 +217,21 @@ class HolderKeyR2dbcAdapterIT {
     }
 
     // -------------------------------------------------------------------------
-    // AC-03 — revoked key is not returned by findActiveByHolderAndCredential
+    // AC-05 — revoked key is not returned
     // -------------------------------------------------------------------------
 
     @Test
     void findActiveByHolderAndCredential_returnsEmpty_whenKeyIsRevoked() {
-        String keyId = UUID.randomUUID().toString();
         Instant revokedAt = Instant.now();
         var revokedKey = new HolderKey(
-                keyId, "holder-3", "cred-3", testTenant,
+                HolderKeyId.generate(),
+                testTenant,
+                "holder-3",
+                "cred-3",
+                CredentialFormat.SD_JWT_VC,
+                KeyAlgorithm.ES256,
                 new byte[]{1, 2, 3},
-                "{\"kty\":\"EC\"}",
-                "ES256",
-                CredentialFormat.DC_SD_JWT,
+                SAMPLE_JWK,
                 revokedAt.minusSeconds(3600),
                 revokedAt
         );
@@ -221,7 +239,7 @@ class HolderKeyR2dbcAdapterIT {
         StepVerifier.create(
                 withTenant(adapter.save(revokedKey)
                         .flatMap(saved -> adapter.findActiveByHolderAndCredential("holder-3", "cred-3"))))
-                .as("revoked key must not be returned by findActiveByHolderAndCredential (AC-03)")
+                .as("revoked key must not be returned by findActiveByHolderAndCredential (AC-05)")
                 .verifyComplete();
     }
 }

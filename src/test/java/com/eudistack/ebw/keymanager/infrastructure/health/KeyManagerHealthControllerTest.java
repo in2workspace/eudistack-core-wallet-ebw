@@ -8,6 +8,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -19,7 +20,8 @@ class KeyManagerHealthControllerTest {
 
     @Test
     void health_returnsOkWithStatusUp_whenDbConnectable() {
-        when(connectionFactory.create()).thenReturn(Mono.just(connection));
+        // Publisher<? extends Connection> return type requires explicit cast to compile with Mockito
+        doAnswer(inv -> Mono.just(connection)).when(connectionFactory).create();
         when(connection.close()).thenReturn(Mono.empty());
 
         StepVerifier.create(controller.health())
@@ -32,7 +34,7 @@ class KeyManagerHealthControllerTest {
 
     @Test
     void health_returnsServiceUnavailableWithStatusDown_whenDbNotConnectable() {
-        when(connectionFactory.create()).thenReturn(Mono.error(new RuntimeException("connection refused")));
+        doAnswer(inv -> Mono.error(new RuntimeException("connection refused"))).when(connectionFactory).create();
 
         StepVerifier.create(controller.health())
                 .assertNext(response -> {
