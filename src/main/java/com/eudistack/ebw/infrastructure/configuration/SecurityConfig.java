@@ -53,7 +53,9 @@ public class SecurityConfig {
                         .pathMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/v1/auth/logout").permitAll()
                         .pathMatchers("/health", "/health/**").permitAll()
-                        // EUDISTACK-413: public wallet discovery endpoint (AC-03 — no auth required)
+                        // EUDISTACK-413: public wallet discovery endpoint (AC-03 — no auth required).
+                        // The canonical path is served by WellKnownCanonicalHandler at Netty level
+                        // before this chain runs; these matchers are defense-in-depth for unit tests.
                         .pathMatchers(HttpMethod.GET, "/.well-known/wallet-config-metadata").permitAll()
                         .pathMatchers(HttpMethod.HEAD, "/.well-known/wallet-config-metadata").permitAll()
                         .anyExchange().authenticated()

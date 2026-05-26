@@ -16,9 +16,12 @@ import reactor.core.publisher.Mono;
  *
  * <p>Path: {@code GET /.well-known/wallet-config-metadata}
  *
- * <p>This path is registered <em>outside</em> the {@code webflux.base-path=/business-wallet}
- * prefix (AD-413-1 / RFC 8615). The {@link WalletProfileQueryWebConfig} bean ensures the
- * path is routed correctly without the base-path prefix.
+ * <p>The canonical path {@code /.well-known/wallet-config-metadata} is served by
+ * {@link WellKnownCanonicalHandler} at the Reactor Netty routing level, before the
+ * {@code spring.webflux.base-path=/business-wallet} filter rejects non-prefixed requests
+ * (AD-413-1 / RFC 8615). This controller handles the unit-test path only
+ * ({@code WebTestClient.bindToController}) and provides the
+ * {@link #WELL_KNOWN_PATH} constant consumed by the Netty route registration.
  *
  * <p>No authentication is required (AC-03). Security headers and cache headers are added
  * on the 200 success path here; error paths delegate to
