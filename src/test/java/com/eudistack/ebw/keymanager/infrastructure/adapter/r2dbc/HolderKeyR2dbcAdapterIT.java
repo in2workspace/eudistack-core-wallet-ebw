@@ -5,6 +5,7 @@ import com.eudistack.ebw.infrastructure.configuration.TenantAwareConnectionFacto
 import com.eudistack.ebw.keymanager.domain.model.CredentialFormat;
 import com.eudistack.ebw.keymanager.domain.model.HolderKey;
 import com.eudistack.ebw.keymanager.domain.model.HolderKeyId;
+import com.eudistack.ebw.keymanager.domain.model.HolderKeyPersistResult;
 import com.eudistack.ebw.keymanager.domain.model.JwkPublic;
 import com.eudistack.ebw.keymanager.domain.model.KeyAlgorithm;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
@@ -41,12 +42,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Covered criteria (from EUDISTACK-119 acceptance-criteria.md):
  * <ul>
- *   <li>AC-04 — save persists a HolderKey and findByKeyId returns the domain record</li>
- *   <li>AC-05 — findActiveByHolderAndCredential returns the active (non-revoked) key</li>
- *   <li>AC-05 — findActiveByHolderAndCredential propagates Mono.empty() for revoked keys</li>
+ *   <li>AC-04 — upsertIfAbsent persists a HolderKey and findBy returns the domain record</li>
+ *   <li>AC-05 — findBy returns the active (non-revoked) key for a composite key tuple</li>
+ *   <li>AC-05 — findBy propagates Mono.empty() for revoked or absent keys</li>
  * </ul>
  *
- * <p>Note: full UPSERT-ON-CONFLICT (EC-01, EC-02) and DbUnavailableHandling tests
+ * <p>Note: full UPSERT-ON-CONFLICT idempotency (EC-01, EC-02) and DbUnavailableHandling tests
  * will be implemented in T11.</p>
  */
 @Tag("integration")
@@ -161,15 +162,17 @@ class HolderKeyR2dbcAdapterIT {
     }
 
     // -------------------------------------------------------------------------
-    // AC-04 — save + findByKeyId
+    // AC-04 — upsertIfAbsent + findBy
     // -------------------------------------------------------------------------
 
     @Test
-    void save_and_findByKeyId_returnsDomainRecord() {
+    void upsertIfAbsent_and_findBy_returnsDomainRecord() {
         HolderKey key = sampleKey("holder-1", "cred-1");
 
         StepVerifier.create(
-                withTenant(adapter.save(key).flatMap(saved -> adapter.findByKeyId(saved.id().value().toString()))))
+                withTenant(adapter.upsertIfAbsent(key)
+                        .map(HolderKeyPersistResult::holderKey)
+                        .flatMap(saved -> adapter.findBy(testTenant, "holder-1", "cred-1"))))
                 .assertNext(found -> {
                     assertThat(found.holderId()).isEqualTo("holder-1");
                     assertThat(found.credentialId()).isEqualTo("cred-1");
@@ -184,23 +187,24 @@ class HolderKeyR2dbcAdapterIT {
     }
 
     @Test
-    void findByKeyId_returnsEmpty_whenKeyNotFound() {
-        StepVerifier.create(withTenant(adapter.findByKeyId(UUID.randomUUID().toString())))
-                .as("findByKeyId must return Mono.empty() when no row matches")
+    void findBy_returnsEmpty_whenKeyNotFound() {
+        StepVerifier.create(
+                withTenant(adapter.findBy(testTenant, "unknown-holder", "unknown-cred")))
+                .as("findBy must return Mono.empty() when no row matches")
                 .verifyComplete();
     }
 
     // -------------------------------------------------------------------------
-    // AC-05 — findActiveByHolderAndCredential returns active key
+    // AC-05 — findBy returns active key for composite key tuple
     // -------------------------------------------------------------------------
 
     @Test
-    void findActiveByHolderAndCredential_returnsActiveKey() {
+    void findBy_returnsActiveKey() {
         HolderKey key = sampleKey("holder-2", "cred-2");
 
         StepVerifier.create(
-                withTenant(adapter.save(key)
-                        .flatMap(saved -> adapter.findActiveByHolderAndCredential("holder-2", "cred-2"))))
+                withTenant(adapter.upsertIfAbsent(key)
+                        .flatMap(result -> adapter.findBy(testTenant, "holder-2", "cred-2"))))
                 .assertNext(found -> {
                     assertThat(found.holderId()).isEqualTo("holder-2");
                     assertThat(found.isRevoked()).isFalse();
@@ -209,9 +213,9 @@ class HolderKeyR2dbcAdapterIT {
     }
 
     @Test
-    void findActiveByHolderAndCredential_returnsEmpty_whenNotFound() {
+    void findBy_returnsEmpty_whenNotFound() {
         StepVerifier.create(
-                withTenant(adapter.findActiveByHolderAndCredential("unknown-holder", "unknown-cred")))
+                withTenant(adapter.findBy(testTenant, "unknown-holder", "unknown-cred")))
                 .as("must propagate Mono.empty() when no active key exists")
                 .verifyComplete();
     }
@@ -221,7 +225,7 @@ class HolderKeyR2dbcAdapterIT {
     // -------------------------------------------------------------------------
 
     @Test
-    void findActiveByHolderAndCredential_returnsEmpty_whenKeyIsRevoked() {
+    void findBy_returnsEmpty_whenKeyIsRevoked() {
         Instant revokedAt = Instant.now();
         var revokedKey = new HolderKey(
                 HolderKeyId.generate(),
@@ -237,9 +241,9 @@ class HolderKeyR2dbcAdapterIT {
         );
 
         StepVerifier.create(
-                withTenant(adapter.save(revokedKey)
-                        .flatMap(saved -> adapter.findActiveByHolderAndCredential("holder-3", "cred-3"))))
-                .as("revoked key must not be returned by findActiveByHolderAndCredential (AC-05)")
+                withTenant(adapter.upsertIfAbsent(revokedKey)
+                        .flatMap(result -> adapter.findBy(testTenant, "holder-3", "cred-3"))))
+                .as("revoked key must not be returned by findBy (AC-05)")
                 .verifyComplete();
     }
 }

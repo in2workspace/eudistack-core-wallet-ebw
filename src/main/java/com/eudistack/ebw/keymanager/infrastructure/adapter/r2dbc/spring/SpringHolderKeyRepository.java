@@ -6,6 +6,6 @@ import reactor.core.publisher.Mono;
 
 public interface SpringHolderKeyRepository extends ReactiveCrudRepository<HolderKeyEntity, String> {
 
-    Mono<HolderKeyEntity> findFirstByHolderIdAndCredentialIdAndRevokedAtIsNull(
-            String holderId, String credentialId);
+    Mono<HolderKeyEntity> findFirstByTenantIdAndHolderIdAndCredentialIdAndRevokedAtIsNull(
+            String tenantId, String holderId, String credentialId);
 }

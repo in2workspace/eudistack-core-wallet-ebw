@@ -3,6 +3,7 @@ package com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc;
 import com.eudistack.ebw.keymanager.domain.model.CredentialFormat;
 import com.eudistack.ebw.keymanager.domain.model.HolderKey;
 import com.eudistack.ebw.keymanager.domain.model.HolderKeyId;
+import com.eudistack.ebw.keymanager.domain.model.HolderKeyPersistResult;
 import com.eudistack.ebw.keymanager.domain.model.JwkPublic;
 import com.eudistack.ebw.keymanager.domain.model.KeyAlgorithm;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyReadPort;
@@ -21,8 +22,8 @@ import java.util.UUID;
  * R2DBC adapter for holder key persistence.
  *
  * <p>This is a minimal adapter stub that compiles against the rewritten {@link HolderKey}
- * domain model (T1). Full UPSERT-ON-CONFLICT logic and the {@code HolderKeyWritePort}
- * signature will be completed in T5.</p>
+ * domain model (T1) and the updated port signatures (T2). Full UPSERT-ON-CONFLICT logic
+ * will be completed in T5.</p>
  *
  * <p>See {@code technical-design.md §3.2} for the complete adapter specification.</p>
  */
@@ -37,19 +38,17 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
     }
 
     @Override
-    public Mono<HolderKey> findByKeyId(String keyId) {
-        return repository.findById(keyId).map(this::toDomain);
-    }
-
-    @Override
-    public Mono<HolderKey> findActiveByHolderAndCredential(String holderId, String credentialId) {
-        return repository.findFirstByHolderIdAndCredentialIdAndRevokedAtIsNull(holderId, credentialId)
+    public Mono<HolderKey> findBy(String tenantId, String holderId, String credentialId) {
+        // Full implementation in T5; stub returns empty to allow compilation.
+        return repository.findFirstByTenantIdAndHolderIdAndCredentialIdAndRevokedAtIsNull(tenantId, holderId, credentialId)
                 .map(this::toDomain);
     }
 
     @Override
-    public Mono<HolderKey> save(HolderKey holderKey) {
-        return repository.save(toEntity(holderKey)).map(this::toDomain);
+    public Mono<HolderKeyPersistResult> upsertIfAbsent(HolderKey holderKey) {
+        // Full UPSERT-ON-CONFLICT implementation in T5; stub delegates to save for compilation.
+        return repository.save(toEntity(holderKey))
+                .map(entity -> new HolderKeyPersistResult(true, toDomain(entity)));
     }
 
     private HolderKey toDomain(HolderKeyEntity entity) {
