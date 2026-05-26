@@ -1,5 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.configuration;
 
+import com.eudistack.ebw.keymanager.application.AlgorithmNegotiator;
+import com.eudistack.ebw.keymanager.application.HolderKeyFactory;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyReadPort;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HolderKeyR2dbcAdapter;
@@ -12,6 +14,16 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class KeyManagerConfiguration {
+
+    @Bean
+    AlgorithmNegotiator algorithmNegotiator() {
+        return new AlgorithmNegotiator();
+    }
+
+    @Bean
+    HolderKeyFactory holderKeyFactory() {
+        return new HolderKeyFactory();
+    }
 
     @Bean
     HolderKeyR2dbcAdapter holderKeyR2dbcAdapter(SpringHolderKeyRepository repository, ObjectMapper objectMapper) {
