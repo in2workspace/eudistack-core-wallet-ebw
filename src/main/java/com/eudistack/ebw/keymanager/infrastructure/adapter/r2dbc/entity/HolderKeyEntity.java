@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.entity;
 
+import io.r2dbc.postgresql.codec.Json;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
@@ -26,7 +27,7 @@ public class HolderKeyEntity {
     private byte[] encryptedPrivateKey;
 
     @Column("public_jwk")
-    private String publicJwk;
+    private Json publicJwk;
 
     @Column("algorithm")
     private String algorithm;
@@ -55,8 +56,8 @@ public class HolderKeyEntity {
     public byte[] getEncryptedPrivateKey() { return encryptedPrivateKey; }
     public void setEncryptedPrivateKey(byte[] encryptedPrivateKey) { this.encryptedPrivateKey = encryptedPrivateKey; }
 
-    public String getPublicJwk() { return publicJwk; }
-    public void setPublicJwk(String publicJwk) { this.publicJwk = publicJwk; }
+    public Json getPublicJwk() { return publicJwk; }
+    public void setPublicJwk(Json publicJwk) { this.publicJwk = publicJwk; }
 
     public String getAlgorithm() { return algorithm; }
     public void setAlgorithm(String algorithm) { this.algorithm = algorithm; }

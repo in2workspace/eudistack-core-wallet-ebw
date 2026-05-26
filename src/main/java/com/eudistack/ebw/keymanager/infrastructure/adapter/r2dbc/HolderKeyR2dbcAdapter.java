@@ -6,6 +6,7 @@ import com.eudistack.ebw.keymanager.domain.port.HolderKeyReadPort;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.entity.HolderKeyEntity;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
+import io.r2dbc.postgresql.codec.Json;
 import reactor.core.publisher.Mono;
 
 public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWritePort {
@@ -39,7 +40,7 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
                 entity.getCredentialId(),
                 entity.getTenantId(),
                 entity.getEncryptedPrivateKey(),
-                entity.getPublicJwk(),
+                entity.getPublicJwk().asString(),
                 entity.getAlgorithm(),
                 CredentialFormat.fromValue(entity.getFormat()),
                 entity.getCreatedAt(),
@@ -54,7 +55,7 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
         entity.setCredentialId(domain.credentialId());
         entity.setTenantId(domain.tenantId());
         entity.setEncryptedPrivateKey(domain.encryptedPrivateKey());
-        entity.setPublicJwk(domain.publicJwk());
+        entity.setPublicJwk(Json.of(domain.publicJwk()));
         entity.setAlgorithm(domain.algorithm());
         entity.setFormat(domain.format().getValue());
         entity.setCreatedAt(domain.createdAt());
