@@ -1,8 +1,10 @@
 package com.eudistack.ebw.keymanager.infrastructure.health;
 
-import com.eudistack.ebw.keymanager.domain.port.HolderKeyCipherPort;
+import io.r2dbc.spi.Connection;
+import io.r2dbc.spi.ConnectionFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -11,12 +13,14 @@ import static org.mockito.Mockito.when;
 
 class KeyManagerHealthControllerTest {
 
-    private final HolderKeyCipherPort cipherPort = mock(HolderKeyCipherPort.class);
-    private final KeyManagerHealthController controller = new KeyManagerHealthController(cipherPort);
+    private final ConnectionFactory connectionFactory = mock(ConnectionFactory.class);
+    private final Connection connection = mock(Connection.class);
+    private final KeyManagerHealthController controller = new KeyManagerHealthController(connectionFactory);
 
     @Test
-    void health_returnsOkWithStatusUp_whenCipherIsOperational() {
-        when(cipherPort.isOperational()).thenReturn(true);
+    void health_returnsOkWithStatusUp_whenDbConnectable() {
+        when(connectionFactory.create()).thenReturn(Mono.just(connection));
+        when(connection.close()).thenReturn(Mono.empty());
 
         StepVerifier.create(controller.health())
                 .assertNext(response -> {
@@ -27,8 +31,8 @@ class KeyManagerHealthControllerTest {
     }
 
     @Test
-    void health_returnsServiceUnavailableWithStatusDown_whenCipherIsNotOperational() {
-        when(cipherPort.isOperational()).thenReturn(false);
+    void health_returnsServiceUnavailableWithStatusDown_whenDbNotConnectable() {
+        when(connectionFactory.create()).thenReturn(Mono.error(new RuntimeException("connection refused")));
 
         StepVerifier.create(controller.health())
                 .assertNext(response -> {

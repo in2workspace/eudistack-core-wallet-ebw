@@ -1,6 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.health;
 
-import com.eudistack.ebw.keymanager.domain.port.HolderKeyCipherPort;
+import io.r2dbc.spi.Connection;
+import io.r2dbc.spi.ConnectionFactory;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,19 +9,21 @@ import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.core.publisher.Mono;
 
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
  * Web-layer integration test for {@link KeyManagerHealthController}.
  *
- * <p>Uses {@link WebFluxTest} to spin up the minimal WebFlux context (no DB, no crypto).
- * The {@link HolderKeyCipherPort} is replaced with a Mockito mock via {@link MockitoBean}.
+ * <p>Uses {@link WebFluxTest} to spin up the minimal WebFlux context (no DB).
+ * The {@link ConnectionFactory} is replaced with a Mockito mock via {@link MockitoBean}.
  *
  * <p>Covered criteria:
  * <ul>
- *   <li>AC-05 — GET /health/keymanager returns 200 {"status":"UP"} when cipher is operational</li>
- *   <li>AC-06 — GET /health/keymanager returns 503 {"status":"DOWN"} when cipher probe fails</li>
+ *   <li>GET /health/keymanager returns 200 {"status":"UP"} when DB is connectable</li>
+ *   <li>GET /health/keymanager returns 503 {"status":"DOWN"} when DB is not connectable</li>
  * </ul>
  */
 @Tag("integration")
@@ -29,14 +32,16 @@ import static org.mockito.Mockito.when;
 class KeyManagerHealthControllerIT {
 
     @MockitoBean
-    HolderKeyCipherPort cipherPort;
+    ConnectionFactory connectionFactory;
 
     @Autowired
     WebTestClient webTestClient;
 
     @Test
-    void getHealthKeymanager_returns200WithStatusUp_whenCipherIsOperational() {
-        when(cipherPort.isOperational()).thenReturn(true);
+    void getHealthKeymanager_returns200WithStatusUp_whenDbConnectable() {
+        Connection connection = mock(Connection.class);
+        when(connectionFactory.create()).thenReturn(Mono.just(connection));
+        when(connection.close()).thenReturn(Mono.empty());
 
         webTestClient.get().uri("/health/keymanager")
                 .exchange()
@@ -46,8 +51,8 @@ class KeyManagerHealthControllerIT {
     }
 
     @Test
-    void getHealthKeymanager_returns503WithStatusDown_whenCipherIsNotOperational() {
-        when(cipherPort.isOperational()).thenReturn(false);
+    void getHealthKeymanager_returns503WithStatusDown_whenDbNotConnectable() {
+        when(connectionFactory.create()).thenReturn(Mono.error(new RuntimeException("connection refused")));
 
         webTestClient.get().uri("/health/keymanager")
                 .exchange()

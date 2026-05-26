@@ -39,7 +39,7 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
                 entity.getHolderId(),
                 entity.getCredentialId(),
                 entity.getTenantId(),
-                entity.getEncryptedPrivateKey(),
+                entity.getPrivateKey(),
                 entity.getPublicJwk().asString(),
                 entity.getAlgorithm(),
                 CredentialFormat.fromValue(entity.getFormat()),
@@ -54,7 +54,7 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
         entity.setHolderId(domain.holderId());
         entity.setCredentialId(domain.credentialId());
         entity.setTenantId(domain.tenantId());
-        entity.setEncryptedPrivateKey(domain.encryptedPrivateKey());
+        entity.setPrivateKey(domain.privateKey());
         entity.setPublicJwk(Json.of(domain.publicJwk()));
         entity.setAlgorithm(domain.algorithm());
         entity.setFormat(domain.format().getValue());

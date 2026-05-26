@@ -70,7 +70,7 @@ class HolderKeyTest {
         assertThatThrownBy(() ->
                 new HolderKey("k", "h", "c", "t", null, JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null))
                 .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("encryptedPrivateKey");
+                .hasMessageContaining("privateKey");
     }
 
     @Test
@@ -78,7 +78,7 @@ class HolderKeyTest {
         assertThatThrownBy(() ->
                 new HolderKey("k", "h", "c", "t", new byte[0], JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("encryptedPrivateKey");
+                .hasMessageContaining("privateKey");
     }
 
     @Test
@@ -120,19 +120,19 @@ class HolderKeyTest {
 
         original[0] = (byte) 99;
 
-        assertThat(key.encryptedPrivateKey()[0])
+        assertThat(key.privateKey()[0])
                 .as("stored copy must not reflect mutation of the original array")
                 .isEqualTo((byte) 10);
     }
 
     @Test
-    void encryptedPrivateKey_accessor_returnsDefensiveCopy_mutatingReturnedArrayHasNoEffect() {
+    void privateKey_accessor_returnsDefensiveCopy_mutatingReturnedArrayHasNoEffect() {
         var key = new HolderKey("k", "h", "c", "t", new byte[]{10, 20, 30}, JWK, "ES256", CredentialFormat.DC_SD_JWT, NOW, null);
-        byte[] returned = key.encryptedPrivateKey();
+        byte[] returned = key.privateKey();
 
         returned[0] = (byte) 99;
 
-        assertThat(key.encryptedPrivateKey()[0])
+        assertThat(key.privateKey()[0])
                 .as("internal state must not change when the returned array is mutated")
                 .isEqualTo((byte) 10);
     }
@@ -144,8 +144,8 @@ class HolderKeyTest {
         assertThat(s)
                 .as("toString must not expose holderId")
                 .contains("holderId=[REDACTED]")
-                .as("toString must not expose encryptedPrivateKey")
-                .contains("encryptedPrivateKey=[REDACTED]")
+                .as("toString must not expose privateKey")
+                .contains("privateKey=[REDACTED]")
                 .as("toString must not expose the literal holder-1 value")
                 .doesNotContain("holder-1");
     }

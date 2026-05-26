@@ -157,7 +157,7 @@ class HolderKeyR2dbcAdapterIT {
                     assertThat(found.holderId()).isEqualTo("holder-1");
                     assertThat(found.credentialId()).isEqualTo("cred-1");
                     assertThat(found.tenantId()).isEqualTo(testTenant);
-                    assertThat(found.encryptedPrivateKey()).isEqualTo(new byte[]{1, 2, 3, 4, 5});
+                    assertThat(found.privateKey()).isEqualTo(new byte[]{1, 2, 3, 4, 5});
                     assertThat(found.algorithm()).isEqualTo("ES256");
                     assertThat(found.format()).isEqualTo(CredentialFormat.DC_SD_JWT);
                     assertThat(found.revokedAt()).isNull();

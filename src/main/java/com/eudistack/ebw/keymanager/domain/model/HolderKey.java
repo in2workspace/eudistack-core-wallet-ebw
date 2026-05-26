@@ -10,7 +10,7 @@ public record HolderKey(
         String holderId,
         String credentialId,
         String tenantId,
-        byte[] encryptedPrivateKey,
+        byte[] privateKey,
         String publicJwk,
         String algorithm,
         CredentialFormat format,
@@ -23,20 +23,20 @@ public record HolderKey(
         Objects.requireNonNull(holderId, "holderId must not be null");
         Objects.requireNonNull(credentialId, "credentialId must not be null");
         Objects.requireNonNull(tenantId, "tenantId must not be null");
-        Objects.requireNonNull(encryptedPrivateKey, "encryptedPrivateKey must not be null");
-        if (encryptedPrivateKey.length == 0) {
-            throw new IllegalArgumentException("encryptedPrivateKey must not be empty");
+        Objects.requireNonNull(privateKey, "privateKey must not be null");
+        if (privateKey.length == 0) {
+            throw new IllegalArgumentException("privateKey must not be empty");
         }
         Objects.requireNonNull(publicJwk, "publicJwk must not be null");
         Objects.requireNonNull(algorithm, "algorithm must not be null");
         Objects.requireNonNull(format, "format must not be null");
         Objects.requireNonNull(createdAt, "createdAt must not be null");
-        encryptedPrivateKey = encryptedPrivateKey.clone();
+        privateKey = privateKey.clone();
     }
 
     @Override
-    public byte[] encryptedPrivateKey() {
-        return encryptedPrivateKey.clone();
+    public byte[] privateKey() {
+        return privateKey.clone();
     }
 
     public boolean isRevoked() {
@@ -49,7 +49,7 @@ public record HolderKey(
                 ", credentialId=" + credentialId +
                 ", tenantId=" + tenantId +
                 ", holderId=[REDACTED]" +
-                ", encryptedPrivateKey=[REDACTED]" +
+                ", privateKey=[REDACTED]" +
                 ", algorithm=" + algorithm +
                 ", format=" + format +
                 ", createdAt=" + createdAt +

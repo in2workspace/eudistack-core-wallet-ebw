@@ -23,8 +23,8 @@ public class HolderKeyEntity {
     @Column("tenant_id")
     private String tenantId;
 
-    @Column("encrypted_private_key")
-    private byte[] encryptedPrivateKey;
+    @Column("private_key")
+    private byte[] privateKey;
 
     @Column("public_jwk")
     private Json publicJwk;
@@ -53,8 +53,8 @@ public class HolderKeyEntity {
     public String getTenantId() { return tenantId; }
     public void setTenantId(String tenantId) { this.tenantId = tenantId; }
 
-    public byte[] getEncryptedPrivateKey() { return encryptedPrivateKey; }
-    public void setEncryptedPrivateKey(byte[] encryptedPrivateKey) { this.encryptedPrivateKey = encryptedPrivateKey; }
+    public byte[] getPrivateKey() { return privateKey; }
+    public void setPrivateKey(byte[] privateKey) { this.privateKey = privateKey; }
 
     public Json getPublicJwk() { return publicJwk; }
     public void setPublicJwk(Json publicJwk) { this.publicJwk = publicJwk; }
