@@ -14,7 +14,7 @@ import java.util.Objects;
  * for new key pairs, and {@link KeyAuditEventType#KEY_FETCHED} for idempotent reuse (EC-01).
  * This preserves full audit fidelity for external reviewers (NIS2, ENS).</p>
  *
- * <p>Spec: ADR-062 (KMS-signed audit batches), ADR-069 (audit log platform model),
+ * <p>Spec: ADR-062 (hash chain audit batches), ADR-069 (audit log platform model),
  * FR-61 (audit Dominio D2).</p>
  */
 public record KeyAuditEvent(
