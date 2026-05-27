@@ -9,10 +9,13 @@ import com.eudistack.ebw.keymanager.domain.port.HolderKeyReadPort;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerController;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HolderKeyR2dbcAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.DbKeyManagerService;
 import com.eudistack.ebw.keymanager.infrastructure.health.KeyManagerHealthController;
+import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactory;
 import org.springframework.context.annotation.Bean;
@@ -76,6 +79,17 @@ public class KeyManagerConfiguration {
     @Bean
     KeyManagerPort keyManagerPort(GenerateHolderKeyUseCase useCase) {
         return new DbKeyManagerService(useCase);
+    }
+
+    @Bean
+    KeyManagerController keyManagerController(KeyManagerPort keyManagerPort,
+                                               WalletProfileQueryPort walletProfileQueryPort) {
+        return new KeyManagerController(keyManagerPort, walletProfileQueryPort);
+    }
+
+    @Bean
+    KeyManagerExceptionHandler keyManagerExceptionHandler() {
+        return new KeyManagerExceptionHandler();
     }
 
     @Bean
