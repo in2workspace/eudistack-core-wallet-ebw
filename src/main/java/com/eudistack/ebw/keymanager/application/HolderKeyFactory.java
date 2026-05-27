@@ -79,7 +79,7 @@ public class HolderKeyFactory {
             byte[] rawPrivateBytes = extractRawPrivateBytes(keyPair.getPrivate(), algorithm);
             PlaintextHandle<PrivateKey> handle = buildHandle(keyPair.getPrivate(), rawPrivateBytes);
             JwkPublic publicJwk = buildPublicJwk(keyPair, algorithm);
-            return new GeneratedKeyPair(handle, publicJwk);
+            return new GeneratedKeyPair(handle, publicJwk, rawPrivateBytes);
         } catch (NoSuchAlgorithmException | NoSuchProviderException
                  | InvalidAlgorithmParameterException e) {
             throw new IllegalStateException(
