@@ -130,6 +130,12 @@ public class KeyAuditCloudWatchAdapter implements KeyAuditPort, DisposableBean {
         logsClient.close();
     }
 
+    // --- package-private for testing ---
+
+    Mono<Void> triggerDrainForTest() {
+        return drainBatch();
+    }
+
     // --- internal ---
 
     private void ensureLogStream() {
