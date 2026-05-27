@@ -48,7 +48,14 @@ public class WellKnownNettyRouteCustomizer
 
     @Override
     public void customize(NettyReactiveWebServerFactory factory) {
-        ReactorHttpHandlerAdapter adapter = new ReactorHttpHandlerAdapter(handler);
+        // handler::handle is a method reference to WellKnownCanonicalHandler.handle(), which
+        // satisfies HttpHandler's @FunctionalInterface without making that class implement
+        // HttpHandler directly. If WellKnownCanonicalHandler were to implement HttpHandler,
+        // Spring Boot's @ConditionalOnMissingBean(HttpHandler.class) guard would prevent
+        // HttpHandlerAutoConfiguration from creating the ContextPathCompositeHandler, breaking
+        // all /business-wallet/** routes (the ALWAYS catch-all would delegate to
+        // WellKnownCanonicalHandler instead of to Spring's DispatcherHandler).
+        ReactorHttpHandlerAdapter adapter = new ReactorHttpHandlerAdapter(handler::handle);
         factory.addRouteProviders(routes -> routes
                 .get(WalletProfileQueryController.WELL_KNOWN_PATH, adapter::apply)
                 .head(WalletProfileQueryController.WELL_KNOWN_PATH, adapter::apply)
