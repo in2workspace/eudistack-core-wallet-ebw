@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.r2dbc.core.DatabaseClient;
 
 @Configuration
 public class KeyManagerConfiguration {
@@ -26,8 +27,10 @@ public class KeyManagerConfiguration {
     }
 
     @Bean
-    HolderKeyR2dbcAdapter holderKeyR2dbcAdapter(SpringHolderKeyRepository repository, ObjectMapper objectMapper) {
-        return new HolderKeyR2dbcAdapter(repository, objectMapper);
+    HolderKeyR2dbcAdapter holderKeyR2dbcAdapter(SpringHolderKeyRepository repository,
+                                                 ObjectMapper objectMapper,
+                                                 DatabaseClient databaseClient) {
+        return new HolderKeyR2dbcAdapter(repository, objectMapper, databaseClient);
     }
 
     @Bean

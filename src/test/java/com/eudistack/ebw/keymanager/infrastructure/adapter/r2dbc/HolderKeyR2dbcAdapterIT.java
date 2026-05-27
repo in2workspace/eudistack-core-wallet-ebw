@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.r2dbc.repository.config.EnableR2dbcRepositories;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -45,10 +46,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>AC-04 — upsertIfAbsent persists a HolderKey and findBy returns the domain record</li>
  *   <li>AC-05 — findBy returns the active (non-revoked) key for a composite key tuple</li>
  *   <li>AC-05 — findBy propagates Mono.empty() for revoked or absent keys</li>
+ *   <li>EC-01 — second upsertIfAbsent for the same (holder, credential) returns created=false
+ *               with the original key (idempotency under concurrent first-issuance)</li>
  * </ul>
- *
- * <p>Note: full UPSERT-ON-CONFLICT idempotency (EC-01, EC-02) and DbUnavailableHandling tests
- * will be implemented in T11.</p>
  */
 @Tag("integration")
 @DataR2dbcTest(
@@ -75,8 +75,9 @@ class HolderKeyR2dbcAdapterIT {
 
         @Bean
         HolderKeyR2dbcAdapter holderKeyR2dbcAdapter(SpringHolderKeyRepository repository,
-                ObjectMapper objectMapper) {
-            return new HolderKeyR2dbcAdapter(repository, objectMapper);
+                ObjectMapper objectMapper,
+                DatabaseClient databaseClient) {
+            return new HolderKeyR2dbcAdapter(repository, objectMapper, databaseClient);
         }
     }
 
@@ -244,6 +245,46 @@ class HolderKeyR2dbcAdapterIT {
                 withTenant(adapter.upsertIfAbsent(revokedKey)
                         .flatMap(result -> adapter.findBy(testTenant, "holder-3", "cred-3"))))
                 .as("revoked key must not be returned by findBy (AC-05)")
+                .verifyComplete();
+    }
+
+    // -------------------------------------------------------------------------
+    // EC-01 — UPSERT idempotency: second call returns created=false + original key
+    // -------------------------------------------------------------------------
+
+    @Test
+    void upsertIfAbsent_isIdempotent_secondCallReturnsCreatedFalse() {
+        HolderKey firstKey = sampleKey("holder-4", "cred-4");
+
+        // Second call uses a different key_id to simulate a concurrent first-issuance attempt
+        HolderKey secondKey = new HolderKey(
+                HolderKeyId.generate(),       // different key_id
+                testTenant,
+                "holder-4",                    // same composite key
+                "cred-4",
+                CredentialFormat.SD_JWT_VC,
+                KeyAlgorithm.ES256,
+                new byte[]{9, 9, 9},           // different private_key bytes
+                SAMPLE_JWK,
+                Instant.now(),
+                null
+        );
+
+        StepVerifier.create(
+                withTenant(
+                        adapter.upsertIfAbsent(firstKey)
+                                .flatMap(first -> adapter.upsertIfAbsent(secondKey)
+                                        .map(second -> Map.entry(first, second)))))
+                .assertNext(pair -> {
+                    HolderKeyPersistResult first = pair.getKey();
+                    HolderKeyPersistResult second = pair.getValue();
+
+                    assertThat(first.created()).isTrue();
+                    assertThat(second.created()).isFalse();
+                    // The second call must return the *original* key, not the new one
+                    assertThat(second.holderKey().id()).isEqualTo(firstKey.id());
+                    assertThat(second.holderKey().privateKey()).isEqualTo(new byte[]{1, 2, 3, 4, 5});
+                })
                 .verifyComplete();
     }
 }

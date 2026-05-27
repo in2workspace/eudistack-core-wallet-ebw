@@ -11,6 +11,24 @@ package com.eudistack.ebw.keymanager.domain.model;
  */
 public enum CredentialFormat {
 
-    SD_JWT_VC,
-    VC_JWT;
+    SD_JWT_VC("dc+sd-jwt"),
+    VC_JWT("jwt_vc_json");
+
+    private final String dbValue;
+
+    CredentialFormat(String dbValue) {
+        this.dbValue = dbValue;
+    }
+
+    /** Returns the OID4VCI format identifier used in the {@code format} column. */
+    public String dbValue() {
+        return dbValue;
+    }
+
+    public static CredentialFormat fromDbValue(String value) {
+        for (CredentialFormat f : values()) {
+            if (f.dbValue.equals(value)) return f;
+        }
+        throw new IllegalArgumentException("Unknown credential format: " + value);
+    }
 }

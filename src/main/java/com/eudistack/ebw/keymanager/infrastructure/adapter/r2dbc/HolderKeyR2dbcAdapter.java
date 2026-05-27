@@ -13,42 +13,77 @@ import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHo
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.postgresql.codec.Json;
+import org.springframework.r2dbc.core.DatabaseClient;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
 /**
  * R2DBC adapter for holder key persistence.
  *
- * <p>This is a minimal adapter stub that compiles against the rewritten {@link HolderKey}
- * domain model (T1) and the updated port signatures (T2). Full UPSERT-ON-CONFLICT logic
- * will be completed in T5.</p>
- *
- * <p>See {@code technical-design.md §3.2} for the complete adapter specification.</p>
+ * <p>UPSERT strategy (EC-01 / ADR-021): {@code INSERT … ON CONFLICT (holder_id, credential_id)
+ * DO NOTHING RETURNING key_id}. When the row already exists (conflict), the INSERT produces no
+ * RETURNING row and we fall back to a SELECT of the canonical persisted key. This guarantees
+ * idempotency under concurrent first-issuance races.</p>
  */
 public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWritePort {
 
+    private static final String UPSERT_SQL =
+            "INSERT INTO holder_key " +
+            "(key_id, holder_id, credential_id, tenant_id, private_key, public_jwk, algorithm, format, created_at, revoked_at) " +
+            "VALUES (:keyId, :holderId, :credentialId, :tenantId, :privateKey, :publicJwk, :algorithm, :format, :createdAt, :revokedAt) " +
+            "ON CONFLICT ON CONSTRAINT uq_holder_key_holder_credential DO NOTHING " +
+            "RETURNING key_id";
+
     private final SpringHolderKeyRepository repository;
     private final ObjectMapper objectMapper;
+    private final DatabaseClient databaseClient;
 
-    public HolderKeyR2dbcAdapter(SpringHolderKeyRepository repository, ObjectMapper objectMapper) {
+    public HolderKeyR2dbcAdapter(SpringHolderKeyRepository repository,
+                                  ObjectMapper objectMapper,
+                                  DatabaseClient databaseClient) {
         this.repository = repository;
         this.objectMapper = objectMapper;
+        this.databaseClient = databaseClient;
     }
 
     @Override
     public Mono<HolderKey> findBy(String tenantId, String holderId, String credentialId) {
-        // Full implementation in T5; stub returns empty to allow compilation.
-        return repository.findFirstByTenantIdAndHolderIdAndCredentialIdAndRevokedAtIsNull(tenantId, holderId, credentialId)
+        return repository.findFirstByTenantIdAndHolderIdAndCredentialIdAndRevokedAtIsNull(
+                        tenantId, holderId, credentialId)
                 .map(this::toDomain);
     }
 
     @Override
     public Mono<HolderKeyPersistResult> upsertIfAbsent(HolderKey holderKey) {
-        // Full UPSERT-ON-CONFLICT implementation in T5; stub delegates to save for compilation.
-        return repository.save(toEntity(holderKey))
-                .map(entity -> new HolderKeyPersistResult(true, toDomain(entity)));
+        HolderKeyEntity entity = toEntity(holderKey);
+
+        DatabaseClient.GenericExecuteSpec spec = databaseClient.sql(UPSERT_SQL)
+                .bind("keyId", entity.getKeyId())
+                .bind("holderId", entity.getHolderId())
+                .bind("credentialId", entity.getCredentialId())
+                .bind("tenantId", entity.getTenantId())
+                .bind("privateKey", entity.getPrivateKey())
+                .bind("publicJwk", entity.getPublicJwk())
+                .bind("algorithm", entity.getAlgorithm())
+                .bind("format", entity.getFormat())
+                .bind("createdAt", entity.getCreatedAt());
+
+        spec = entity.getRevokedAt() != null
+                ? spec.bind("revokedAt", entity.getRevokedAt())
+                : spec.bindNull("revokedAt", Instant.class);
+
+        return spec.map(row -> row.get("key_id", String.class))
+                .one()
+                // INSERT succeeded — return the domain object we prepared (no extra SELECT needed)
+                .map(ignored -> new HolderKeyPersistResult(true, toDomain(entity)))
+                // Conflict — fetch the canonical existing row
+                .switchIfEmpty(
+                        repository.findFirstByTenantIdAndHolderIdAndCredentialIdAndRevokedAtIsNull(
+                                        holderKey.tenantId(), holderKey.holderId(), holderKey.credentialId())
+                                .map(existing -> new HolderKeyPersistResult(false, toDomain(existing))));
     }
 
     private HolderKey toDomain(HolderKeyEntity entity) {
@@ -58,7 +93,7 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
                 entity.getTenantId(),
                 entity.getHolderId(),
                 entity.getCredentialId(),
-                CredentialFormat.valueOf(entity.getFormat()),
+                CredentialFormat.fromDbValue(entity.getFormat()),
                 KeyAlgorithm.valueOf(entity.getAlgorithm()),
                 entity.getPrivateKey(),
                 new JwkPublic(jwkClaims),
@@ -76,7 +111,7 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
         entity.setPrivateKey(domain.privateKey());
         entity.setPublicJwk(Json.of(serializeJwk(domain.publicJwk())));
         entity.setAlgorithm(domain.algorithm().name());
-        entity.setFormat(domain.format().name());
+        entity.setFormat(domain.format().dbValue());
         entity.setCreatedAt(domain.createdAt());
         entity.setRevokedAt(domain.revokedAt());
         return entity;

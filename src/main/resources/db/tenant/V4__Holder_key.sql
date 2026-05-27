@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS holder_key (
         CHECK (octet_length(private_key) > 0),
 
     CONSTRAINT chk_holder_key_algorithm
-        CHECK (algorithm IN ('ES256', 'ES384', 'ES512')),
+        CHECK (algorithm IN ('ES256', 'ES384', 'EdDSA')),
 
     CONSTRAINT chk_holder_key_format
         CHECK (format IN ('dc+sd-jwt', 'jwt_vc_json'))
