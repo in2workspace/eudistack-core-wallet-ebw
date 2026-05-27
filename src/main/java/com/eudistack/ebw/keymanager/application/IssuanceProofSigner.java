@@ -5,25 +5,26 @@ import com.eudistack.ebw.keymanager.domain.model.JwsProof;
 import com.eudistack.ebw.keymanager.domain.model.KeyAlgorithm;
 import com.eudistack.ebw.keymanager.domain.model.PlaintextHandle;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.JWSSigner;
 import com.nimbusds.jose.crypto.ECDSASigner;
-import com.nimbusds.jose.crypto.Ed25519Signer;
-import com.nimbusds.jose.jwk.Curve;
+import com.nimbusds.jose.jca.JCAContext;
 import com.nimbusds.jose.jwk.JWK;
-import com.nimbusds.jose.jwk.OctetKeyPair;
 import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jakarta.annotation.Nullable;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 import java.security.PrivateKey;
+import java.security.Signature;
 import java.security.interfaces.ECPrivateKey;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Date;
+import java.util.Set;
 
 /**
  * Produces an OID4VCI {@code jwt} proof (OID4VCI 1.0 §8.2) signed with the holder's key.
@@ -72,7 +73,7 @@ public class IssuanceProofSigner {
             JWSHeader header = buildHeader(algorithm, publicJwk);
             JWTClaimsSet claims = buildClaims(issuerIdentifier, cNonce);
             SignedJWT jwt = new SignedJWT(header, claims);
-            jwt.sign(buildSigner(privateKeyHandle.value(), algorithm, publicJwk));
+            jwt.sign(buildSigner(privateKeyHandle.value(), algorithm));
             return new JwsProof(jwt.serialize(), algorithm);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to sign OID4VCI proof JWT", e);
@@ -98,19 +99,48 @@ public class IssuanceProofSigner {
         return builder.build();
     }
 
-    private static JWSSigner buildSigner(PrivateKey key, KeyAlgorithm algorithm,
-                                          JwkPublic publicJwk) throws Exception {
+    private static JWSSigner buildSigner(PrivateKey key, KeyAlgorithm algorithm) {
         return switch (algorithm) {
-            case ES256, ES384 -> new ECDSASigner((ECPrivateKey) key);
-            case EdDSA -> {
-                // Extract 32-byte Ed25519 seed from PKCS#8 (last 32 bytes per ED25519_PKCS8_PREFIX)
-                byte[] pkcs8 = key.getEncoded();
-                byte[] seed = Arrays.copyOfRange(pkcs8, pkcs8.length - 32, pkcs8.length);
-                String xB64 = (String) publicJwk.claims().get("x");
-                OctetKeyPair okp = new OctetKeyPair.Builder(Curve.Ed25519, new Base64URL(xB64))
-                        .d(Base64URL.encode(seed))
-                        .build();
-                yield new Ed25519Signer(okp);
+            case ES256, ES384 -> {
+                try {
+                    yield new ECDSASigner((ECPrivateKey) key);
+                } catch (Exception e) {
+                    throw new IllegalStateException("Failed to build ECDSA signer", e);
+                }
+            }
+            case EdDSA -> buildEdDsaSignerBC(key);
+        };
+    }
+
+    /**
+     * BouncyCastle-based Ed25519 JWSSigner. Avoids a dependency on Google Tink, which is
+     * an optional transitive dependency of nimbus-jose-jwt that is not present in this module.
+     */
+    private static JWSSigner buildEdDsaSignerBC(PrivateKey key) {
+        return new JWSSigner() {
+            private final JCAContext jcaContext = new JCAContext();
+
+            @Override
+            public Base64URL sign(JWSHeader header, byte[] signingInput) throws JOSEException {
+                try {
+                    Signature sig = Signature.getInstance(
+                            "Ed25519", BouncyCastleProvider.PROVIDER_NAME);
+                    sig.initSign(key);
+                    sig.update(signingInput);
+                    return Base64URL.encode(sig.sign());
+                } catch (Exception e) {
+                    throw new JOSEException("Ed25519 sign failed (BouncyCastle)", e);
+                }
+            }
+
+            @Override
+            public Set<JWSAlgorithm> supportedJWSAlgorithms() {
+                return Set.of(JWSAlgorithm.EdDSA);
+            }
+
+            @Override
+            public JCAContext getJCAContext() {
+                return jcaContext;
             }
         };
     }
