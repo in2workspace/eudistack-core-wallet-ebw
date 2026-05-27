@@ -249,6 +249,46 @@ class HolderKeyR2dbcAdapterIT {
     }
 
     // -------------------------------------------------------------------------
+    // ADR-099 — private_key BYTEA: raw bytes, no application-level cipher
+    // -------------------------------------------------------------------------
+
+    @Test
+    void privateKey_isStoredAsRawBytea_noApplicationLevelCipher() throws SQLException {
+        // Recognisable byte pattern that would be obviously corrupted by base64/AES
+        byte[] expectedBytes = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, (byte) 0x88};
+        HolderKey key = new HolderKey(
+                HolderKeyId.generate(),
+                testTenant,
+                "holder-bytea",
+                "cred-bytea",
+                CredentialFormat.SD_JWT_VC,
+                KeyAlgorithm.ES256,
+                expectedBytes,
+                SAMPLE_JWK,
+                Instant.now(),
+                null);
+
+        StepVerifier.create(withTenant(adapter.upsertIfAbsent(key)))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        // Read directly via JDBC — bypasses the R2DBC layer entirely
+        byte[] storedBytes;
+        try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
+             var rs = conn.createStatement().executeQuery(
+                     "SELECT private_key FROM " + testSchema + ".holder_key "
+                     + "WHERE holder_id = 'holder-bytea' AND credential_id = 'cred-bytea'")) {
+            assertThat(rs.next()).as("row must exist after upsert").isTrue();
+            storedBytes = rs.getBytes("private_key");
+        }
+
+        assertThat(storedBytes)
+                .as("private_key must be stored as raw BYTEA without any application-level "
+                    + "transformation (ADR-099 TDE-only)")
+                .isEqualTo(expectedBytes);
+    }
+
+    // -------------------------------------------------------------------------
     // EC-01 — UPSERT idempotency: second call returns created=false + original key
     // -------------------------------------------------------------------------
 
