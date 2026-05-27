@@ -5,7 +5,6 @@ import com.eudistack.ebw.keymanager.application.GenerateHolderKeyUseCase;
 import com.eudistack.ebw.keymanager.application.HolderKeyFactory;
 import com.eudistack.ebw.keymanager.application.IssuanceProofSigner;
 import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
-import com.eudistack.ebw.keymanager.domain.port.HolderKeyReadPort;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
@@ -50,16 +49,6 @@ public class KeyManagerConfiguration {
                                                  ObjectMapper objectMapper,
                                                  DatabaseClient databaseClient) {
         return new HolderKeyR2dbcAdapter(repository, objectMapper, databaseClient);
-    }
-
-    @Bean
-    HolderKeyReadPort holderKeyReadPort(HolderKeyR2dbcAdapter adapter) {
-        return adapter;
-    }
-
-    @Bean
-    HolderKeyWritePort holderKeyWritePort(HolderKeyR2dbcAdapter adapter) {
-        return adapter;
     }
 
     @Bean

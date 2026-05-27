@@ -6,6 +6,8 @@ import com.eudistack.ebw.keymanager.domain.exception.UnsupportedJwsAlgorithmExce
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -33,10 +35,14 @@ import java.util.concurrent.TimeoutException;
  *
  * <p>Scoped to {@link KeyManagerController} via {@code assignableTypes} to avoid
  * interfering with other EBW controllers (mirrors the pattern from
- * {@code WalletProfileQueryExceptionHandler}).</p>
+ * {@code WalletProfileQueryExceptionHandler}).
+ * {@code @Order(HIGHEST_PRECEDENCE)} ensures this advice is evaluated before the
+ * global {@code GlobalExceptionHandler} (which carries no explicit order and therefore
+ * defaults to {@code LOWEST_PRECEDENCE}).</p>
  *
  * <p>Spec: EUDISTACK-119 ES-01, ES-02, ES-04, AC-02, AC-03.</p>
  */
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = KeyManagerController.class)
 public class KeyManagerExceptionHandler {
 
