@@ -59,6 +59,7 @@ dependencies {
 
     // --- AWS SDK v2 ---
     implementation 'software.amazon.awssdk:kms:2.31.78'
+    implementation 'software.amazon.awssdk:cloudwatchlogs:2.31.78'
 
     // --- Cryptography ---
     implementation 'org.bouncycastle:bcprov-jdk18on:1.80'

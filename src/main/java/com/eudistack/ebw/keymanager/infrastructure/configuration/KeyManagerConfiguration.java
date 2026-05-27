@@ -9,6 +9,7 @@ import com.eudistack.ebw.keymanager.domain.port.HolderKeyReadPort;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditCloudWatchAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HolderKeyR2dbcAdapter;
@@ -18,6 +19,9 @@ import com.eudistack.ebw.keymanager.infrastructure.health.KeyManagerHealthContro
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -58,12 +62,17 @@ public class KeyManagerConfiguration {
         return adapter;
     }
 
-    /**
-     * No-op audit port: replaced by KeyAuditCloudWatchAdapter in T8.
-     * Ensures the application context loads while the CloudWatch adapter is pending.
-     */
     @Bean
-    KeyAuditPort keyAuditPort() {
+    @ConditionalOnProperty(name = "keymanager.audit.enabled", havingValue = "true")
+    KeyAuditPort keyAuditCloudWatchAdapter(
+            @Value("${keymanager.audit.log-group-name}") String logGroupName,
+            ObjectMapper objectMapper) {
+        return new KeyAuditCloudWatchAdapter(logGroupName, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(KeyAuditPort.class)
+    KeyAuditPort keyAuditNoOpPort() {
         return (KeyAuditEvent event) -> Mono.empty();
     }
 
