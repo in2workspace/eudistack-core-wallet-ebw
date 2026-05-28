@@ -6,7 +6,7 @@ class ApplicationTests {
 
 	@Test
 	void contextLoads() {
-		// Full context load tested in integration tests with Testcontainers
+		// Full context load tested in int tests with Testcontainers
 	}
 
 }
