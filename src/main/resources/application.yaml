@@ -111,6 +111,11 @@ management:
     mail:
       enabled: false
 
+keymanager:
+  audit:
+    enabled: ${KEYMANAGER_AUDIT_ENABLED:true}
+    log-group-name: ${KEYMANAGER_AUDIT_LOG_GROUP:/eudistack/audit/wallet-ebw/local}
+
 logging:
   pattern:
     level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"

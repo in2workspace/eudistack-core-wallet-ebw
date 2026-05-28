@@ -13,7 +13,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.server.reactive.HttpHandler;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
@@ -47,7 +46,7 @@ import java.util.regex.Pattern;
  * AC-01–AC-03 / AC-06 / EC-04.
  */
 @Component
-public class WellKnownCanonicalHandler implements HttpHandler {
+public class WellKnownCanonicalHandler {
 
     private static final Pattern VALID_TENANT = Pattern.compile("^[a-zA-Z0-9_-]+$");
     private static final String HEADER_CACHE_CONTROL = "Cache-Control";
@@ -73,7 +72,6 @@ public class WellKnownCanonicalHandler implements HttpHandler {
         this.trustForwardedHost = trustForwardedHost;
     }
 
-    @Override
     public Mono<Void> handle(ServerHttpRequest request, ServerHttpResponse response) {
         // Reactor Netty path matching is non-anchored (suffix match), so the route registered for
         // /.well-known/... also fires when the request path ends with that segment (e.g.

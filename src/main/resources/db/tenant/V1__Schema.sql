@@ -1,8 +1,9 @@
 -- =============================================================================
--- V1__EBW_schema.sql
--- Per-tenant EBW schema: all wallet tables.
--- Consolidated from V001-V006 (legacy db/migration single-schema approach).
--- EUDI-040/041/042/044: wallet_user, passkeys, credentials, auth.
+-- V1__Schema.sql
+-- Per-tenant EBW schema — full consolidated baseline.
+-- Combines: EBW_schema (auth/credentials), tenant_config, tenant_wallet_profile,
+--           holder_key (EUDISTACK-119 key-manager module).
+-- Applied by TenantSchemaFlywayMigrator on startup for each active tenant.
 -- =============================================================================
 
 -- =============================================================================
@@ -103,3 +104,110 @@ CREATE TABLE wallet_credential (
 CREATE INDEX idx_credential_user_id     ON wallet_credential (user_id);
 CREATE INDEX idx_credential_user_status ON wallet_credential (user_id, status);
 CREATE INDEX idx_credential_user_config ON wallet_credential (user_id, credential_config_id);
+
+-- =============================================================================
+-- tenant_config: per-tenant key-value configuration
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS tenant_config (
+    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    config_key   VARCHAR(255) NOT NULL UNIQUE,
+    config_value TEXT         NOT NULL,
+    description  VARCHAR(500),
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+INSERT INTO tenant_config (config_key, config_value, description) VALUES
+    ('ebw.mail_from',                  'noreply@eudistack.com',    'Sender address used for transactional emails (OTP, registration)'),
+    ('ebw.allowed_credential_formats', 'dc+sd-jwt,jwt_vc_json',   'Comma-separated list of accepted credential formats, or * for all')
+ON CONFLICT (config_key) DO NOTHING;
+
+-- =============================================================================
+-- tenant_wallet_profile: wallet mode + key-manager config per tenant
+-- (EUDISTACK-412 — drives wallet discovery and key-manager routing)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS tenant_wallet_profile (
+    tenant       VARCHAR(255) NOT NULL,
+    wallet_mode  VARCHAR(20)  NOT NULL,
+    key_manager  VARCHAR(20),
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+
+    CONSTRAINT pk_tenant_wallet_profile
+        PRIMARY KEY (tenant),
+
+    CONSTRAINT chk_wallet_profile_mode_manager CHECK (
+        (wallet_mode = 'browser' AND key_manager IS NULL)
+        OR
+        (wallet_mode = 'server' AND key_manager IS NOT NULL
+            AND key_manager IN ('db', 'hybrid', 'hsm', 'qtsp'))
+    )
+);
+
+REVOKE ALL ON tenant_wallet_profile FROM PUBLIC;
+
+DO $$
+BEGIN
+    GRANT SELECT ON tenant_wallet_profile TO ebw_app_role;
+EXCEPTION
+    WHEN undefined_object THEN NULL;
+END
+$$;
+
+DO $$
+BEGIN
+    GRANT SELECT, INSERT, UPDATE ON tenant_wallet_profile TO config_manager_role;
+EXCEPTION
+    WHEN undefined_object THEN NULL;
+END
+$$;
+
+-- =============================================================================
+-- holder_key: one key pair per (tenant_id, holder_id, credential_id)
+-- Private key stored as raw BYTEA; at-rest protection by RDS TDE (ADR-099).
+-- EUDISTACK-119 — key-manager module (US-02)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS holder_key (
+    key_id         VARCHAR(36)  NOT NULL,
+    holder_id      VARCHAR(255) NOT NULL,
+    credential_id  VARCHAR(255) NOT NULL,
+    tenant_id      VARCHAR(255) NOT NULL,
+    private_key    BYTEA        NOT NULL,
+    public_jwk     JSONB        NOT NULL,
+    algorithm      VARCHAR(20)  NOT NULL,
+    format         VARCHAR(30)  NOT NULL,
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    revoked_at     TIMESTAMPTZ,
+
+    CONSTRAINT pk_holder_key
+        PRIMARY KEY (key_id),
+
+    CONSTRAINT uq_holder_key_tenant_holder_credential
+        UNIQUE (tenant_id, holder_id, credential_id),
+
+    CONSTRAINT chk_holder_key_private_key_nonempty
+        CHECK (octet_length(private_key) > 0),
+
+    CONSTRAINT chk_holder_key_algorithm
+        CHECK (algorithm IN ('ES256', 'ES384', 'EdDSA')),
+
+    CONSTRAINT chk_holder_key_format
+        CHECK (format IN ('dc+sd-jwt', 'jwt_vc_json'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_holder_key_holder_id
+    ON holder_key (holder_id);
+
+CREATE INDEX IF NOT EXISTS idx_holder_key_active
+    ON holder_key (holder_id, credential_id)
+    WHERE revoked_at IS NULL;
+
+REVOKE ALL ON holder_key FROM PUBLIC;
+
+DO $$
+BEGIN
+    GRANT SELECT, INSERT ON holder_key TO ebw_app_role;
+EXCEPTION
+    WHEN undefined_object THEN NULL;
+END
+$$;
