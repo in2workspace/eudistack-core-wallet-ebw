@@ -113,7 +113,7 @@ management:
 
 keymanager:
   audit:
-    enabled: ${KEYMANAGER_AUDIT_ENABLED:true}
+    enabled: ${KEYMANAGER_AUDIT_ENABLED:false}
     log-group-name: ${KEYMANAGER_AUDIT_LOG_GROUP:/eudistack/audit/wallet-ebw/local}
 
 logging:

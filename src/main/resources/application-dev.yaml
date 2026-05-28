@@ -3,10 +3,6 @@ spring:
     host: localhost
     port: 1025
 
-keymanager:
-  audit:
-    enabled: false
-
 logging:
   level:
     com.eudistack.ebw: DEBUG
