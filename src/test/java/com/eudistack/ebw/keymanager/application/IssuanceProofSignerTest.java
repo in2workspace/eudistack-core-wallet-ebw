@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class IssuanceProofSignerTest {
 
+    private static final String HOLDER_ID = "holder-abc-123";
     private static final String ISSUER = "https://issuer.example.com";
     private static final String C_NONCE = "test-nonce-abc";
 
@@ -40,7 +41,7 @@ class IssuanceProofSignerTest {
         PlaintextHandle<PrivateKey> handle = generated.privateKeyHandle();
         JwkPublic publicJwk = generated.publicJwk();
 
-        JwsProof proof = signer.sign(handle, publicJwk, algorithm, ISSUER, C_NONCE);
+        JwsProof proof = signer.sign(handle, publicJwk, algorithm, HOLDER_ID, ISSUER, C_NONCE);
 
         assertThat(proof).isNotNull();
         assertThat(proof.algorithm()).isEqualTo(algorithm);
@@ -52,7 +53,7 @@ class IssuanceProofSignerTest {
     void sign_jwtHeader_hasCorrectTypAndAlg(KeyAlgorithm algorithm) throws Exception {
         GeneratedKeyPair generated = factory.generate(algorithm);
         JwsProof proof = signer.sign(
-                generated.privateKeyHandle(), generated.publicJwk(), algorithm, ISSUER, C_NONCE);
+                generated.privateKeyHandle(), generated.publicJwk(), algorithm, HOLDER_ID, ISSUER, C_NONCE);
 
         SignedJWT jwt = SignedJWT.parse(proof.compactSerialization());
 
@@ -66,7 +67,7 @@ class IssuanceProofSignerTest {
     void sign_jwtHeader_containsPublicJwk_noPrivateFields(KeyAlgorithm algorithm) throws Exception {
         GeneratedKeyPair generated = factory.generate(algorithm);
         JwsProof proof = signer.sign(
-                generated.privateKeyHandle(), generated.publicJwk(), algorithm, ISSUER, C_NONCE);
+                generated.privateKeyHandle(), generated.publicJwk(), algorithm, HOLDER_ID, ISSUER, C_NONCE);
 
         SignedJWT jwt = SignedJWT.parse(proof.compactSerialization());
         String jwkJson = jwt.getHeader().getJWK().toJSONString();
@@ -79,7 +80,7 @@ class IssuanceProofSignerTest {
     void sign_jwtPayload_hasAudAndIat(KeyAlgorithm algorithm) throws Exception {
         GeneratedKeyPair generated = factory.generate(algorithm);
         JwsProof proof = signer.sign(
-                generated.privateKeyHandle(), generated.publicJwk(), algorithm, ISSUER, C_NONCE);
+                generated.privateKeyHandle(), generated.publicJwk(), algorithm, HOLDER_ID, ISSUER, C_NONCE);
 
         SignedJWT jwt = SignedJWT.parse(proof.compactSerialization());
 
@@ -89,10 +90,24 @@ class IssuanceProofSignerTest {
 
     @ParameterizedTest
     @EnumSource(KeyAlgorithm.class)
+    void sign_jwtPayload_hasIssEqualToHolderId(KeyAlgorithm algorithm) throws Exception {
+        GeneratedKeyPair generated = factory.generate(algorithm);
+        JwsProof proof = signer.sign(
+                generated.privateKeyHandle(), generated.publicJwk(), algorithm, HOLDER_ID, ISSUER, C_NONCE);
+
+        SignedJWT jwt = SignedJWT.parse(proof.compactSerialization());
+
+        assertThat(jwt.getJWTClaimsSet().getIssuer())
+                .as("iss claim must equal holderId (OID4VCI §8.2.1.1)")
+                .isEqualTo(HOLDER_ID);
+    }
+
+    @ParameterizedTest
+    @EnumSource(KeyAlgorithm.class)
     void sign_withCNonce_jwtPayload_containsNonce(KeyAlgorithm algorithm) throws Exception {
         GeneratedKeyPair generated = factory.generate(algorithm);
         JwsProof proof = signer.sign(
-                generated.privateKeyHandle(), generated.publicJwk(), algorithm, ISSUER, C_NONCE);
+                generated.privateKeyHandle(), generated.publicJwk(), algorithm, HOLDER_ID, ISSUER, C_NONCE);
 
         SignedJWT jwt = SignedJWT.parse(proof.compactSerialization());
 
@@ -106,7 +121,7 @@ class IssuanceProofSignerTest {
     void sign_withoutCNonce_jwtPayload_hasNoNonceClaim(KeyAlgorithm algorithm) throws Exception {
         GeneratedKeyPair generated = factory.generate(algorithm);
         JwsProof proof = signer.sign(
-                generated.privateKeyHandle(), generated.publicJwk(), algorithm, ISSUER, null);
+                generated.privateKeyHandle(), generated.publicJwk(), algorithm, HOLDER_ID, ISSUER, null);
 
         SignedJWT jwt = SignedJWT.parse(proof.compactSerialization());
 
@@ -122,7 +137,7 @@ class IssuanceProofSignerTest {
     void sign_jwtSignature_hasNonEmptySignatureBytes(KeyAlgorithm algorithm) throws Exception {
         GeneratedKeyPair generated = factory.generate(algorithm);
         JwsProof proof = signer.sign(
-                generated.privateKeyHandle(), generated.publicJwk(), algorithm, ISSUER, C_NONCE);
+                generated.privateKeyHandle(), generated.publicJwk(), algorithm, HOLDER_ID, ISSUER, C_NONCE);
 
         SignedJWT jwt = SignedJWT.parse(proof.compactSerialization());
 

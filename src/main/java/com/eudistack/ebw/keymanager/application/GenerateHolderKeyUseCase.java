@@ -103,6 +103,7 @@ public class GenerateHolderKeyUseCase {
                             generated.privateKeyHandle(),
                             persistResult.holderKey().publicJwk(),
                             algorithm,
+                            command.holderId(),
                             command.issuerIdentifier(),
                             command.cNonce());
                     return new HolderKeyResult(
@@ -129,6 +130,7 @@ public class GenerateHolderKeyUseCase {
                         fetchedHandle,
                         existing.publicJwk(),
                         algorithm,
+                        command.holderId(),
                         command.issuerIdentifier(),
                         command.cNonce());
                 return new HolderKeyResult(existing.id(), existing.publicJwk(), proof, false);

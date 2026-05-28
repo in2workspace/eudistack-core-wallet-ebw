@@ -23,7 +23,7 @@ import java.util.UUID;
 /**
  * R2DBC adapter for holder key persistence.
  *
- * <p>UPSERT strategy (EC-01 / ADR-021): {@code INSERT … ON CONFLICT (holder_id, credential_id)
+ * <p>UPSERT strategy (EC-01 / ADR-021): {@code INSERT … ON CONFLICT (tenant_id, holder_id, credential_id)
  * DO NOTHING RETURNING key_id}. When the row already exists (conflict), the INSERT produces no
  * RETURNING row and we fall back to a SELECT of the canonical persisted key. This guarantees
  * idempotency under concurrent first-issuance races.</p>
@@ -34,7 +34,7 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
             "INSERT INTO holder_key " +
             "(key_id, holder_id, credential_id, tenant_id, private_key, public_jwk, algorithm, format, created_at, revoked_at) " +
             "VALUES (:keyId, :holderId, :credentialId, :tenantId, :privateKey, :publicJwk, :algorithm, :format, :createdAt, :revokedAt) " +
-            "ON CONFLICT ON CONSTRAINT uq_holder_key_holder_credential DO NOTHING " +
+            "ON CONFLICT ON CONSTRAINT uq_holder_key_tenant_holder_credential DO NOTHING " +
             "RETURNING key_id";
 
     private final SpringHolderKeyRepository repository;

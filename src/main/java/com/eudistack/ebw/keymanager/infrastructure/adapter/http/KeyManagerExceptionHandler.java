@@ -29,7 +29,7 @@ import java.util.concurrent.TimeoutException;
  *   <li>{@link UnsupportedJwsAlgorithmException} → 422 (AC-03 / ADR-024).
  *   <li>{@link TenantWalletProfileUnsupportedException}, {@link TenantUnknownException}
  *       → 403 opaque with no body (ES-02 anti-probing — AD-119-2).
- *   <li>{@link TimeoutException} → 503 (ES-04 / NFR-P-119-01).
+ *   <li>{@link TimeoutException} → 504 (ES-04 / NFR-P-119-01).
  *   <li>Any other {@link Exception} → 500.
  * </ul>
  *
@@ -84,9 +84,9 @@ public class KeyManagerExceptionHandler {
     @ExceptionHandler(TimeoutException.class)
     public ResponseEntity<ProblemDetail> handleTimeout(TimeoutException ex) {
         log.warn("Key generation timed out (NFR-P-119-01)");
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.SERVICE_UNAVAILABLE);
-        problem.setType(URI.create(TYPE_BASE + "service-unavailable"));
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(problem);
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.GATEWAY_TIMEOUT);
+        problem.setType(URI.create(TYPE_BASE + "gateway-timeout"));
+        return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).body(problem);
     }
 
     @ExceptionHandler(Exception.class)

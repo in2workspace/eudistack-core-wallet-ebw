@@ -59,6 +59,7 @@ public class IssuanceProofSigner {
      * @param privateKeyHandle zeroizable handle holding the signing key
      * @param publicJwk        the holder's public key, embedded in the JWT {@code jwk} header
      * @param algorithm        the JWS algorithm to use
+     * @param holderId         the wallet's identifier ({@code iss} claim — OID4VCI §8.2.1.1)
      * @param issuerIdentifier the issuer URL ({@code aud} claim)
      * @param cNonce           optional {@code c_nonce} (OID4VCI §7.2); {@code null} if omitted
      * @return the signed {@link JwsProof} in compact serialization
@@ -67,11 +68,12 @@ public class IssuanceProofSigner {
     public JwsProof sign(PlaintextHandle<PrivateKey> privateKeyHandle,
                          JwkPublic publicJwk,
                          KeyAlgorithm algorithm,
+                         String holderId,
                          String issuerIdentifier,
                          @Nullable String cNonce) {
         try {
             JWSHeader header = buildHeader(algorithm, publicJwk);
-            JWTClaimsSet claims = buildClaims(issuerIdentifier, cNonce);
+            JWTClaimsSet claims = buildClaims(holderId, issuerIdentifier, cNonce);
             SignedJWT jwt = new SignedJWT(header, claims);
             jwt.sign(buildSigner(privateKeyHandle.value(), algorithm));
             return new JwsProof(jwt.serialize(), algorithm);
@@ -89,8 +91,11 @@ public class IssuanceProofSigner {
                 .build();
     }
 
-    private static JWTClaimsSet buildClaims(String issuerIdentifier, @Nullable String cNonce) {
+    private static JWTClaimsSet buildClaims(String holderId,
+                                             String issuerIdentifier,
+                                             @Nullable String cNonce) {
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
+                .issuer(holderId)
                 .audience(issuerIdentifier)
                 .issueTime(Date.from(Instant.now()));
         if (cNonce != null) {
