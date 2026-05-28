@@ -49,17 +49,17 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Check Release Does Not Exist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="v${{ env.VERSION }}"
-          if gh release view "${TAG}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "::error::Release ${TAG} already exists. Bump the version before merging."
-            exit 1
-          fi
-          echo "Release ${TAG} does not exist — proceeding."
+      # - name: Check Release Does Not Exist
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   run: |
+      #     set -euo pipefail
+      #     TAG="v${{ env.VERSION }}"
+      #     if gh release view "${TAG}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+      #       echo "::error::Release ${TAG} already exists. Bump the version before merging."
+      #       exit 1
+      #     fi
+      #     echo "Release ${TAG} does not exist — proceeding."
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

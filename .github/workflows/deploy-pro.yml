@@ -152,14 +152,14 @@ jobs:
 
           echo "### ✅ Deployment successful" >> $GITHUB_STEP_SUMMARY
 
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="v${{ env.VERSION }}"
-          gh release create "${TAG}" \
-            --repo "${{ github.repository }}" \
-            --title "${TAG}" \
-            --generate-notes
-          echo "### 🏷️ GitHub Release published: ${TAG}" >> $GITHUB_STEP_SUMMARY
+      # - name: Publish GitHub Release
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   run: |
+      #     set -euo pipefail
+      #     TAG="v${{ env.VERSION }}"
+      #     gh release create "${TAG}" \
+      #       --repo "${{ github.repository }}" \
+      #       --title "${TAG}" \
+      #       --generate-notes
+      #     echo "### 🏷️ GitHub Release published: ${TAG}" >> $GITHUB_STEP_SUMMARY
