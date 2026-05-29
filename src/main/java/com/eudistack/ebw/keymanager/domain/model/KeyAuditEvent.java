@@ -1,5 +1,7 @@
 package com.eudistack.ebw.keymanager.domain.model;
 
+import jakarta.annotation.Nullable;
+
 import java.time.Instant;
 import java.util.Objects;
 
@@ -20,9 +22,15 @@ import java.util.Objects;
  * {@link KeyAuditEventType#SIGN_TIMEOUT} for timeout kill-switch (ES-05),
  * {@link KeyAuditEventType#SIGN_DEPENDENCY_FAILURE} for DB/infra unavailability (ES-04).</p>
  *
- * <p>The optional fields {@code signingType}, {@code purpose}, and {@code consumerOrigin}
- * are only populated for signing events. Generation events leave them {@code null} to
- * preserve backward-compatibility with US-02 audit consumers.</p>
+ * <p>The optional fields {@code signingType}, {@code purpose}, {@code consumerOrigin},
+ * and {@code keyId} are only populated for signing events. Generation events leave them
+ * {@code null} to preserve backward-compatibility with US-02 audit consumers.</p>
+ *
+ * <p>{@code keyId} carries the surrogate UUID of the {@link HolderKey} that was used for the
+ * signing operation. It is absent ({@code null}) for generation events (US-02) because no key
+ * is being used as an instrument — it is being created. For signing events (US-03), the field
+ * allows an auditor to correlate the signing event with the key lifecycle event without
+ * exposing key material.</p>
  *
  * <p>Spec: ADR-062 (hash chain audit batches), ADR-069 (audit log platform model),
  * FR-61 (audit Dominio D2), EUDISTACK-407 AC-08.</p>
@@ -41,7 +49,8 @@ public record KeyAuditEvent(
         SigningType signingType,
         SignaturePurpose purpose,
         ConsumerOrigin consumerOrigin,
-        String reason
+        String reason,
+        @Nullable String keyId
 ) {
 
     /**
@@ -91,7 +100,7 @@ public record KeyAuditEvent(
         if (correlationId.isBlank()) {
             throw new IllegalArgumentException("correlationId must not be blank");
         }
-        // signingType, purpose, consumerOrigin, reason are intentionally nullable
+        // signingType, purpose, consumerOrigin, reason, keyId are intentionally nullable
         // (null for KEY_GENERATED / KEY_FETCHED — US-02 backward-compat)
     }
 
@@ -111,11 +120,15 @@ public record KeyAuditEvent(
         return new KeyAuditEvent(
                 type, tenantId, holderId, credentialId, format, algorithm,
                 jkt, timestamp, correlationId,
-                null, null, null, null);
+                null, null, null, null, null);
     }
 
     /**
      * Factory for US-03 signing events (all fields populated).
+     *
+     * @param keyId the surrogate UUID of the {@link HolderKey} used for signing; may be null
+     *              for SIGN_DEPENDENCY_FAILURE and SIGN_TIMEOUT events where the key may not
+     *              have been resolved yet
      */
     public static KeyAuditEvent forSigning(
             KeyAuditEventType type,
@@ -130,10 +143,11 @@ public record KeyAuditEvent(
             SigningType signingType,
             SignaturePurpose purpose,
             ConsumerOrigin consumerOrigin,
-            String reason) {
+            String reason,
+            @Nullable String keyId) {
         return new KeyAuditEvent(
                 type, tenantId, holderId, credentialId, format, algorithm,
                 jkt, timestamp, correlationId,
-                signingType, purpose, consumerOrigin, reason);
+                signingType, purpose, consumerOrigin, reason, keyId);
     }
 }

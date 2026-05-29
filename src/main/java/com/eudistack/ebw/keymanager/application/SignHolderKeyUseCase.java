@@ -16,6 +16,8 @@ import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
+import io.r2dbc.spi.R2dbcNonTransientResourceException;
+import io.r2dbc.spi.R2dbcTimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -117,7 +119,14 @@ public class SignHolderKeyUseCase {
     private Mono<SignHolderKeyResult> resolveAndSign(SignHolderKeyCommand cmd) {
         return holderKeyReadPort.findById(cmd.tenantId(), cmd.holderId(), cmd.keyId())
                 .flatMap(holderKey -> signWithKey(cmd, holderKey))
-                .switchIfEmpty(opaqueReject(cmd, "KEY_NOT_FOUND"));
+                .switchIfEmpty(opaqueReject(cmd, "KEY_NOT_FOUND"))
+                // B3 (ES-04): emit SIGN_DEPENDENCY_FAILURE audit before propagating R2DBC errors
+                .onErrorResume(R2dbcTimeoutException.class, ex ->
+                        emitAuditFireAndForget(buildDependencyFailureEvent(cmd, "R2DBC_TIMEOUT"))
+                                .then(Mono.error(ex)))
+                .onErrorResume(R2dbcNonTransientResourceException.class, ex ->
+                        emitAuditFireAndForget(buildDependencyFailureEvent(cmd, "R2DBC_UNAVAILABLE"))
+                                .then(Mono.error(ex)));
     }
 
     private Mono<SignHolderKeyResult> signWithKey(SignHolderKeyCommand cmd, HolderKey holderKey) {
@@ -191,7 +200,9 @@ public class SignHolderKeyUseCase {
                 cmd.signingType(),
                 cmd.purpose(),
                 cmd.origin(),
-                null
+                null,
+                // B2: populate keyId so auditors can correlate with the key lifecycle event
+                key.id().value().toString()
         );
     }
 
@@ -201,6 +212,7 @@ public class SignHolderKeyUseCase {
         CredentialFormat format = (key != null) ? key.format() : CredentialFormat.SD_JWT_VC;
         KeyAlgorithm algorithm = (key != null) ? key.algorithm() : KeyAlgorithm.ES256;
         String jkt = (key != null) ? key.publicJwk().jkt() : "UNKNOWN";
+        String keyIdStr = (key != null) ? key.id().value().toString() : null;
 
         return KeyAuditEvent.forSigning(
                 KeyAuditEventType.SIGN_REJECTED,
@@ -215,7 +227,8 @@ public class SignHolderKeyUseCase {
                 cmd.signingType(),
                 cmd.purpose(),
                 cmd.origin(),
-                reason
+                reason,
+                keyIdStr
         );
     }
 
@@ -233,7 +246,32 @@ public class SignHolderKeyUseCase {
                 cmd.signingType(),
                 cmd.purpose(),
                 cmd.origin(),
-                "TIMEOUT"
+                "TIMEOUT",
+                null
+        );
+    }
+
+    /**
+     * B3 (ES-04): builds a {@code SIGN_DEPENDENCY_FAILURE} event when a DB/infra error
+     * prevents the signing operation. The key was not resolved at this point, so {@code keyId},
+     * {@code credentialId}, and {@code jkt} are placeholder values.
+     */
+    private KeyAuditEvent buildDependencyFailureEvent(SignHolderKeyCommand cmd, String reason) {
+        return KeyAuditEvent.forSigning(
+                KeyAuditEventType.SIGN_DEPENDENCY_FAILURE,
+                cmd.tenantId(),
+                cmd.holderId(),
+                "UNKNOWN",
+                CredentialFormat.SD_JWT_VC,
+                KeyAlgorithm.ES256,
+                "UNKNOWN",
+                Instant.now(),
+                UUID.randomUUID().toString(),
+                cmd.signingType(),
+                cmd.purpose(),
+                cmd.origin(),
+                reason,
+                null
         );
     }
 }

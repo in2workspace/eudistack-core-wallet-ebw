@@ -2,6 +2,8 @@ package com.eudistack.ebw.keymanager.application;
 
 import com.eudistack.ebw.keymanager.domain.exception.KeyAccessDeniedException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
+import io.r2dbc.spi.R2dbcNonTransientResourceException;
+import io.r2dbc.spi.R2dbcTimeoutException;
 import com.eudistack.ebw.keymanager.domain.model.ConsumerOrigin;
 import com.eudistack.ebw.keymanager.domain.model.CredentialFormat;
 import com.eudistack.ebw.keymanager.domain.model.HolderKey;
@@ -257,6 +259,11 @@ class SignHolderKeyUseCaseTest {
         assertThat(emitted.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.KEY_SIGNED);
         assertThat(emitted.signingType()).isEqualTo(SigningType.KB_JWT);
         assertThat(emitted.purpose()).isEqualTo(SignaturePurpose.PRESENTATION);
+        // B2: keyId must be populated in KEY_SIGNED events
+        assertThat(emitted.keyId())
+                .as("KEY_SIGNED audit event must include the keyId of the signing key")
+                .isNotNull()
+                .isEqualTo(key.id().value().toString());
     }
 
     // --- EC-03: empty signing input is rejected at command level ---
@@ -311,6 +318,56 @@ class SignHolderKeyUseCaseTest {
                 .thenAwait(SignHolderKeyUseCase.OUTER_TIMEOUT.plusMillis(100))
                 .expectError(java.util.concurrent.TimeoutException.class)
                 .verify();
+    }
+
+    // --- B3 / ES-04: SIGN_DEPENDENCY_FAILURE audit on R2DBC timeout ---
+
+    @Test
+    void execute_r2dbcTimeout_emitsSignDependencyFailureAuditEvent() {
+        // Given — DB times out during key resolution
+        when(walletProfileQueryPort.queryByCurrentTenant())
+                .thenReturn(Mono.just(serverDbProfile()));
+        when(holderKeyReadPort.findById(any(), any(), any()))
+                .thenReturn(Mono.error(new R2dbcTimeoutException("DB timeout") {}));
+
+        SignHolderKeyCommand cmd = signCommand(HolderKeyId.generate(), SigningType.KB_JWT,
+                SignaturePurpose.PRESENTATION);
+
+        // When / Then — R2DBC error propagates and SIGN_DEPENDENCY_FAILURE is emitted
+        StepVerifier.create(useCase.execute(cmd))
+                .expectError(R2dbcTimeoutException.class)
+                .verify();
+
+        ArgumentCaptor<KeyAuditEvent> eventCaptor = ArgumentCaptor.forClass(KeyAuditEvent.class);
+        verify(auditPort).emit(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().type())
+                .isEqualTo(KeyAuditEvent.KeyAuditEventType.SIGN_DEPENDENCY_FAILURE);
+        assertThat(eventCaptor.getValue().reason()).isEqualTo("R2DBC_TIMEOUT");
+    }
+
+    // --- B3 / ES-04: SIGN_DEPENDENCY_FAILURE audit on R2DBC non-transient error ---
+
+    @Test
+    void execute_r2dbcUnavailable_emitsSignDependencyFailureAuditEvent() {
+        // Given — DB non-transient error during key resolution
+        when(walletProfileQueryPort.queryByCurrentTenant())
+                .thenReturn(Mono.just(serverDbProfile()));
+        when(holderKeyReadPort.findById(any(), any(), any()))
+                .thenReturn(Mono.error(new R2dbcNonTransientResourceException("DB down") {}));
+
+        SignHolderKeyCommand cmd = signCommand(HolderKeyId.generate(), SigningType.KB_JWT,
+                SignaturePurpose.PRESENTATION);
+
+        // When / Then — R2DBC error propagates and SIGN_DEPENDENCY_FAILURE is emitted
+        StepVerifier.create(useCase.execute(cmd))
+                .expectError(R2dbcNonTransientResourceException.class)
+                .verify();
+
+        ArgumentCaptor<KeyAuditEvent> eventCaptor = ArgumentCaptor.forClass(KeyAuditEvent.class);
+        verify(auditPort).emit(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().type())
+                .isEqualTo(KeyAuditEvent.KeyAuditEventType.SIGN_DEPENDENCY_FAILURE);
+        assertThat(eventCaptor.getValue().reason()).isEqualTo("R2DBC_UNAVAILABLE");
     }
 
     // --- ES-04: audit failure does not fail the main flow ---

@@ -61,10 +61,14 @@ class VpEnvelopeRoundTripIT {
         // Then — parse and verify
         JWSObject jwsObject = JWSObject.parse(jwsCompact);
 
-        // Header assertions (VC-JOSE-COSE §3.2)
+        // Header assertions (VC-JOSE-COSE §3.2 + technical-design §3.4.3)
         assertThat(jwsObject.getHeader().getType().getType())
                 .as("typ header must be vp+jwt (VC-JOSE-COSE §3.2)")
                 .isEqualTo("vp+jwt");
+        // W1: cty:"vp" required per technical-design §3.4.3
+        assertThat(jwsObject.getHeader().getContentType())
+                .as("cty header must be 'vp' per technical-design §3.4.3")
+                .isEqualTo("vp");
         assertThat(jwsObject.getHeader().getAlgorithm().getName())
                 .isEqualTo(algorithm.getJwsAlgorithmName());
 

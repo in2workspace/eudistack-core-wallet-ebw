@@ -60,6 +60,10 @@ class VpEnvelopeSignerTest {
 
         // Header must have typ=vp+jwt (VC-JOSE-COSE §3.2)
         assertThat(jwsObject.getHeader().getType().getType()).isEqualTo("vp+jwt");
+        // W1: cty:"vp" required per technical-design §3.4.3
+        assertThat(jwsObject.getHeader().getContentType())
+                .as("cty header must be 'vp' per technical-design §3.4.3")
+                .isEqualTo("vp");
         assertThat(jwsObject.getHeader().getAlgorithm().getName())
                 .isEqualTo(algorithm.getJwsAlgorithmName());
 

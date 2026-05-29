@@ -39,14 +39,14 @@ import java.util.concurrent.TimeoutException;
  *   <li>{@link UnsupportedCredentialFormatException} → 400 (AC-02).</li>
  *   <li>{@link UnsupportedJwsAlgorithmException} → 422 (AC-03 / ADR-024).</li>
  *   <li>{@link UnsupportedSigningTypeException} → 400 (AC-03 EUDISTACK-407).</li>
- *   <li>{@link SigningTypeFormatMismatchException} → 400 (AC-04 EUDISTACK-407 — only if
- *       the exception escapes the opaque-reject path; included for completeness).</li>
+ *   <li>{@link SigningTypeFormatMismatchException} → 401 opaque (AC-04 / spec-delta SD-407-01
+ *       — routes through the same opaque path as {@link KeyAccessDeniedException} per ADR-025).</li>
  *   <li>{@link KeyAccessDeniedException} → 401 with opaque body (AC-06 / ADR-025).</li>
  *   <li>{@link TenantWalletProfileUnsupportedException}, {@link TenantUnknownException}
  *       → 403 opaque with no body (ES-02 anti-probing — AD-119-2).</li>
  *   <li>{@link R2dbcTimeoutException}, {@link R2dbcNonTransientResourceException} → 503
  *       (ES-04 DB unavailable — EUDISTACK-407).</li>
- *   <li>{@link TimeoutException} → 503 (ES-05 signing timeout — NFR-S-407-07).</li>
+ *   <li>{@link TimeoutException} → 504 (ES-05 signing timeout — NFR-S-407-07).</li>
  *   <li>Any other {@link Exception} → 500.</li>
  * </ul>
  *
@@ -119,11 +119,17 @@ public class KeyManagerExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 
+    /**
+     * W2 / AC-04 (spec-delta SD-407-01): format mismatch is routed through the opaque 401
+     * path (ADR-025) — same body as {@link KeyAccessDeniedException} — to prevent an
+     * unauthenticated caller from inferring the key's credential format from the HTTP status.
+     * See {@code spec-deltas.md} entry SD-407-01 for the change rationale and PM approval gate.
+     */
     @ExceptionHandler(SigningTypeFormatMismatchException.class)
-    public ResponseEntity<ProblemDetail> handleSigningTypeMismatch(SigningTypeFormatMismatchException ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        problem.setType(URI.create(TYPE_BASE + "signing-type-format-mismatch"));
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    public ResponseEntity<Map<String, String>> handleSigningTypeMismatch(SigningTypeFormatMismatchException ex) {
+        log.debug("keymanager.sign.rejected internal_reason=SIGNING_TYPE_FORMAT_MISMATCH");
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", "KeyAccessDenied"));
     }
 
     /**
@@ -163,14 +169,17 @@ public class KeyManagerExceptionHandler {
     }
 
     /**
-     * ES-05 / NFR-S-407-07: signing timeout kill-switch — maps to 503.
+     * ES-05 / NFR-S-407-07: signing timeout kill-switch — maps to 504 Gateway Timeout.
+     *
+     * <p>504 is semantically correct: the EBW acts as a gateway to the signing backend (JCA/DB)
+     * and the upstream operation did not complete within the kill-switch budget (2500 ms).</p>
      */
     @ExceptionHandler(TimeoutException.class)
     public ResponseEntity<ProblemDetail> handleTimeout(TimeoutException ex) {
         log.warn("keymanager.sign.timeout");
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.SERVICE_UNAVAILABLE);
-        problem.setType(URI.create(TYPE_BASE + "service-unavailable"));
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(problem);
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.GATEWAY_TIMEOUT);
+        problem.setType(URI.create(TYPE_BASE + "gateway-timeout"));
+        return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).body(problem);
     }
 
     /**

@@ -249,6 +249,10 @@ public class KeyAuditCloudWatchAdapter implements KeyAuditPort, DisposableBean {
         if (event.reason() != null) {
             map.put("reason", event.reason());
         }
+        // B2 (AC-08): key_id correlates the signing event with the key lifecycle record
+        if (event.keyId() != null) {
+            map.put("key_id", event.keyId());
+        }
 
         return map;
     }

@@ -80,13 +80,14 @@ class KeyAuditCloudWatchAdapterIT_KeySigned {
         String holderId = UUID.randomUUID().toString();
         String correlationId = UUID.randomUUID().toString();
         String jkt = "jkt-sign-test";
+        String keyId = UUID.randomUUID().toString();
 
         KeyAuditEvent event = KeyAuditEvent.forSigning(
                 KeyAuditEvent.KeyAuditEventType.KEY_SIGNED,
                 tenantId, holderId, "cred-sign", CredentialFormat.SD_JWT_VC,
                 KeyAlgorithm.ES256, jkt, Instant.now(), correlationId,
                 SigningType.KB_JWT, SignaturePurpose.PRESENTATION, ConsumerOrigin.OID4VP_RESPONDER,
-                null
+                null, keyId
         );
 
         KeyAuditCloudWatchAdapter adapter = new KeyAuditCloudWatchAdapter(
@@ -121,6 +122,12 @@ class KeyAuditCloudWatchAdapterIT_KeySigned {
             assertThat(e.get("purpose")).isEqualTo("PRESENTATION");
             assertThat(e.get("consumer_origin")).isEqualTo("OID4VP_RESPONDER");
             assertThat(e.get("jkt")).isEqualTo(jkt);
+
+            // B2: keyId must be present and match the value set on the event (AC-08)
+            assertThat(e.get("key_id"))
+                    .as("key_id must be present and non-blank in KEY_SIGNED audit event")
+                    .isNotNull()
+                    .isEqualTo(keyId);
 
             // No signing material (NFR-S-407-05)
             assertThat(message).doesNotContain("payload");

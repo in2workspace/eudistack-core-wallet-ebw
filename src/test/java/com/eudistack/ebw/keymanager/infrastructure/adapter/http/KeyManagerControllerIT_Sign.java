@@ -211,15 +211,17 @@ class KeyManagerControllerIT_Sign {
                 .expectStatus().isBadRequest();
     }
 
-    // --- AC-04: format mismatch → 400 ---
+    // --- AC-04: format mismatch → 401 opaque (spec-delta SD-407-01 / ADR-025) ---
 
     @Test
-    void sign_formatMismatch_returns400() {
+    void sign_formatMismatch_returns401Opaque() {
         when(keyManagerPort.signWithHolderKey(any())).thenReturn(
                 Mono.error(new SigningTypeFormatMismatchException(SigningType.KB_JWT, CredentialFormat.VC_JWT)));
 
         postSign(SERVER_DB_TENANT, KEY_ID, validBody("KB_JWT"))
-                .expectStatus().isBadRequest();
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.error").isEqualTo("KeyAccessDenied");
     }
 
     // --- AC-06: key not found → opaque 401 with {"error": "KeyAccessDenied"} ---
@@ -259,15 +261,15 @@ class KeyManagerControllerIT_Sign {
                 .expectStatus().isForbidden();
     }
 
-    // --- ES-05: timeout → 503 ---
+    // --- ES-05: timeout → 504 Gateway Timeout (B1) ---
 
     @Test
-    void sign_timeout_returns503() {
+    void sign_timeout_returns504() {
         when(keyManagerPort.signWithHolderKey(any())).thenReturn(
                 Mono.error(new TimeoutException("signing timed out")));
 
         postSign(SERVER_DB_TENANT, KEY_ID, validBody("KB_JWT"))
-                .expectStatus().isEqualTo(503);
+                .expectStatus().isEqualTo(504);
     }
 
     // --- No Authorization → 401 ---

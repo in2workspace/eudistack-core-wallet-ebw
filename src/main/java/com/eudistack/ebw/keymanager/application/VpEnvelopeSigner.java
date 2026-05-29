@@ -3,7 +3,6 @@ package com.eudistack.ebw.keymanager.application;
 import com.eudistack.ebw.keymanager.domain.model.JwkPublic;
 import com.eudistack.ebw.keymanager.domain.model.KeyAlgorithm;
 import com.eudistack.ebw.keymanager.domain.model.PlaintextHandle;
-import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -11,13 +10,9 @@ import com.nimbusds.jose.JWSObject;
 import com.nimbusds.jose.JWSSigner;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jose.crypto.ECDSASigner;
-import com.nimbusds.jose.jca.JCAContext;
-import com.nimbusds.jose.util.Base64URL;
 
 import java.security.PrivateKey;
-import java.security.Signature;
 import java.security.interfaces.ECPrivateKey;
-import java.util.Set;
 
 /**
  * Produces a VP JWS envelope (VC-JOSE-COSE §3.2 + OID4VP Appendix B.1) using the holder's
@@ -44,8 +39,10 @@ public class VpEnvelopeSigner implements JwsSigner {
                        KeyAlgorithm algorithm,
                        byte[] signingInput) {
         try {
+            // cty:"vp" required per technical-design §3.4.3
             JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.parse(algorithm.getJwsAlgorithmName()))
                     .type(VP_JWT_TYPE)
+                    .contentType("vp")
                     .build();
             JWSObject jwsObject = new JWSObject(header, new Payload(signingInput));
             jwsObject.sign(buildSigner(handle.value(), algorithm));
@@ -69,34 +66,10 @@ public class VpEnvelopeSigner implements JwsSigner {
     }
 
     /**
-     * BouncyCastle-based Ed25519 JWSSigner — mirrors the pattern from {@link KbJwtSigner}.
+     * BouncyCastle-based Ed25519 JWSSigner — delegates to {@link JwsSignerHelper#buildEdDsaSignerBC}.
+     * Kept as a package-private method for tests that directly reference this class.
      */
     static JWSSigner buildEdDsaSignerBC(PrivateKey key) {
-        return new JWSSigner() {
-            private final JCAContext jcaContext = new JCAContext();
-
-            @Override
-            public Base64URL sign(JWSHeader header, byte[] signingInput) throws JOSEException {
-                try {
-                    Signature sig = Signature.getInstance(
-                            "Ed25519", org.bouncycastle.jce.provider.BouncyCastleProvider.PROVIDER_NAME);
-                    sig.initSign(key);
-                    sig.update(signingInput);
-                    return Base64URL.encode(sig.sign());
-                } catch (Exception e) {
-                    throw new JOSEException("Ed25519 sign failed (BouncyCastle)", e);
-                }
-            }
-
-            @Override
-            public Set<JWSAlgorithm> supportedJWSAlgorithms() {
-                return Set.of(JWSAlgorithm.EdDSA);
-            }
-
-            @Override
-            public JCAContext getJCAContext() {
-                return jcaContext;
-            }
-        };
+        return JwsSignerHelper.buildEdDsaSignerBC(key);
     }
 }
