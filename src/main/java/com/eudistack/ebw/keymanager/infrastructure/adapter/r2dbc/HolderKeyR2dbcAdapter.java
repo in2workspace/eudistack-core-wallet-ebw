@@ -56,6 +56,23 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
                 .map(this::toDomain);
     }
 
+    /**
+     * Looks up an active holder key by surrogate key identifier.
+     *
+     * <p>The tenant filter is mandatory per ADR-025 — a key belonging to a different tenant
+     * returns {@code empty()}, which is indistinguishable from a missing key to the caller.</p>
+     *
+     * @param tenantId the tenant that must own the key
+     * @param keyId    the surrogate identifier
+     * @return the domain entity; {@code empty()} if not found, revoked, or cross-tenant
+     */
+    @Override
+    public Mono<HolderKey> findById(String tenantId, HolderKeyId keyId) {
+        return repository.findFirstByTenantIdAndKeyIdAndRevokedAtIsNull(
+                        tenantId, keyId.value().toString())
+                .map(this::toDomain);
+    }
+
     @Override
     public Mono<HolderKeyPersistResult> upsertIfAbsent(HolderKey holderKey) {
         HolderKeyEntity entity = toEntity(holderKey);

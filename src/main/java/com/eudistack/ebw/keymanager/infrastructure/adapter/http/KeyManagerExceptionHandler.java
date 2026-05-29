@@ -1,9 +1,14 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.keymanager.domain.exception.KeyAccessDeniedException;
+import com.eudistack.ebw.keymanager.domain.exception.SigningTypeFormatMismatchException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedJwsAlgorithmException;
+import com.eudistack.ebw.keymanager.domain.exception.UnsupportedSigningTypeException;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
+import io.r2dbc.spi.R2dbcNonTransientResourceException;
+import io.r2dbc.spi.R2dbcTimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
@@ -16,31 +21,37 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.support.WebExchangeBindException;
 
 import java.net.URI;
+import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Exception handler scoped exclusively to {@link KeyManagerController}.
+ * Exception handler scoped to {@link KeyManagerController}.
  *
  * <p>Handler mappings:
  * <ul>
  *   <li>{@link WebExchangeBindException} → 400 without field details (ES-01 — prevents
- *       probing of valid field names via error messages).
- *   <li>{@link UnsupportedCredentialFormatException} → 400 (AC-02).
- *   <li>{@link UnsupportedJwsAlgorithmException} → 422 (AC-03 / ADR-024).
+ *       probing of valid field names via error messages).</li>
+ *   <li>{@link UnsupportedCredentialFormatException} → 400 (AC-02).</li>
+ *   <li>{@link UnsupportedJwsAlgorithmException} → 422 (AC-03 / ADR-024).</li>
+ *   <li>{@link UnsupportedSigningTypeException} → 400 (AC-03 EUDISTACK-407).</li>
+ *   <li>{@link SigningTypeFormatMismatchException} → 400 (AC-04 EUDISTACK-407).</li>
+ *   <li>{@link KeyAccessDeniedException} → 401 with opaque body (AC-06 / ADR-025).</li>
  *   <li>{@link TenantWalletProfileUnsupportedException}, {@link TenantUnknownException}
- *       → 403 opaque with no body (ES-02 anti-probing — AD-119-2).
- *   <li>{@link TimeoutException} → 504 (ES-04 / NFR-P-119-01).
- *   <li>Any other {@link Exception} → 500.
+ *       → 403 opaque with no body (ES-02 anti-probing — AD-119-2).</li>
+ *   <li>{@link R2dbcTimeoutException}, {@link R2dbcNonTransientResourceException} → 503
+ *       (ES-04 DB unavailable — EUDISTACK-407).</li>
+ *   <li>{@link TimeoutException} → 503 (ES-05 signing timeout — NFR-S-407-07).</li>
+ *   <li>Any other {@link Exception} → 500.</li>
  * </ul>
  *
- * <p>Scoped to {@link KeyManagerController} via {@code assignableTypes} to avoid
- * interfering with other EBW controllers (mirrors the pattern from
- * {@code WalletProfileQueryExceptionHandler}).
- * {@code @Order(HIGHEST_PRECEDENCE)} ensures this advice is evaluated before the
- * global {@code GlobalExceptionHandler} (which carries no explicit order and therefore
- * defaults to {@code LOWEST_PRECEDENCE}).</p>
+ * <p>IMPORTANT: The {@link KeyAccessDeniedException} handler NEVER exposes the
+ * {@code internalReason} in the HTTP response. The body is always the opaque
+ * {@code {"error": "KeyAccessDenied"}} (ADR-025).</p>
  *
- * <p>Spec: EUDISTACK-119 ES-01, ES-02, ES-04, AC-02, AC-03.</p>
+ * <p>{@code @Order(HIGHEST_PRECEDENCE)} ensures this advice is evaluated before the global
+ * {@code GlobalExceptionHandler}.</p>
+ *
+ * <p>Spec: EUDISTACK-119, EUDISTACK-407, ADR-025.</p>
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = KeyManagerController.class)
@@ -72,21 +83,64 @@ public class KeyManagerExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(problem);
     }
 
+    // --- EUDISTACK-407 additions ---
+
+    @ExceptionHandler(UnsupportedSigningTypeException.class)
+    public ResponseEntity<ProblemDetail> handleUnsupportedSigningType(UnsupportedSigningTypeException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        problem.setType(URI.create(TYPE_BASE + "unsupported-signing-type"));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    @ExceptionHandler(SigningTypeFormatMismatchException.class)
+    public ResponseEntity<ProblemDetail> handleSigningTypeMismatch(SigningTypeFormatMismatchException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        problem.setType(URI.create(TYPE_BASE + "signing-type-format-mismatch"));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
     /**
-     * ES-02: opaque 403 — no body, no distinguishing detail between "tenant not found"
-     * and "key_manager mode not supported" (anti-probing per AD-119-2).
+     * AC-06 / ADR-025: opaque 401 — body is ALWAYS identical regardless of the internal reason.
+     * The {@code internalReason} from {@link KeyAccessDeniedException#getInternalReason()} is
+     * NEVER included here.
+     */
+    @ExceptionHandler(KeyAccessDeniedException.class)
+    public ResponseEntity<Map<String, String>> handleKeyAccessDenied(KeyAccessDeniedException ex) {
+        // Log at debug (internal reason is for audit, not for application logs in prod)
+        log.debug("keymanager.sign.rejected internal_reason={}", ex.getInternalReason());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", "KeyAccessDenied"));
+    }
+
+    /**
+     * ES-02 / AD-119-2: opaque 403 — no body, no distinguishing detail between
+     * "tenant not found" and "key_manager mode not supported" (anti-probing).
      */
     @ExceptionHandler({TenantWalletProfileUnsupportedException.class, TenantUnknownException.class})
     public ResponseEntity<Void> handleForbidden(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
 
+    /**
+     * ES-04: DB unavailable during signing — maps to 503 Service Unavailable.
+     */
+    @ExceptionHandler({R2dbcTimeoutException.class, R2dbcNonTransientResourceException.class})
+    public ResponseEntity<ProblemDetail> handleDbUnavailable(Exception ex) {
+        log.error("keymanager.sign.db_unavailable: {}", ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.SERVICE_UNAVAILABLE);
+        problem.setType(URI.create(TYPE_BASE + "service-unavailable"));
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(problem);
+    }
+
+    /**
+     * ES-05 / NFR-S-407-07: signing timeout kill-switch — maps to 503.
+     */
     @ExceptionHandler(TimeoutException.class)
     public ResponseEntity<ProblemDetail> handleTimeout(TimeoutException ex) {
-        log.warn("Key generation timed out (NFR-P-119-01)");
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.GATEWAY_TIMEOUT);
-        problem.setType(URI.create(TYPE_BASE + "gateway-timeout"));
-        return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).body(problem);
+        log.warn("keymanager.sign.timeout");
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.SERVICE_UNAVAILABLE);
+        problem.setType(URI.create(TYPE_BASE + "service-unavailable"));
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(problem);
     }
 
     @ExceptionHandler(Exception.class)

@@ -152,7 +152,7 @@ class KeyAuditBatchHashChainIT {
     // -------------------------------------------------------------------------
 
     private KeyAuditEvent makeEvent(String credentialId) {
-        return new KeyAuditEvent(
+        return KeyAuditEvent.forGeneration(
                 KeyAuditEvent.KeyAuditEventType.KEY_GENERATED,
                 "chain-tenant",
                 UUID.randomUUID().toString(),
