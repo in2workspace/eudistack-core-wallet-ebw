@@ -1,21 +1,3 @@
-aws:
-  region: ${AWS_REGION:eu-west-1}
-  endpoint-override: ${AWS_ENDPOINT_OVERRIDE:#{null}}
-
-wallet-ebw:
-  probe:
-    timeout-ms: 5000
-  operational-plane:
-    # Feature flag for the operational-config runtime consumer (default OFF — deploy-safe).
-    # Future consumers of OperationalConfigPort#findActive() gate on this property via
-    # @ConditionalOnProperty. Operator sets to true once TDE is fully provisioned (Task 18 IaC).
-    enabled: false
-  kms:
-    # Operator-supplied CMK ARN; must be set in production via ECS task definition env var
-    # WALLET_EBW_KMS_CMK_ARN (Task 18 IaC). Left empty here — the writer receives the ARN
-    # per-call from the command payload, not from this property (US-03 design).
-    cmk-arn: ${WALLET_EBW_KMS_CMK_ARN:}
-
 spring:
   application:
     name: eudistack-core-wallet-ebw
@@ -25,6 +7,8 @@ spring:
     url: ${SPRING_R2DBC_URL:r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:eudistack}}
     username: ${SPRING_R2DBC_USERNAME:${DB_USERNAME:postgres}}
     password: ${SPRING_R2DBC_PASSWORD:${DB_PASSWORD:postgres}}
+    properties:
+      statementTimeout: PT1S
   flyway:
     # Disabled: TenantSchemaFlywayMigrator runs migrations for `public` + all
     # tenant schemas using R2DBC credentials. Spring Boot's auto-configured
@@ -126,6 +110,11 @@ management:
     # that selects "smtps" when SSL is enabled. Mirrors issuer-core 3.4.4.
     mail:
       enabled: false
+
+keymanager:
+  audit:
+    enabled: ${KEYMANAGER_AUDIT_ENABLED:false}
+    log-group-name: ${KEYMANAGER_AUDIT_LOG_GROUP:/eudistack/audit/wallet-ebw/local}
 
 logging:
   pattern:
