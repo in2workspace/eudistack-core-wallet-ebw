@@ -40,8 +40,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Integration tests for {@link HolderKeyR2dbcAdapter#findById} (US-03 T8).
  *
- * <p>Covers: EUDISTACK-407 AC-06, EC-01, ES-02 — findById with tenant isolation,
- * revoked key filter, cross-tenant isolation, and non-existent key.</p>
+ * <p>Covers: EUDISTACK-407 AC-05/F1, AC-06, EC-01, ES-02 — findById with tenant isolation,
+ * holder isolation (intra-tenant IDOR), revoked key filter, cross-tenant isolation,
+ * and non-existent key.</p>
  */
 @Tag("integration")
 @DataR2dbcTest(
@@ -143,7 +144,7 @@ class HolderKeyReadByIdR2dbcIT {
         return key;
     }
 
-    // --- AC-06: findById returns the key for the correct tenant/keyId ---
+    // --- AC-06: findById returns the key for the correct tenant/holder/keyId ---
 
     @Test
     void findById_existingActiveKey_returnsKey() {
@@ -151,7 +152,7 @@ class HolderKeyReadByIdR2dbcIT {
         HolderKey key = insertActiveKey();
 
         // When / Then
-        StepVerifier.create(withTenant(adapter.findById(testTenant, key.id())))
+        StepVerifier.create(withTenant(adapter.findById(testTenant, "holder-A", key.id())))
                 .assertNext(found -> {
                     assertThat(found.id()).isEqualTo(key.id());
                     assertThat(found.tenantId()).isEqualTo(testTenant);
@@ -165,7 +166,7 @@ class HolderKeyReadByIdR2dbcIT {
 
     @Test
     void findById_nonExistentKeyId_returnsEmpty() {
-        StepVerifier.create(withTenant(adapter.findById(testTenant, HolderKeyId.generate())))
+        StepVerifier.create(withTenant(adapter.findById(testTenant, "holder-A", HolderKeyId.generate())))
                 .as("missing key must produce empty Mono (opaque, AC-06)")
                 .verifyComplete();
     }
@@ -183,7 +184,7 @@ class HolderKeyReadByIdR2dbcIT {
         withTenant(adapter.upsertIfAbsent(revokedKey)).block();
 
         // When / Then — revoked key must be invisible
-        StepVerifier.create(withTenant(adapter.findById(testTenant, revokedKey.id())))
+        StepVerifier.create(withTenant(adapter.findById(testTenant, "holder-revoked", revokedKey.id())))
                 .as("revoked key must produce empty Mono (EC-01, ADR-025)")
                 .verifyComplete();
     }
@@ -197,8 +198,21 @@ class HolderKeyReadByIdR2dbcIT {
 
         // When — query with a different tenant (cross-tenant attempt)
         String otherTenant = "other-" + UUID.randomUUID().toString().substring(0, 8);
-        StepVerifier.create(withTenant(adapter.findById(otherTenant, key.id())))
+        StepVerifier.create(withTenant(adapter.findById(otherTenant, "holder-A", key.id())))
                 .as("cross-tenant key must be invisible (ADR-025)")
+                .verifyComplete();
+    }
+
+    // --- AC-05 / F1: intra-tenant IDOR — key exists but belongs to a different holder ---
+
+    @Test
+    void findById_keyBelongsToOtherHolder_sameTenant_returnsEmpty() {
+        // Given — key inserted under "holder-A"
+        HolderKey key = insertActiveKey();
+
+        // When — query with a different holderId within the same tenant
+        StepVerifier.create(withTenant(adapter.findById(testTenant, "holder-B", key.id())))
+                .as("intra-tenant IDOR: key of another holder must be invisible (AC-05/F1)")
                 .verifyComplete();
     }
 }

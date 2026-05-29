@@ -10,15 +10,22 @@ public interface SpringHolderKeyRepository extends ReactiveCrudRepository<Holder
             String tenantId, String holderId, String credentialId);
 
     /**
-     * Looks up a non-revoked holder key by tenant and surrogate key identifier.
+     * Looks up a non-revoked holder key by tenant, holder, and surrogate key identifier.
      *
-     * <p>The tenant is part of the WHERE clause to enforce isolation (ADR-025 — a key
-     * belonging to a different tenant must be invisible to the requester).</p>
+     * <p>All three dimensions are in the WHERE clause:
+     * <ul>
+     *   <li>Tenant — cross-tenant isolation (ADR-025).</li>
+     *   <li>Holder — intra-tenant IDOR prevention (AC-05/F1).</li>
+     *   <li>Key ID — surrogate identity lookup.</li>
+     * </ul>
+     * A key that exists but belongs to a different holder returns {@code empty()},
+     * which is indistinguishable from a missing key to the caller.</p>
      *
      * @param tenantId the tenant that must own the key
+     * @param holderId the holder who must own the key within that tenant
      * @param keyId    the UUID value of the surrogate key
-     * @return the entity if found and not revoked; empty otherwise
+     * @return the entity if found, not revoked, and owned by the given holder; empty otherwise
      */
-    Mono<HolderKeyEntity> findFirstByTenantIdAndKeyIdAndRevokedAtIsNull(
-            String tenantId, String keyId);
+    Mono<HolderKeyEntity> findFirstByTenantIdAndHolderIdAndKeyIdAndRevokedAtIsNull(
+            String tenantId, String holderId, String keyId);
 }

@@ -131,7 +131,7 @@ class SignDbUnavailableHandlingIT {
         }
 
         // When / Then — must propagate a reactive error, not silently return empty
-        StepVerifier.create(withTenant(adapter.findById(testTenant, HolderKeyId.generate())))
+        StepVerifier.create(withTenant(adapter.findById(testTenant, "any-holder", HolderKeyId.generate())))
                 .expectError()
                 .verify();
     }

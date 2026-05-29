@@ -2,6 +2,8 @@ package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
+import com.eudistack.ebw.keymanager.domain.exception.InvalidConsumerOriginException;
+import com.eudistack.ebw.keymanager.domain.exception.InvalidKeyIdFormatException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
 import com.eudistack.ebw.keymanager.domain.model.ConsumerOrigin;
@@ -155,12 +157,14 @@ public class KeyManagerController {
 
     private static ConsumerOrigin parseConsumerOrigin(String headerValue) {
         if (headerValue == null || headerValue.isBlank()) {
+            // F3: absent header → default to SYSTEM (correct existing behaviour)
             return ConsumerOrigin.SYSTEM;
         }
         try {
             return ConsumerOrigin.valueOf(headerValue.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
-            return ConsumerOrigin.SYSTEM;
+            // F3: present but unrecognised → 400, not a silent fallback
+            throw new InvalidConsumerOriginException(headerValue);
         }
     }
 
@@ -168,7 +172,8 @@ public class KeyManagerController {
         try {
             return HolderKeyId.of(UUID.fromString(keyId));
         } catch (IllegalArgumentException e) {
-            throw new com.eudistack.ebw.keymanager.domain.exception.KeyAccessDeniedException("INVALID_KEY_ID_FORMAT");
+            // W2: malformed UUID → 400, not an opaque 401
+            throw new InvalidKeyIdFormatException(keyId);
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.keymanager.domain.exception.InvalidConsumerOriginException;
+import com.eudistack.ebw.keymanager.domain.exception.InvalidKeyIdFormatException;
 import com.eudistack.ebw.keymanager.domain.exception.KeyAccessDeniedException;
 import com.eudistack.ebw.keymanager.domain.exception.SigningTypeFormatMismatchException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
@@ -31,10 +33,14 @@ import java.util.concurrent.TimeoutException;
  * <ul>
  *   <li>{@link WebExchangeBindException} → 400 without field details (ES-01 — prevents
  *       probing of valid field names via error messages).</li>
+ *   <li>{@link InvalidKeyIdFormatException} → 400 (W2 — malformed UUID keyId).</li>
+ *   <li>{@link InvalidConsumerOriginException} → 400 (F3 — present but unrecognised
+ *       {@code X-Consumer-Origin} header value).</li>
  *   <li>{@link UnsupportedCredentialFormatException} → 400 (AC-02).</li>
  *   <li>{@link UnsupportedJwsAlgorithmException} → 422 (AC-03 / ADR-024).</li>
  *   <li>{@link UnsupportedSigningTypeException} → 400 (AC-03 EUDISTACK-407).</li>
- *   <li>{@link SigningTypeFormatMismatchException} → 400 (AC-04 EUDISTACK-407).</li>
+ *   <li>{@link SigningTypeFormatMismatchException} → 400 (AC-04 EUDISTACK-407 — only if
+ *       the exception escapes the opaque-reject path; included for completeness).</li>
  *   <li>{@link KeyAccessDeniedException} → 401 with opaque body (AC-06 / ADR-025).</li>
  *   <li>{@link TenantWalletProfileUnsupportedException}, {@link TenantUnknownException}
  *       → 403 opaque with no body (ES-02 anti-probing — AD-119-2).</li>
@@ -66,6 +72,27 @@ public class KeyManagerExceptionHandler {
         // ES-01: return 400 without field details to prevent field-name probing
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         problem.setType(URI.create(TYPE_BASE + "invalid-request"));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    /**
+     * W2: malformed UUID in the {@code keyId} path variable → 400.
+     * Returns 400, not 401, so clients can distinguish a format error from an access denial.
+     */
+    @ExceptionHandler(InvalidKeyIdFormatException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidKeyIdFormat(InvalidKeyIdFormatException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        problem.setType(URI.create(TYPE_BASE + "invalid-key-id"));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    /**
+     * F3: {@code X-Consumer-Origin} header present but contains an unrecognised value → 400.
+     */
+    @ExceptionHandler(InvalidConsumerOriginException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidConsumerOrigin(InvalidConsumerOriginException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        problem.setType(URI.create(TYPE_BASE + "invalid-consumer-origin"));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 
@@ -123,10 +150,13 @@ public class KeyManagerExceptionHandler {
 
     /**
      * ES-04: DB unavailable during signing — maps to 503 Service Unavailable.
+     *
+     * <p>F5: logs only the exception class (not the full message or stack trace) to prevent
+     * potential credential / query leakage from DB error text.</p>
      */
     @ExceptionHandler({R2dbcTimeoutException.class, R2dbcNonTransientResourceException.class})
     public ResponseEntity<ProblemDetail> handleDbUnavailable(Exception ex) {
-        log.error("keymanager.sign.db_unavailable: {}", ex.getMessage());
+        log.error("keymanager.sign.db_unavailable exception_class={}", ex.getClass().getName());
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.SERVICE_UNAVAILABLE);
         problem.setType(URI.create(TYPE_BASE + "service-unavailable"));
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(problem);
@@ -143,9 +173,13 @@ public class KeyManagerExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(problem);
     }
 
+    /**
+     * F5: catch-all logs only the exception class, not the full stack trace or message,
+     * to prevent accidental leakage of sensitive data present in exception messages.
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleGeneral(Exception ex) {
-        log.error("Unhandled exception in KeyManagerController", ex);
+        log.error("keymanager.unhandled exception_class={}", ex.getClass().getName());
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
         problem.setType(URI.create(TYPE_BASE + "internal"));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);

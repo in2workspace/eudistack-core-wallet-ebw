@@ -1,7 +1,6 @@
 package com.eudistack.ebw.keymanager.application;
 
 import com.eudistack.ebw.keymanager.domain.exception.KeyAccessDeniedException;
-import com.eudistack.ebw.keymanager.domain.exception.SigningTypeFormatMismatchException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.model.ConsumerOrigin;
 import com.eudistack.ebw.keymanager.domain.model.CredentialFormat;
@@ -86,7 +85,7 @@ class SignHolderKeyUseCaseTest {
         HolderKey key = buildHolderKey(kp, CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256);
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.just(serverDbProfile()));
-        when(holderKeyReadPort.findById("tenant", key.id())).thenReturn(Mono.just(key));
+        when(holderKeyReadPort.findById("tenant", "holder", key.id())).thenReturn(Mono.just(key));
 
         SignHolderKeyCommand cmd = signCommand(key.id(), SigningType.KB_JWT, SignaturePurpose.PRESENTATION);
 
@@ -110,7 +109,7 @@ class SignHolderKeyUseCaseTest {
         HolderKey key = buildHolderKey(kp, CredentialFormat.VC_JWT, KeyAlgorithm.ES256);
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.just(serverDbProfile()));
-        when(holderKeyReadPort.findById("tenant", key.id())).thenReturn(Mono.just(key));
+        when(holderKeyReadPort.findById("tenant", "holder", key.id())).thenReturn(Mono.just(key));
 
         SignHolderKeyCommand cmd = signCommand(key.id(), SigningType.VP_ENVELOPE, SignaturePurpose.PRESENTATION);
 
@@ -123,22 +122,23 @@ class SignHolderKeyUseCaseTest {
                 .verifyComplete();
     }
 
-    // --- AC-04 / EC-02: format mismatch ---
+    // --- AC-04 / EC-02: format mismatch (F2) — routed through opaqueReject ---
 
     @Test
-    void execute_kbJwtWithVcJwtKey_throwsSigningTypeFormatMismatchException() {
+    void execute_kbJwtWithVcJwtKey_opaqueReject_throwsKeyAccessDeniedException() {
         // Given: key is VC_JWT but signing type is KB_JWT
+        // F2: mismatch is now an opaque reject (KeyAccessDeniedException), not a 400
         GeneratedKeyPair kp = factory.generate(KeyAlgorithm.ES256);
         HolderKey key = buildHolderKey(kp, CredentialFormat.VC_JWT, KeyAlgorithm.ES256);
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.just(serverDbProfile()));
-        when(holderKeyReadPort.findById("tenant", key.id())).thenReturn(Mono.just(key));
+        when(holderKeyReadPort.findById("tenant", "holder", key.id())).thenReturn(Mono.just(key));
 
         SignHolderKeyCommand cmd = signCommand(key.id(), SigningType.KB_JWT, SignaturePurpose.PRESENTATION);
 
-        // When / Then
+        // When / Then — mismatch is opaque (ADR-025 / F2)
         StepVerifier.create(useCase.execute(cmd))
-                .expectError(SigningTypeFormatMismatchException.class)
+                .expectError(KeyAccessDeniedException.class)
                 .verify();
     }
 
@@ -150,7 +150,7 @@ class SignHolderKeyUseCaseTest {
         HolderKeyId missingId = HolderKeyId.generate();
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.just(serverDbProfile()));
-        when(holderKeyReadPort.findById("tenant", missingId)).thenReturn(Mono.empty());
+        when(holderKeyReadPort.findById("tenant", "holder", missingId)).thenReturn(Mono.empty());
 
         SignHolderKeyCommand cmd = signCommand(missingId, SigningType.KB_JWT, SignaturePurpose.PRESENTATION);
 
@@ -168,7 +168,7 @@ class SignHolderKeyUseCaseTest {
         HolderKeyId revokedId = HolderKeyId.generate();
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.just(serverDbProfile()));
-        when(holderKeyReadPort.findById("tenant", revokedId)).thenReturn(Mono.empty());
+        when(holderKeyReadPort.findById("tenant", "holder", revokedId)).thenReturn(Mono.empty());
 
         SignHolderKeyCommand cmd = signCommand(revokedId, SigningType.KB_JWT, SignaturePurpose.PRESENTATION);
 
@@ -195,6 +195,25 @@ class SignHolderKeyUseCaseTest {
                 .verify();
     }
 
+    // --- AC-05 / F1: key exists in tenant but belongs to a different holder → opaque reject ---
+
+    @Test
+    void execute_keyBelongsToOtherHolder_opaqueReject_throwsKeyAccessDeniedException() {
+        // Given: findById with a different holderId returns empty (intra-tenant IDOR prevented)
+        HolderKeyId keyId = HolderKeyId.generate();
+        when(walletProfileQueryPort.queryByCurrentTenant())
+                .thenReturn(Mono.just(serverDbProfile()));
+        // The DB query includes holder_id — a mismatch produces empty(), identical to key-not-found
+        when(holderKeyReadPort.findById("tenant", "holder", keyId)).thenReturn(Mono.empty());
+
+        SignHolderKeyCommand cmd = signCommand(keyId, SigningType.KB_JWT, SignaturePurpose.PRESENTATION);
+
+        // When / Then — opaque rejection, not distinguishable from "key not found"
+        StepVerifier.create(useCase.execute(cmd))
+                .expectError(KeyAccessDeniedException.class)
+                .verify();
+    }
+
     // --- EC-05: AUDIT_PROBE purpose ---
 
     @Test
@@ -204,7 +223,7 @@ class SignHolderKeyUseCaseTest {
         HolderKey key = buildHolderKey(kp, CredentialFormat.SD_JWT_VC, KeyAlgorithm.EdDSA);
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.just(serverDbProfile()));
-        when(holderKeyReadPort.findById("tenant", key.id())).thenReturn(Mono.just(key));
+        when(holderKeyReadPort.findById("tenant", "holder", key.id())).thenReturn(Mono.just(key));
 
         SignHolderKeyCommand cmd = signCommand(key.id(), SigningType.KB_JWT, SignaturePurpose.AUDIT_PROBE);
 
@@ -222,7 +241,7 @@ class SignHolderKeyUseCaseTest {
         HolderKey key = buildHolderKey(kp, CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256);
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.just(serverDbProfile()));
-        when(holderKeyReadPort.findById("tenant", key.id())).thenReturn(Mono.just(key));
+        when(holderKeyReadPort.findById("tenant", "holder", key.id())).thenReturn(Mono.just(key));
 
         SignHolderKeyCommand cmd = signCommand(key.id(), SigningType.KB_JWT, SignaturePurpose.PRESENTATION);
 
@@ -261,7 +280,7 @@ class SignHolderKeyUseCaseTest {
         HolderKey key = buildHolderKey(kp, CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256);
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.just(serverDbProfile()));
-        when(holderKeyReadPort.findById("tenant", key.id())).thenReturn(Mono.just(key));
+        when(holderKeyReadPort.findById("tenant", "holder", key.id())).thenReturn(Mono.just(key));
 
         SignHolderKeyCommand cmd = signCommand(key.id(), SigningType.KB_JWT, SignaturePurpose.PRESENTATION);
 
@@ -283,7 +302,7 @@ class SignHolderKeyUseCaseTest {
         // Given — holderKeyReadPort never returns
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.just(serverDbProfile()));
-        when(holderKeyReadPort.findById(any(), any())).thenReturn(Mono.never());
+        when(holderKeyReadPort.findById(any(), any(), any())).thenReturn(Mono.never());
 
         SignHolderKeyCommand cmd = signCommand(HolderKeyId.generate(), SigningType.KB_JWT,
                 SignaturePurpose.PRESENTATION);
@@ -303,7 +322,7 @@ class SignHolderKeyUseCaseTest {
         HolderKey key = buildHolderKey(kp, CredentialFormat.SD_JWT_VC, KeyAlgorithm.ES256);
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.just(serverDbProfile()));
-        when(holderKeyReadPort.findById("tenant", key.id())).thenReturn(Mono.just(key));
+        when(holderKeyReadPort.findById("tenant", "holder", key.id())).thenReturn(Mono.just(key));
         // Audit always fails
         when(auditPort.emit(any())).thenReturn(Mono.error(new RuntimeException("audit down")));
 

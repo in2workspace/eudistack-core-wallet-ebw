@@ -1,7 +1,6 @@
 package com.eudistack.ebw.keymanager.application;
 
 import com.eudistack.ebw.keymanager.domain.exception.KeyAccessDeniedException;
-import com.eudistack.ebw.keymanager.domain.exception.SigningTypeFormatMismatchException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.model.CredentialFormat;
 import com.eudistack.ebw.keymanager.domain.model.HolderKey;
@@ -20,6 +19,7 @@ import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.security.PrivateKey;
 import java.time.Duration;
@@ -33,20 +33,25 @@ import java.util.UUID;
  * <p>Flow per AD-407-1 (path without KMS — TDE-only per ADR-099):
  * <ol>
  *   <li>Validate tenant profile — must be {@code (SERVER, DB)} (ES-03)</li>
- *   <li>Resolve holder key via {@link HolderKeyReadPort#findById(String, com.eudistack.ebw.keymanager.domain.model.HolderKeyId)}
- *       (SELECT with {@code WHERE revoked_at IS NULL})</li>
- *   <li>Reject opaque + constant-time if key not found or revoked (AC-06, ES-02, EC-01)</li>
- *   <li>Validate {@code signingType ↔ holder_key.format} (AC-04, EC-02)</li>
- *   <li>Reconstruct private key via {@link HolderKeyFactory#fromBytes} → {@link PlaintextHandle}</li>
+ *   <li>Resolve holder key via {@link HolderKeyReadPort#findById(String, String, com.eudistack.ebw.keymanager.domain.model.HolderKeyId)}
+ *       (SELECT with {@code WHERE tenant_id = ? AND holder_id = ? AND revoked_at IS NULL}).
+ *       Includes holder isolation to prevent intra-tenant IDOR (AC-05/F1).</li>
+ *   <li>Reject opaque + constant-time if key not found, revoked, or belongs to another
+ *       holder (AC-06, ES-02, EC-01, AC-05/F1)</li>
+ *   <li>Validate {@code signingType ↔ holder_key.format} (AC-04, EC-02) — mismatch is
+ *       also routed through opaque reject (F2)</li>
+ *   <li>Reconstruct private key via {@link HolderKeyFactory#fromBytes} on
+ *       {@code Schedulers.boundedElastic()} (F4 — keeps JCA off the Netty event loop)
+ *       → {@link PlaintextHandle}</li>
  *   <li>Select signer via {@link SignerSelector}</li>
- *   <li>Sign → zeroize handle (AC-05, NFR-SEC-03)</li>
+ *   <li>Sign → zeroize handle via {@code .doFinally(...)} (AC-05, NFR-SEC-03, W1)</li>
  *   <li>Emit audit {@code KEY_SIGNED} (AC-08, FR-60)</li>
  * </ol>
  *
  * <p>Wrapped in {@code Mono.timeout(2500 ms)} (ES-05 / NFR-S-407-07).
  * Rejection paths apply {@link SignRejectionUniformDelay} to equalise timing (ADR-025).
  * All {@link PlaintextHandle} instances are closed via {@code .doFinally(...)} to guarantee
- * zeroization even on timeout or cancellation.</p>
+ * zeroization even on timeout or cancellation (W1).</p>
  *
  * <p>Spec: EUDISTACK-407, FR-20, FR-21, FR-22, FR-60, ADR-021, ADR-024, ADR-025, ADR-099,
  * NFR-SEC-03, NFR-PERF-01.</p>
@@ -110,32 +115,38 @@ public class SignHolderKeyUseCase {
     }
 
     private Mono<SignHolderKeyResult> resolveAndSign(SignHolderKeyCommand cmd) {
-        return holderKeyReadPort.findById(cmd.tenantId(), cmd.keyId())
+        return holderKeyReadPort.findById(cmd.tenantId(), cmd.holderId(), cmd.keyId())
                 .flatMap(holderKey -> signWithKey(cmd, holderKey))
                 .switchIfEmpty(opaqueReject(cmd, "KEY_NOT_FOUND"));
     }
 
     private Mono<SignHolderKeyResult> signWithKey(SignHolderKeyCommand cmd, HolderKey holderKey) {
-        // Validate signingType ↔ format BEFORE loading the private key (EC-02 fast-fail)
+        // F2: Validate signingType ↔ format BEFORE loading the private key (EC-02 fast-fail).
+        // Mismatch is routed through opaqueReject — consumer receives an opaque 401 + delay.
+        // Internal audit event records the actual reason.
         if (!cmd.signingType().isCompatibleWith(holderKey.format())) {
-            emitAuditFireAndForget(buildRejectionEvent(cmd, holderKey, "SIGNING_TYPE_FORMAT_MISMATCH"));
-            return Mono.error(new SigningTypeFormatMismatchException(cmd.signingType(), holderKey.format()));
+            return opaqueReject(cmd, "SIGNING_TYPE_FORMAT_MISMATCH");
         }
 
-        return Mono.fromCallable(() -> {
-            byte[] rawBytes = Arrays.copyOf(holderKey.privateKey(), holderKey.privateKey().length);
-            PlaintextHandle<PrivateKey> handle = holderKeyFactory.fromBytes(rawBytes, holderKey.algorithm());
-            try {
-                JwsSigner signer = signerSelector.select(cmd.signingType());
-                String jwsCompact = signer.sign(handle, holderKey.publicJwk(), holderKey.algorithm(),
-                        cmd.signingInput());
-                return new SignHolderKeyResult(jwsCompact, holderKey.algorithm(), holderKey.publicJwk().jkt());
-            } finally {
-                handle.close();
-            }
-        }).flatMap(result ->
-                emitAuditFireAndForget(buildSignedEvent(cmd, holderKey, result))
-                        .thenReturn(result));
+        // F4: subscribeOn(boundedElastic) moves all JCA operations off the Netty event loop.
+        // W1: doFinally guarantees PlaintextHandle.close() on all termination signals
+        //     (complete, error, cancel/timeout).
+        return Mono.fromCallable(() -> holderKeyFactory.fromBytes(
+                        Arrays.copyOf(holderKey.privateKey(), holderKey.privateKey().length),
+                        holderKey.algorithm()))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(handle -> {
+                    JwsSigner signer = signerSelector.select(cmd.signingType());
+                    return Mono.fromCallable(() ->
+                                    signer.sign(handle, holderKey.publicJwk(), holderKey.algorithm(),
+                                            cmd.signingInput()))
+                            .doFinally(signal -> handle.close());
+                })
+                .map(jwsCompact -> new SignHolderKeyResult(
+                        jwsCompact, holderKey.algorithm(), holderKey.publicJwk().jkt()))
+                .flatMap(result ->
+                        emitAuditFireAndForget(buildSignedEvent(cmd, holderKey, result))
+                                .thenReturn(result));
     }
 
     /**

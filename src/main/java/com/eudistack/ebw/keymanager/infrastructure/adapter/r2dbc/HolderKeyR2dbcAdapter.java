@@ -57,19 +57,26 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
     }
 
     /**
-     * Looks up an active holder key by surrogate key identifier.
+     * Looks up an active holder key by tenant, holder, and surrogate key identifier.
      *
-     * <p>The tenant filter is mandatory per ADR-025 — a key belonging to a different tenant
-     * returns {@code empty()}, which is indistinguishable from a missing key to the caller.</p>
+     * <p>Tenant and holder are both in the WHERE clause:
+     * <ul>
+     *   <li>Tenant — cross-tenant isolation (ADR-025).</li>
+     *   <li>Holder — intra-tenant IDOR prevention (AC-05/F1).</li>
+     * </ul>
+     * A key that exists but belongs to a different holder returns {@code empty()},
+     * indistinguishable from a missing key.</p>
      *
      * @param tenantId the tenant that must own the key
+     * @param holderId the holder who must own the key within that tenant
      * @param keyId    the surrogate identifier
-     * @return the domain entity; {@code empty()} if not found, revoked, or cross-tenant
+     * @return the domain entity; {@code empty()} if not found, revoked, cross-tenant,
+     *         or belonging to a different holder
      */
     @Override
-    public Mono<HolderKey> findById(String tenantId, HolderKeyId keyId) {
-        return repository.findFirstByTenantIdAndKeyIdAndRevokedAtIsNull(
-                        tenantId, keyId.value().toString())
+    public Mono<HolderKey> findById(String tenantId, String holderId, HolderKeyId keyId) {
+        return repository.findFirstByTenantIdAndHolderIdAndKeyIdAndRevokedAtIsNull(
+                        tenantId, holderId, keyId.value().toString())
                 .map(this::toDomain);
     }
 
