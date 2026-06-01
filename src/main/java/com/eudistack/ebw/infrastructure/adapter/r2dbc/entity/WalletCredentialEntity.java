@@ -27,6 +27,7 @@ public class WalletCredentialEntity implements Persistable<UUID> {
     private Instant expirationDate;
     private String status;
     private Json issuerMetadata;
+    private String holderKeyId;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -68,6 +69,8 @@ public class WalletCredentialEntity implements Persistable<UUID> {
     public void setStatus(String status) { this.status = status; }
     public Json getIssuerMetadata() { return issuerMetadata; }
     public void setIssuerMetadata(Json issuerMetadata) { this.issuerMetadata = issuerMetadata; }
+    public String getHolderKeyId() { return holderKeyId; }
+    public void setHolderKeyId(String holderKeyId) { this.holderKeyId = holderKeyId; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

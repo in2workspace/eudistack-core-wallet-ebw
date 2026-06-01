@@ -34,6 +34,7 @@ public final class CredentialMapper {
                 entity.getExpirationDate(),
                 CredentialStatus.valueOf(entity.getStatus()),
                 deserializeMetadata(entity.getIssuerMetadata()),
+                entity.getHolderKeyId(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );
@@ -55,6 +56,7 @@ public final class CredentialMapper {
         entity.setExpirationDate(domain.getExpirationDate());
         entity.setStatus(domain.getStatus().name());
         entity.setIssuerMetadata(serializeMetadata(domain.getIssuerMetadata()));
+        entity.setHolderKeyId(domain.getHolderKeyId());
         entity.setCreatedAt(domain.getCreatedAt());
         entity.setUpdatedAt(domain.getUpdatedAt());
         return entity;
