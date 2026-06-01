@@ -4,6 +4,7 @@ import io.r2dbc.postgresql.codec.Json;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.domain.Persistable;
+import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.Instant;
@@ -27,6 +28,7 @@ public class WalletCredentialEntity implements Persistable<UUID> {
     private Instant expirationDate;
     private String status;
     private Json issuerMetadata;
+    @Column("holder_key_id")
     private String holderKeyId;
     private Instant createdAt;
     private Instant updatedAt;
