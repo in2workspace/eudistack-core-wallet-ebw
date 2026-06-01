@@ -13,7 +13,7 @@ public interface SpringWalletCredentialRepository extends ReactiveCrudRepository
     @Query("""
             SELECT id, user_id, credential_raw, format, credential_config_id, kid, credential_type, vct,
                    issuer, subject, issuance_date, expiration_date, status, issuer_metadata,
-                   created_at, updated_at
+                   holder_key_id, created_at, updated_at
             FROM wallet_credential WHERE user_id = :userId
             """)
     Flux<WalletCredentialEntity> findAllByUserId(UUID userId);
@@ -21,7 +21,7 @@ public interface SpringWalletCredentialRepository extends ReactiveCrudRepository
     @Query("""
             SELECT id, user_id, credential_raw, format, credential_config_id, kid, credential_type, vct,
                    issuer, subject, issuance_date, expiration_date, status, issuer_metadata,
-                   created_at, updated_at
+                   holder_key_id, created_at, updated_at
             FROM wallet_credential
             WHERE user_id = :userId
               AND (:status IS NULL OR status = :status)
