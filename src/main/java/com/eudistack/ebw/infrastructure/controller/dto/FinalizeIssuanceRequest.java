@@ -12,7 +12,8 @@ public record FinalizeIssuanceRequest(
         @NotBlank String format,
         @NotBlank @JsonProperty("credentialConfigurationId") String credentialConfigurationId,
         @JsonProperty("issuerMetadata") Map<String, Object> issuerMetadata,
-        @Nullable @JsonProperty("holderKeyId") String holderKeyId
+        @Nullable @JsonProperty("holderKeyId") String holderKeyId,
+        @Nullable @JsonProperty("holderKid") String holderKid
 ) {
     public record CredentialResponseWithStatus(
             @JsonProperty("credentialResponse") CredentialResponse credentialResponse

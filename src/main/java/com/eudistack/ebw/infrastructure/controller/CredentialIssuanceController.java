@@ -31,7 +31,7 @@ public class CredentialIssuanceController {
                         credentialRaw,
                         request.format(),
                         request.credentialConfigurationId(),
-                        "",
+                        request.holderKid() != null ? request.holderKid() : "",
                         request.issuerMetadata() != null ? request.issuerMetadata() : java.util.Map.of(),
                         request.holderKeyId())
                 .map(CredentialDetailResponse::from);
