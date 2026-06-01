@@ -10,6 +10,7 @@ import com.nimbusds.jose.JWSObject;
 import com.nimbusds.jose.JWSSigner;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jose.jwk.JWK;
 
 import java.security.PrivateKey;
 import java.security.interfaces.ECPrivateKey;
@@ -40,9 +41,13 @@ public class VpEnvelopeSigner implements JwsSigner {
                        byte[] signingInput) {
         try {
             // cty:"vp" required per technical-design §3.4.3
+            // jwk + kid required by verifiers that extract holder identity from the VP header
+            JWK nimbuJwk = JWK.parse(publicJwk.claims());
             JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.parse(algorithm.getJwsAlgorithmName()))
                     .type(VP_JWT_TYPE)
                     .contentType("vp")
+                    .jwk(nimbuJwk)
+                    .keyID(publicJwk.jkt())
                     .build();
             JWSObject jwsObject = new JWSObject(header, new Payload(signingInput));
             jwsObject.sign(buildSigner(handle.value(), algorithm));
