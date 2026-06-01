@@ -1,8 +1,7 @@
 package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.domain.model.exception.RateLimitExceededException;
-import com.eudistack.ebw.domain.model.exception.UserAlreadyRegisteredException;
-import com.eudistack.ebw.domain.model.exception.UserNotFoundException;
+import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.domain.service.OtpService;
 import com.eudistack.ebw.domain.spi.EmailRateLimiter;
@@ -28,23 +27,16 @@ public class RegisterWorkflow {
     }
 
     public Mono<Void> registerUser(String email, String mode) {
-        boolean isLogin = "login".equalsIgnoreCase(mode);
-
-        Mono<Void> userCheck = isLogin
-                ? userRepository.findByEmail(email)
-                        .switchIfEmpty(Mono.error(new UserNotFoundException()))
-                        .then()
-                : userRepository.findByEmail(email)
-                        .flatMap(u -> Mono.<Void>error(new UserAlreadyRegisteredException()))
-                        .then();
-
+        // Unified flow: find-or-create. No distinction between login and register.
+        // If the email exists the user continues; if not, a new account is created.
+        // The `mode` parameter is accepted for API compatibility but ignored.
         return emailRateLimiter.checkRegisterRate(email)
-                .then(userCheck)
+                .then(userRepository.findByEmail(email)
+                        .switchIfEmpty(userRepository.save(WalletUser.create(email)))
+                        .then())
                 .then(otpService.generateAndSend(email))
-                .onErrorResume(e -> !(e instanceof RateLimitExceededException)
-                                && !(e instanceof UserAlreadyRegisteredException)
-                                && !(e instanceof UserNotFoundException), e -> {
-                    log.warn("Failed to send OTP", e);
+                .onErrorResume(e -> !(e instanceof RateLimitExceededException), e -> {
+                    log.warn("Failed to send OTP to {}", email, e);
                     return Mono.empty();
                 });
     }
