@@ -1,6 +1,8 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.service;
 
 import com.eudistack.ebw.keymanager.application.GenerateHolderKeyUseCase;
+import com.eudistack.ebw.keymanager.application.SignHolderKeyUseCase;
+import com.eudistack.ebw.keymanager.domain.model.ConsumerOrigin;
 import com.eudistack.ebw.keymanager.domain.model.CredentialFormat;
 import com.eudistack.ebw.keymanager.domain.model.GenerateHolderKeyCommand;
 import com.eudistack.ebw.keymanager.domain.model.HolderKeyId;
@@ -8,6 +10,10 @@ import com.eudistack.ebw.keymanager.domain.model.HolderKeyResult;
 import com.eudistack.ebw.keymanager.domain.model.JwkPublic;
 import com.eudistack.ebw.keymanager.domain.model.JwsProof;
 import com.eudistack.ebw.keymanager.domain.model.KeyAlgorithm;
+import com.eudistack.ebw.keymanager.domain.model.SignHolderKeyCommand;
+import com.eudistack.ebw.keymanager.domain.model.SignHolderKeyResult;
+import com.eudistack.ebw.keymanager.domain.model.SignaturePurpose;
+import com.eudistack.ebw.keymanager.domain.model.SigningType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,12 +34,13 @@ import static org.mockito.Mockito.when;
 class DbKeyManagerServiceTest {
 
     @Mock private GenerateHolderKeyUseCase useCase;
+    @Mock private SignHolderKeyUseCase signUseCase;
 
     private DbKeyManagerService service;
 
     @BeforeEach
     void setUp() {
-        service = new DbKeyManagerService(useCase);
+        service = new DbKeyManagerService(useCase, signUseCase);
     }
 
     private GenerateHolderKeyCommand anyCommand() {
@@ -55,8 +62,8 @@ class DbKeyManagerServiceTest {
     // --- timeout constant ---
 
     @Test
-    void timeout_is_2500ms() {
-        assertThat(DbKeyManagerService.TIMEOUT).isEqualTo(Duration.ofMillis(2500));
+    void generateTimeout_is_2500ms() {
+        assertThat(DbKeyManagerService.GENERATE_TIMEOUT).isEqualTo(Duration.ofMillis(2500));
     }
 
     // --- delegation ---
@@ -78,7 +85,7 @@ class DbKeyManagerServiceTest {
         when(useCase.execute(any())).thenReturn(Mono.never());
 
         StepVerifier.withVirtualTime(() -> service.generateHolderKey(anyCommand()))
-                .thenAwait(DbKeyManagerService.TIMEOUT.plusMillis(100))
+                .thenAwait(DbKeyManagerService.GENERATE_TIMEOUT.plusMillis(100))
                 .expectError(java.util.concurrent.TimeoutException.class)
                 .verify();
     }
@@ -91,6 +98,24 @@ class DbKeyManagerServiceTest {
         StepVerifier.withVirtualTime(() -> service.generateHolderKey(anyCommand()))
                 .thenAwait(Duration.ofMillis(100))
                 .expectNextCount(1)
+                .verifyComplete();
+    }
+
+    // --- signWithHolderKey delegation ---
+
+    @Test
+    void signWithHolderKey_delegatesToSignUseCase() {
+        // Given
+        SignHolderKeyResult expected = new SignHolderKeyResult("h.p.s", KeyAlgorithm.ES256, "jkt-abc");
+        when(signUseCase.execute(any())).thenReturn(Mono.just(expected));
+        SignHolderKeyCommand cmd = new SignHolderKeyCommand(
+                HolderKeyId.generate(), "tenant", "holder",
+                SigningType.KB_JWT, SignaturePurpose.PRESENTATION, ConsumerOrigin.SYSTEM,
+                new byte[]{1, 2, 3});
+
+        // When / Then
+        StepVerifier.create(service.signWithHolderKey(cmd))
+                .assertNext(result -> assertThat(result).isSameAs(expected))
                 .verifyComplete();
     }
 }

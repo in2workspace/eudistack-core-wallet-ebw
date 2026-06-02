@@ -18,7 +18,9 @@ public record VerifiableCredentialResponse(
         Object credentialSubject,
         CredentialStatusDto credentialStatus,
         String credentialEncoded,
-        String credentialFormat
+        String credentialFormat,
+        String kid,
+        @JsonProperty("holder_key_id") String holderKeyId
 ) {
 
     public record IssuerDto(

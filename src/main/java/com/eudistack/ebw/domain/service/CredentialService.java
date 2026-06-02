@@ -160,7 +160,8 @@ public class CredentialService {
                 context, id, type, credential.getStatus().name(),
                 name, description, issuer, validFrom, validUntil,
                 credentialSubject, credentialStatus, raw,
-                credential.getFormat().getValue()
+                credential.getFormat().getValue(),
+                credential.getKid(), credential.getHolderKeyId()
         );
     }
 
@@ -193,7 +194,8 @@ public class CredentialService {
                 context, id, type, credential.getStatus().name(),
                 name, description, issuer, validFrom, validUntil,
                 credentialSubject, credentialStatus, raw,
-                credential.getFormat().getValue()
+                credential.getFormat().getValue(),
+                credential.getKid(), credential.getHolderKeyId()
         );
     }
 
@@ -364,7 +366,8 @@ public class CredentialService {
                 Map.of(),
                 new CredentialStatusDto("", "", "", "", ""),
                 null,
-                credential.getFormat().getValue()
+                credential.getFormat().getValue(),
+                credential.getKid(), credential.getHolderKeyId()
         );
     }
 

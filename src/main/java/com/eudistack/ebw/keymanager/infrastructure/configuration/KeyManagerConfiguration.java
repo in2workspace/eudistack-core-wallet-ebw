@@ -4,7 +4,15 @@ import com.eudistack.ebw.keymanager.application.AlgorithmNegotiator;
 import com.eudistack.ebw.keymanager.application.GenerateHolderKeyUseCase;
 import com.eudistack.ebw.keymanager.application.HolderKeyFactory;
 import com.eudistack.ebw.keymanager.application.IssuanceProofSigner;
+import com.eudistack.ebw.keymanager.application.JwsSigner;
+import com.eudistack.ebw.keymanager.application.KbJwtSigner;
+import com.eudistack.ebw.keymanager.application.SignHolderKeyUseCase;
+import com.eudistack.ebw.keymanager.application.SignRejectionUniformDelay;
+import com.eudistack.ebw.keymanager.application.SignerSelector;
+import com.eudistack.ebw.keymanager.application.VpEnvelopeSigner;
 import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
+import com.eudistack.ebw.keymanager.domain.model.SigningType;
+import com.eudistack.ebw.keymanager.domain.port.HolderKeyReadPort;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
@@ -26,6 +34,17 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.r2dbc.core.DatabaseClient;
 import reactor.core.publisher.Mono;
 
+import java.util.Map;
+
+/**
+ * Spring configuration for the Key Manager bounded context.
+ *
+ * <p>Registers all beans for US-02 (key generation) and US-03 (server-side signing).
+ * The {@code wallet.keymanager.enabled} property gate (already operativo from US-02)
+ * is inherited by all signing beans via the same configuration class.</p>
+ *
+ * <p>Spec: EUDISTACK-119, EUDISTACK-407.</p>
+ */
 @Configuration
 public class KeyManagerConfiguration {
 
@@ -74,9 +93,49 @@ public class KeyManagerConfiguration {
         return new GenerateHolderKeyUseCase(negotiator, factory, writePort, signer, auditPort);
     }
 
+    // --- US-03: Server-side signing beans ---
+
     @Bean
-    KeyManagerPort keyManagerPort(GenerateHolderKeyUseCase useCase) {
-        return new DbKeyManagerService(useCase);
+    KbJwtSigner kbJwtSigner() {
+        return new KbJwtSigner();
+    }
+
+    @Bean
+    VpEnvelopeSigner vpEnvelopeSigner() {
+        return new VpEnvelopeSigner();
+    }
+
+    @Bean
+    SignerSelector signerSelector(KbJwtSigner kbJwtSigner, VpEnvelopeSigner vpEnvelopeSigner) {
+        Map<SigningType, JwsSigner> signers = Map.of(
+                SigningType.KB_JWT, kbJwtSigner,
+                SigningType.VP_ENVELOPE, vpEnvelopeSigner
+        );
+        return new SignerSelector(signers);
+    }
+
+    @Bean
+    SignRejectionUniformDelay signRejectionUniformDelay(
+            @Value("${keymanager.sign.opaque-rejection-delay-millis:"
+                    + SignRejectionUniformDelay.DEFAULT_DELAY_MILLIS + "}") long delayMillis) {
+        return new SignRejectionUniformDelay(delayMillis);
+    }
+
+    @Bean
+    SignHolderKeyUseCase signHolderKeyUseCase(HolderKeyReadPort holderKeyReadPort,
+                                               HolderKeyFactory holderKeyFactory,
+                                               SignerSelector signerSelector,
+                                               SignRejectionUniformDelay rejectionDelay,
+                                               KeyAuditPort auditPort,
+                                               WalletProfileQueryPort walletProfileQueryPort) {
+        return new SignHolderKeyUseCase(holderKeyReadPort, holderKeyFactory, signerSelector,
+                rejectionDelay, auditPort, walletProfileQueryPort);
+    }
+
+    @Bean
+    KeyManagerPort keyManagerPort(GenerateHolderKeyUseCase generateUseCase,
+                                   SignHolderKeyUseCase signUseCase) {
+        return new DbKeyManagerService(generateUseCase, signUseCase);
     }
 
     @Bean

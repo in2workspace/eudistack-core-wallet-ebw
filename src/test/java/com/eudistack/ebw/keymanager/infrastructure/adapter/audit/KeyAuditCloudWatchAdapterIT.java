@@ -97,7 +97,7 @@ class KeyAuditCloudWatchAdapterIT {
         String jkt = "sha256-thumbprint-abc";
         String correlationId = UUID.randomUUID().toString();
 
-        KeyAuditEvent event = new KeyAuditEvent(
+        KeyAuditEvent event = KeyAuditEvent.forGeneration(
                 KeyAuditEvent.KeyAuditEventType.KEY_GENERATED,
                 tenantId,
                 holderId,
@@ -178,7 +178,7 @@ class KeyAuditCloudWatchAdapterIT {
 
     @Test
     void emit_keyFetched_publishesBatchWithFetchedEventType() throws Exception {
-        KeyAuditEvent event = new KeyAuditEvent(
+        KeyAuditEvent event = KeyAuditEvent.forGeneration(
                 KeyAuditEvent.KeyAuditEventType.KEY_FETCHED,
                 "tenant-fetch",
                 UUID.randomUUID().toString(),

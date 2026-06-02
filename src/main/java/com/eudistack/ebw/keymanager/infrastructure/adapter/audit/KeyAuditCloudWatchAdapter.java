@@ -234,6 +234,26 @@ public class KeyAuditCloudWatchAdapter implements KeyAuditPort, DisposableBean {
         map.put("jkt", event.jkt());
         map.put("tenant_id", event.tenantId());
         map.put("timestamp", event.timestamp().toString());
+
+        // Optional signing-specific fields (US-03 — null for US-02 generation events)
+        // NOTE: payload/signature are intentionally NEVER included (NFR-S-407-05)
+        if (event.signingType() != null) {
+            map.put("signing_type", event.signingType().name());
+        }
+        if (event.purpose() != null) {
+            map.put("purpose", event.purpose().name());
+        }
+        if (event.consumerOrigin() != null) {
+            map.put("consumer_origin", event.consumerOrigin().name());
+        }
+        if (event.reason() != null) {
+            map.put("reason", event.reason());
+        }
+        // B2 (AC-08): key_id correlates the signing event with the key lifecycle record
+        if (event.keyId() != null) {
+            map.put("key_id", event.keyId());
+        }
+
         return map;
     }
 

@@ -20,6 +20,7 @@ public record CredentialDetailResponse(
         String status,
         @JsonProperty("issuer_metadata") Map<String, Object> issuerMetadata,
         String kid,
+        @JsonProperty("holder_key_id") String holderKeyId,
         @JsonProperty("created_at") Instant createdAt,
         @JsonProperty("updated_at") Instant updatedAt
 ) {
@@ -28,7 +29,7 @@ public record CredentialDetailResponse(
                 c.getId(), c.getFormat().getValue(),
                 c.getCredentialConfigId(), c.getCredentialType(), c.getVct(),
                 c.getIssuer(), c.getSubject(), c.getIssuanceDate(), c.getExpirationDate(),
-                c.getStatus().name(), c.getIssuerMetadata(), c.getKid(),
+                c.getStatus().name(), c.getIssuerMetadata(), c.getKid(), c.getHolderKeyId(),
                 c.getCreatedAt(), c.getUpdatedAt()
         );
     }

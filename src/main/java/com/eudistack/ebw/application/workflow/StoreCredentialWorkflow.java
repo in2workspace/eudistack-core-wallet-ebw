@@ -32,7 +32,7 @@ public class StoreCredentialWorkflow {
 
     public Mono<WalletCredential> storeCredential(UUID userId, String credentialRaw, String format,
                                                     String credentialConfigId, String kid,
-                                                    Map<String, Object> issuerMetadata) {
+                                                    Map<String, Object> issuerMetadata, String holderKeyId) {
         return Mono.fromCallable(() -> credentialService.validateFormat(format))
                 .flatMap(credentialFormat ->
                         tenantConfigService.getStringOrDefault("ebw.allowed_credential_formats", DEFAULT_ALLOWED_FORMATS)
@@ -52,7 +52,7 @@ public class StoreCredentialWorkflow {
                             return WalletCredential.create(userId, encrypted, credentialFormat,
                                     credentialConfigId, kid, parsed.credentialType(), parsed.vct(),
                                     parsed.issuer(), parsed.subject(), parsed.issuanceDate(),
-                                    parsed.expirationDate(), issuerMetadata);
+                                    parsed.expirationDate(), issuerMetadata, holderKeyId);
                         })
                         .flatMap(credentialRepository::insert)
                         .flatMap(saved -> {

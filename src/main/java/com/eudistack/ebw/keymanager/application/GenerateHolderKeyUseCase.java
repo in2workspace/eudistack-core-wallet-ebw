@@ -143,7 +143,7 @@ public class GenerateHolderKeyUseCase {
     private Mono<Void> emitAudit(HolderKeyResult result,
                                   GenerateHolderKeyCommand command,
                                   KeyAlgorithm algorithm) {
-        KeyAuditEvent event = new KeyAuditEvent(
+        KeyAuditEvent event = KeyAuditEvent.forGeneration(
                 result.created() ? KeyAuditEventType.KEY_GENERATED : KeyAuditEventType.KEY_FETCHED,
                 command.tenantId(),
                 command.holderId(),

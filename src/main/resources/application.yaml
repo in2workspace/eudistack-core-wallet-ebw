@@ -115,6 +115,11 @@ keymanager:
   audit:
     enabled: ${KEYMANAGER_AUDIT_ENABLED:false}
     log-group-name: ${KEYMANAGER_AUDIT_LOG_GROUP:/eudistack/audit/wallet-ebw/local}
+  sign:
+    # Opaque rejection delay in milliseconds (ADR-025, AD-407-2).
+    # Default approximates p50 of warm signing path. MUST be calibrated empirically in STG
+    # before production (NFR-S-407-03). See OpaqueRejectionConstantTimeIT.
+    opaque-rejection-delay-millis: ${KEYMANAGER_SIGN_OPAQUE_REJECTION_DELAY_MS:80}
 
 logging:
   pattern:
