@@ -62,6 +62,7 @@ ebw:
     key: ${ENCRYPTION_KEY:+/6bYXrSY4W65fTv7OALJfBNcxNe1U5s+v/GbZiBt6Y=}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
+    origins-path: ${APP_CORS_ORIGINS_PATH:}
   security:
     max-payload-size: 65536
     trust-forwarded-host: ${TRUST_FORWARDED_HOST:false}
