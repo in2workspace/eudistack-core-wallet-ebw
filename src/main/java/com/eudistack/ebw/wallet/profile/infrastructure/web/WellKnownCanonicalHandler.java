@@ -72,12 +72,17 @@ public class WellKnownCanonicalHandler {
         this.trustForwardedHost = trustForwardedHost;
     }
 
+    /** Prefixed path added by CloudFront viewer-request function so the ALB rule /business-wallet/* matches. */
+    private static final String WELL_KNOWN_PATH_PREFIXED =
+            "/business-wallet" + WalletProfileQueryController.WELL_KNOWN_PATH;
+
     public Mono<Void> handle(ServerHttpRequest request, ServerHttpResponse response) {
-        // Reactor Netty path matching is non-anchored (suffix match), so the route registered for
-        // /.well-known/... also fires when the request path ends with that segment (e.g.
-        // /business-wallet/.well-known/...). Reject any path that is not exactly the canonical
-        // one — that path is the shadow that WellKnownWebFilter blocks for the Spring path.
-        if (!WalletProfileQueryController.WELL_KNOWN_PATH.equals(request.getPath().value())) {
+        // Accept both the canonical RFC 8615 path and the /business-wallet/-prefixed variant
+        // rewritten by the CloudFront viewer-request function (EUDISTACK-412 / STG routing).
+        // Reject any other suffix-matched path.
+        String path = request.getPath().value();
+        if (!WalletProfileQueryController.WELL_KNOWN_PATH.equals(path)
+                && !WELL_KNOWN_PATH_PREFIXED.equals(path)) {
             response.setStatusCode(HttpStatus.NOT_FOUND);
             return response.setComplete();
         }
