@@ -1,6 +1,7 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
 import com.eudistack.ebw.infrastructure.adapter.properties.CorsProperties;
+import com.eudistack.ebw.infrastructure.security.CorsOriginsLoader;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationWebFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,7 +15,6 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
-import java.util.Arrays;
 import java.util.List;
 
 @Configuration
@@ -22,12 +22,12 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationWebFilter jwtAuthFilter;
-    private final CorsProperties corsProperties;
+    private final CorsOriginsLoader corsOriginsLoader;
 
     public SecurityConfig(JwtAuthenticationWebFilter jwtAuthFilter,
-                          CorsProperties corsProperties) {
+                          CorsOriginsLoader corsOriginsLoader) {
         this.jwtAuthFilter = jwtAuthFilter;
-        this.corsProperties = corsProperties;
+        this.corsOriginsLoader = corsOriginsLoader;
     }
 
     @Bean
@@ -75,7 +75,7 @@ public class SecurityConfig {
 
     private CorsConfigurationSource corsConfigurationSource() {
         var config = new CorsConfiguration();
-        var origins = Arrays.asList(corsProperties.allowedOrigins().split(","));
+        var origins = corsOriginsLoader.loadOrigins();
         config.setAllowedOriginPatterns(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Api-Version"));
