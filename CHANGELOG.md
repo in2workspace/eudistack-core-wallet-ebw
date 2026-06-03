@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-06-03
+
+### Fixed
+
+- **CORS allowed origins**: `CorsOriginsLoader` now reads allowed origins from a YAML file on EFS (`APP_CORS_ORIGINS_PATH`, mirrors issuer-core pattern). Previously the EBW defaulted to `http://localhost:4200` in STG causing 403 on all API endpoints. Falls back to classpath `cors-origins.yaml` then to `CORS_ORIGINS` env var for local dev.
+
 ## [1.8.1] - 2026-06-03
 
 ### Fixed
