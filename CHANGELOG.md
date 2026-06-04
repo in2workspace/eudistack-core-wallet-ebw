@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.5] - 2026-06-04
+
+### Fixed
+
+- **`TenantDomainWebFilter`**: tenant regex now requires the name to start with a letter (`^[a-zA-Z][a-zA-Z0-9_-]*$`). Previously, IP addresses used as `Host` header in ALB health checks (e.g. `10.0.1.68`) were incorrectly parsed as tenant `10`, causing `SET search_path TO 10_business_wallet` — an invalid SQL identifier — to be sent to PostgreSQL.
+- **`TenantAwareConnectionFactory`**: schema name is now double-quoted in `SET search_path` (`"<tenant>_business_wallet"`) as a defensive measure so numeric-prefixed schema names remain valid SQL identifiers.
+
 ## [1.8.4] - 2026-06-04
 
 ### Fixed

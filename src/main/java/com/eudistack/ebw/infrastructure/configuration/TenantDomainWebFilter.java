@@ -53,8 +53,8 @@ public class TenantDomainWebFilter implements WebFilter {
         if (dotIndex <= 0) return null;
 
         String tenant = hostname.substring(0, dotIndex);
-        if (!tenant.matches("^[a-zA-Z0-9_-]+$")) {
-            log.warn("Invalid tenant identifier from hostname: {}", tenant);
+        if (!tenant.matches("^[a-zA-Z][a-zA-Z0-9_-]*$")) {
+            log.warn("Invalid tenant identifier from hostname (must start with a letter): {}", tenant);
             return null;
         }
         return tenant.toLowerCase();

@@ -75,7 +75,7 @@ public class TenantAwareConnectionFactoryDecorator {
         private Mono<Connection> setSearchPath(Connection connection, String tenant) {
             String searchPath = SYSTEM_TENANT.equals(tenant)
                     ? "public"
-                    : sanitize(tenant) + SCHEMA_SUFFIX + ", public";
+                    : "\"" + sanitize(tenant) + SCHEMA_SUFFIX + "\", public";
             return Mono.from(connection.createStatement("SET search_path TO " + searchPath).execute())
                     .then(Mono.just(connection))
                     .doOnSuccess(c -> log.trace("R2DBC search_path set to '{}'", searchPath))
