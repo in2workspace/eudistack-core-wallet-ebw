@@ -63,7 +63,7 @@ public class Es256TokenSigner implements TokenSigner {
     private void initEphemeral() {
         try {
             var keyGen = java.security.KeyPairGenerator.getInstance("EC");
-            keyGen.initialize(new java.security.spec.ECGenParameterSpec("P-256"));
+            keyGen.initialize(new java.security.spec.ECGenParameterSpec("secp256r1"));
             var keyPair = keyGen.generateKeyPair();
             var ecKey = new ECKey.Builder(
                     Curve.P_256,
