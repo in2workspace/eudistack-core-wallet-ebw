@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.3] - 2026-06-03
+
+### Fixed
+
+- **CORS**: `SecurityConfig.corsConfigurationSource()` now uses `setAllowedOriginPatterns(List.of("*"))` to allow all origins — aligns with issuer-core pattern and removes dependency on `CorsOriginsLoader` / EFS file. Resolves 403 on all EBW API endpoints in STG.
+
 ## [1.8.2] - 2026-06-03
 
 ### Fixed
