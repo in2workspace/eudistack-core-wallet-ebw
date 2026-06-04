@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.4] - 2026-06-04
+
+### Fixed
+
+- **`Es256TokenSigner`**: when `JWT_PRIVATE_KEY_PATH` is not configured, generate an ephemeral EC P-256 keypair in memory instead of failing at runtime. Sessions are invalidated on restart — acceptable for STG; production should configure a persistent key.
+
 ## [1.8.3] - 2026-06-03
 
 ### Fixed
