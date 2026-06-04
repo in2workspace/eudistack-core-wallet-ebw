@@ -43,7 +43,8 @@ public class Es256TokenSigner implements TokenSigner {
     @PostConstruct
     void init() {
         if (privateKeyPath == null || privateKeyPath.isBlank()) {
-            log.warn("JWT private key path not configured — token signing will fail at runtime");
+            log.warn("JWT_PRIVATE_KEY_PATH not configured — generating ephemeral EC P-256 keypair. Sessions will be invalidated on restart.");
+            initEphemeral();
             return;
         }
         try {
@@ -56,6 +57,24 @@ public class Es256TokenSigner implements TokenSigner {
             log.info("JWT ES256 key loaded successfully");
         } catch (Exception e) {
             throw new IllegalStateException("Failed to load JWT private key from " + privateKeyPath, e);
+        }
+    }
+
+    private void initEphemeral() {
+        try {
+            var keyGen = java.security.KeyPairGenerator.getInstance("EC");
+            keyGen.initialize(new java.security.spec.ECGenParameterSpec("P-256"));
+            var keyPair = keyGen.generateKeyPair();
+            var ecKey = new ECKey.Builder(
+                    Curve.P_256,
+                    (java.security.interfaces.ECPublicKey) keyPair.getPublic())
+                    .privateKey((java.security.interfaces.ECPrivateKey) keyPair.getPrivate())
+                    .build();
+            this.signer = new ECDSASigner(ecKey);
+            this.verifier = new ECDSAVerifier(ecKey.toPublicJWK());
+            log.info("Ephemeral JWT EC P-256 keypair generated — valid until next restart");
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to generate ephemeral JWT keypair", e);
         }
     }
 
