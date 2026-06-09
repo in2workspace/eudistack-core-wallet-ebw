@@ -62,9 +62,6 @@ public abstract class IntegrationTestBase {
         postgres.start();
     }
 
-    // Base64-encoded 32-byte AES-256 key for testing
-    protected static final String TEST_ENCRYPTION_KEY = "01LvWiH/24uNc/Um3GF8n3sFUwtfv8xBmFST4bc56oc=";
-
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.r2dbc.url", () ->
@@ -75,7 +72,6 @@ public abstract class IntegrationTestBase {
         registry.add("spring.flyway.user", () -> "test");
         registry.add("spring.flyway.password", () -> "test");
         registry.add("spring.flyway.default-schema", () -> "ebw");
-        registry.add("ebw.encryption.key", () -> TEST_ENCRYPTION_KEY);
     }
 
     @Autowired

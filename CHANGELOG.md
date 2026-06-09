@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.6] - 2026-06-09
+
+### Removed
+
+- **Application-level credential encryption**: removed `Aes256GcmEncryptor`, `CredentialEncryptor` SPI, and `EncryptionProperties`. `credential_raw` is now stored as plaintext; at-rest protection is delegated to RDS TDE. Eliminates the `ENCRYPTION_KEY` / `ENCRYPTION_KEY_PATH` env vars.
+
 ## [1.8.5] - 2026-06-04
 
 ### Fixed

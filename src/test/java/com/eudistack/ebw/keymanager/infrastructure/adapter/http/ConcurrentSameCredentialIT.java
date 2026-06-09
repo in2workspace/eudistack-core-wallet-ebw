@@ -76,7 +76,6 @@ class ConcurrentSameCredentialIT {
         registry.add("spring.flyway.user", () -> "test");
         registry.add("spring.flyway.password", () -> "test");
         registry.add("spring.flyway.default-schema", () -> "public");
-        registry.add("ebw.encryption.key", () -> "01LvWiH/24uNc/Um3GF8n3sFUwtfv8xBmFST4bc56oc=");
     }
 
     @MockitoBean

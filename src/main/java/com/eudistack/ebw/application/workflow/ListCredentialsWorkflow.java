@@ -4,7 +4,6 @@ import com.eudistack.ebw.domain.model.CredentialStatus;
 import com.eudistack.ebw.domain.model.WalletCredential;
 import com.eudistack.ebw.domain.repository.WalletCredentialRepository;
 import com.eudistack.ebw.domain.service.CredentialService;
-import com.eudistack.ebw.domain.spi.CredentialEncryptor;
 import com.eudistack.ebw.infrastructure.controller.dto.VerifiableCredentialResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,14 +21,11 @@ public class ListCredentialsWorkflow {
 
     private final WalletCredentialRepository credentialRepository;
     private final CredentialService credentialService;
-    private final CredentialEncryptor encryptor;
 
     public ListCredentialsWorkflow(WalletCredentialRepository credentialRepository,
-                                    CredentialService credentialService,
-                                    CredentialEncryptor encryptor) {
+                                    CredentialService credentialService) {
         this.credentialRepository = credentialRepository;
         this.credentialService = credentialService;
-        this.encryptor = encryptor;
     }
 
     public Flux<VerifiableCredentialResponse> listCredentials(UUID userId, String status,
@@ -39,7 +35,7 @@ public class ListCredentialsWorkflow {
         var normalizedIssuer = (issuer != null && !issuer.isBlank()) ? issuer.strip() : null;
         return resolveCredentials(userId, normalizedStatus, normalizedConfigId, normalizedIssuer)
                 .flatMap(credential -> Mono
-                        .fromCallable(() -> credentialService.toVerifiableCredential(credential, encryptor))
+                        .fromCallable(() -> credentialService.toVerifiableCredential(credential))
                         .subscribeOn(Schedulers.boundedElastic()))
                 .doOnComplete(() -> log.info("Credentials listed: userId={}", userId))
                 .doOnError(e -> log.error("Failed to list credentials: userId={}, error={}", userId, e.getMessage()));

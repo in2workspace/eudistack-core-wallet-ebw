@@ -6,7 +6,6 @@ import com.eudistack.ebw.domain.model.exception.CredentialNotFoundException;
 import com.eudistack.ebw.domain.repository.WalletCredentialRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.CredentialService;
-import com.eudistack.ebw.domain.spi.CredentialEncryptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,16 +21,13 @@ public class UpdateCredentialStatusWorkflow {
     private static final Logger log = LoggerFactory.getLogger(UpdateCredentialStatusWorkflow.class);
 
     private final WalletCredentialRepository credentialRepository;
-    private final CredentialEncryptor encryptor;
     private final CredentialService credentialService;
     private final AuditService auditService;
 
     public UpdateCredentialStatusWorkflow(WalletCredentialRepository credentialRepository,
-                                           CredentialEncryptor encryptor,
                                            CredentialService credentialService,
                                            AuditService auditService) {
         this.credentialRepository = credentialRepository;
-        this.encryptor = encryptor;
         this.credentialService = credentialService;
         this.auditService = auditService;
     }
@@ -53,8 +49,7 @@ public class UpdateCredentialStatusWorkflow {
                     credential.setStatus(newStatus);
                     credential.setUpdatedAt(Instant.now());
 
-                    var decrypted = encryptor.decrypt(credential.getCredentialRaw());
-                    var entityHash = credentialService.computeAuditHash(decrypted);
+                    var entityHash = credentialService.computeAuditHash(credential.getCredentialRaw());
 
                     return credentialRepository.update(credential)
                             .flatMap(saved -> auditService.record("credential", credentialId,
