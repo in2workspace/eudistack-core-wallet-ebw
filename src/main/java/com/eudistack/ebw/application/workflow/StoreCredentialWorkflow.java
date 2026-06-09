@@ -6,7 +6,6 @@ import com.eudistack.ebw.domain.repository.WalletCredentialRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.CredentialService;
 import com.eudistack.ebw.domain.service.TenantConfigService;
-import com.eudistack.ebw.domain.spi.CredentialEncryptor;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,7 +25,6 @@ public class StoreCredentialWorkflow {
 
     private final CredentialService credentialService;
     private final TenantConfigService tenantConfigService;
-    private final CredentialEncryptor encryptor;
     private final WalletCredentialRepository credentialRepository;
     private final AuditService auditService;
 
@@ -48,8 +46,7 @@ public class StoreCredentialWorkflow {
                                     return credentialService.parseCredential(credentialRaw, credentialFormat);
                                 })
                         .map(parsed -> {
-                            var encrypted = encryptor.encrypt(credentialRaw);
-                            return WalletCredential.create(userId, encrypted, credentialFormat,
+                            return WalletCredential.create(userId, credentialRaw, credentialFormat,
                                     credentialConfigId, kid, parsed.credentialType(), parsed.vct(),
                                     parsed.issuer(), parsed.subject(), parsed.issuanceDate(),
                                     parsed.expirationDate(), issuerMetadata, holderKeyId);

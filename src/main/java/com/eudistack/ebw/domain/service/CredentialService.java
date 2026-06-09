@@ -6,7 +6,6 @@ import com.eudistack.ebw.domain.model.CredentialStatusTransition;
 import com.eudistack.ebw.domain.model.WalletCredential;
 import com.eudistack.ebw.domain.model.exception.MalformedCredentialException;
 import com.eudistack.ebw.domain.model.exception.UnsupportedFormatException;
-import com.eudistack.ebw.domain.spi.CredentialEncryptor;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.infrastructure.controller.dto.VerifiableCredentialResponse;
 import com.eudistack.ebw.infrastructure.controller.dto.VerifiableCredentialResponse.CredentialStatusDto;
@@ -68,24 +67,15 @@ public class CredentialService {
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
-    public VerifiableCredentialResponse toVerifiableCredential(
-            WalletCredential credential, CredentialEncryptor encryptor) {
+    public VerifiableCredentialResponse toVerifiableCredential(WalletCredential credential) {
         if (credential.getCredentialRaw() == null) {
             log.warn("credential_raw is null for credential {}, returning fallback", credential.getId());
             return buildFallback(credential);
         }
-        String raw;
-        try {
-            raw = encryptor.decrypt(credential.getCredentialRaw());
-        } catch (Exception e) {
-            log.error("Decrypt failed for credential {}: {}", credential.getId(), e.getMessage(), e);
-            return buildFallback(credential);
-        }
-
         try {
             return switch (credential.getFormat()) {
-                case DC_SD_JWT -> buildFromSdJwt(credential, raw);
-                case JWT_VC_JSON -> buildFromJwtVc(credential, raw);
+                case DC_SD_JWT -> buildFromSdJwt(credential, credential.getCredentialRaw());
+                case JWT_VC_JSON -> buildFromJwtVc(credential, credential.getCredentialRaw());
             };
         } catch (Exception e) {
             log.error("Parse failed for credential {} format={}: {}", credential.getId(), credential.getFormat(), e.getMessage(), e);

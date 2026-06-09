@@ -81,7 +81,6 @@ class WalletProfileQueryObservabilityIT {
         registry.add("spring.flyway.user", () -> "test");
         registry.add("spring.flyway.password", () -> "test");
         registry.add("spring.flyway.default-schema", () -> "public");
-        registry.add("ebw.encryption.key", () -> "01LvWiH/24uNc/Um3GF8n3sFUwtfv8xBmFST4bc56oc=");
         // Disable OTLP export to avoid network calls in tests
         registry.add("management.otlp.tracing.endpoint", () -> "http://localhost:14250");
     }

@@ -55,11 +55,6 @@ ebw:
     refresh-per-ip: 60
     logout-per-ip: 20
     window: 1h
-  encryption:
-    key-path: ${ENCRYPTION_KEY_PATH:}
-    # TEMP (hasta EUDISTACK-413): fallback para dev/STG mientras no hay key manager.
-    # En producción ENCRYPTION_KEY debe venir de SSM. Eliminar el default cuando EUDISTACK-413 esté listo.
-    key: ${ENCRYPTION_KEY:+/6bYXrSY4W65fTv7OALJfBNcxNe1U5s+v/GbZiBt6Y=}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
     origins-path: ${APP_CORS_ORIGINS_PATH:}
