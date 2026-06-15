@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Tenant resolution (`trust-forwarded-host=true`)**: when `ebw.security.trust-forwarded-host` is enabled, the filter now resolves the tenant from the `X-Tenant` header first and, if that header is absent, blank or invalid, falls back to the first subdomain of `X-Forwarded-Host`. Previously the fallback was the `Host` header subdomain, which in ALB deployments contains the load-balancer hostname rather than the original client host. The `Host` header is no longer consulted in trusted-proxy mode.
+- **Tenant resolution (`trust-forwarded-host=true`)**: when `ebw.security.trust-forwarded-host` is enabled, the filter now resolves the tenant from the `X-Tenant` header first and, if that header is absent, blank or invalid, falls back to the first subdomain of `X-Forwarded-Host`. If neither trusted-proxy header yields a valid tenant, the filter now falls back to the first subdomain of the `Host` header. This preserves trusted-proxy resolution while keeping `Host` as a final fallback for requests where forwarded headers are not present.
 - **Header constants**: `TenantDomainWebFilter.HEADER_X_FORWARDED_HOST` and `HEADER_X_TENANT` introduced as public constants; `WellKnownCanonicalHandler` reuses them to keep a single source of truth.
 
 ## [1.8.6] - 2026-06-09

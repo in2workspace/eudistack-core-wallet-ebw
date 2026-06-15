@@ -21,6 +21,8 @@ import java.net.InetSocketAddress;
  *       to lowercase.</li>
  *   <li>First subdomain of the {@code X-Forwarded-Host} header, validated and
  *       normalized to lowercase (e.g. {@code acme} from {@code acme.example.com}).</li>
+ *   <li>First subdomain of the {@code Host} header, validated and normalized
+ *       to lowercase.</li>
  * </ol>
  *
  * <p>When the property is {@code false} (default), the tenant is extracted from
@@ -85,10 +87,14 @@ public class TenantDomainWebFilter implements WebFilter {
                 }
             }
 
-            log.trace("No tenant resolved from {} or {} headers", HEADER_X_TENANT, HEADER_X_FORWARDED_HOST);
-            return null;
+            log.trace("No tenant resolved from {} or {} headers; falling back to Host header",
+                    HEADER_X_TENANT, HEADER_X_FORWARDED_HOST);
         }
 
+        return resolveTenantFromHostHeader(exchange);
+    }
+
+    private String resolveTenantFromHostHeader(ServerWebExchange exchange) {
         InetSocketAddress addr = exchange.getRequest().getHeaders().getHost();
         if (addr == null) {
             return null;
