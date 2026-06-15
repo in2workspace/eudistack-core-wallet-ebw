@@ -1,6 +1,7 @@
 package com.eudistack.ebw.wallet.profile.infrastructure.web;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilter;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import com.eudistack.ebw.wallet.profile.infrastructure.observability.WalletProfileQueryTelemetry;
 import com.eudistack.ebw.wallet.profile.infrastructure.web.dto.ErrorResponse;
@@ -48,7 +49,10 @@ import java.util.regex.Pattern;
 @Component
 public class WellKnownCanonicalHandler {
 
-    private static final Pattern VALID_TENANT = Pattern.compile("^[a-zA-Z0-9_-]+$");
+    static final String HEADER_X_FORWARDED_HOST = TenantDomainWebFilter.HEADER_X_FORWARDED_HOST;
+    static final String HEADER_X_TENANT = TenantDomainWebFilter.HEADER_X_TENANT;
+
+    private static final Pattern VALID_TENANT = Pattern.compile("^[a-zA-Z][a-zA-Z0-9_-]*$");
     private static final String HEADER_CACHE_CONTROL = "Cache-Control";
     private static final String HEADER_CACHE_CONTROL_VALUE = "public, max-age=60, must-revalidate";
     private static final String HEADER_X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options";
@@ -159,22 +163,30 @@ public class WellKnownCanonicalHandler {
         return writeResponse(response, re, false);
     }
 
-    private String extractTenant(ServerHttpRequest request) {
-        String host = resolveHost(request);
+    String extractTenant(ServerHttpRequest request) {
+        if (trustForwardedHost) {
+            String fwdHost = request.getHeaders().getFirst(HEADER_X_FORWARDED_HOST);
+            if (fwdHost != null && !fwdHost.isBlank()) {
+                String tenant = subdomainOf(fwdHost);
+                if (tenant != null) return tenant;
+            }
+            String xTenant = request.getHeaders().getFirst(HEADER_X_TENANT);
+            if (xTenant != null && !xTenant.isBlank()) {
+                String candidate = xTenant.trim().toLowerCase();
+                return VALID_TENANT.matcher(candidate).matches() ? candidate : null;
+            }
+            return null;
+        }
+        InetSocketAddress addr = request.getHeaders().getHost();
+        return addr != null ? subdomainOf(addr.getHostString()) : null;
+    }
+
+    private String subdomainOf(String host) {
         if (host == null || host.isBlank()) return null;
         String hostname = host.contains(":") ? host.substring(0, host.indexOf(':')) : host;
         int dotIndex = hostname.indexOf('.');
         if (dotIndex <= 0) return null;
-        String tenant = hostname.substring(0, dotIndex);
-        return VALID_TENANT.matcher(tenant).matches() ? tenant.toLowerCase() : null;
-    }
-
-    private String resolveHost(ServerHttpRequest request) {
-        if (trustForwardedHost) {
-            String forwarded = request.getHeaders().getFirst("X-Forwarded-Host");
-            if (forwarded != null && !forwarded.isBlank()) return forwarded;
-        }
-        InetSocketAddress hostAddress = request.getHeaders().getHost();
-        return hostAddress != null ? hostAddress.getHostString() : null;
+        String candidate = hostname.substring(0, dotIndex).toLowerCase();
+        return VALID_TENANT.matcher(candidate).matches() ? candidate : null;
     }
 }

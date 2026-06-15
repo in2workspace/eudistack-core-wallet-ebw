@@ -1,5 +1,6 @@
 package com.eudistack.ebw.wallet.profile.infrastructure.web;
 
+import com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilter;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -21,13 +22,24 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 
 /**
- * Integration test for EC-05: {@code X-Forwarded-Host} header resolves the correct tenant
- * when {@code ebw.security.trust-forwarded-host=true}.
+ * Integration test for tenant resolution when {@code ebw.security.trust-forwarded-host=true}.
  *
- * <p>In ALB deployments the original client {@code Host} header is overwritten by the
- * load balancer; the original host is forwarded via {@code X-Forwarded-Host}. When the
- * {@code trust-forwarded-host} property is enabled, the {@code TenantDomainWebFilter}
- * prefers this header for tenant extraction.
+ * <p>In ALB deployments the original client {@code Host} header is overwritten by the load
+ * balancer. The original host is forwarded via {@code X-Forwarded-Host}; when that header is
+ * absent or carries no subdomain, the {@code X-Tenant} header is used as fallback.
+ *
+ * <p>These tests exercise both {@link WellKnownCanonicalHandler} (Netty routing level,
+ * canonical RFC 8615 path) and implicitly verify that the resolution contract documented in
+ * {@link com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilter} is upheld
+ * end-to-end.
+ *
+ * <p>Covered cases:
+ * <ul>
+ *   <li>EC-05a — {@code X-Forwarded-Host} subdomain resolves tenant
+ *   <li>EC-05b — {@code X-Forwarded-Host} absent, {@code X-Tenant} resolves tenant
+ *   <li>EC-05c — {@code X-Forwarded-Host} without subdomain, {@code X-Tenant} fallback
+ *   <li>EC-05d — neither header present → 404
+ * </ul>
  */
 @Tag("integration")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -104,30 +116,63 @@ class WalletProfileQueryForwardedHostIT {
     }
 
     // -------------------------------------------------------------------------
-    // EC-05 — X-Forwarded-Host with trust-forwarded-host=true
+    // EC-05a — X-Forwarded-Host subdomain resolves tenant
     // -------------------------------------------------------------------------
 
     @Test
-    void getWalletConfigMetadata_xForwardedHost_resolvesTenantWhenTrustEnabled() {
+    void getWalletConfigMetadata_xForwardedHostWithSubdomain_resolvesTenant() {
         webClient.get()
                 .uri(WalletProfileQueryController.WELL_KNOWN_PATH)
-                .header("Host", "alb.internal.example.com")          // ALB host (irrelevant)
-                .header("X-Forwarded-Host", BROWSER_TENANT + ".eudistack.net") // original host
+                .header("Host", "alb.internal.example.com")
+                .header(TenantDomainWebFilter.HEADER_X_FORWARDED_HOST, BROWSER_TENANT + ".eudistack.net")
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.wallet_mode").isEqualTo("browser");
     }
 
+    // -------------------------------------------------------------------------
+    // EC-05b — X-Forwarded-Host absent, X-Tenant resolves tenant
+    // -------------------------------------------------------------------------
+
     @Test
-    void getWalletConfigMetadata_withoutXForwardedHost_usesDirectHostHeader() {
-        // Fallback: if X-Forwarded-Host is absent, falls back to Host header
+    void getWalletConfigMetadata_xForwardedHostAbsent_xTenantResolvesTenant() {
         webClient.get()
                 .uri(WalletProfileQueryController.WELL_KNOWN_PATH)
-                .header("Host", BROWSER_TENANT + ".eudistack.net")
+                .header("Host", "alb.internal.example.com")
+                .header(TenantDomainWebFilter.HEADER_X_TENANT, BROWSER_TENANT)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.wallet_mode").isEqualTo("browser");
+    }
+
+    // -------------------------------------------------------------------------
+    // EC-05c — X-Forwarded-Host without subdomain falls back to X-Tenant
+    // -------------------------------------------------------------------------
+
+    @Test
+    void getWalletConfigMetadata_xForwardedHostWithoutSubdomain_xTenantFallback() {
+        webClient.get()
+                .uri(WalletProfileQueryController.WELL_KNOWN_PATH)
+                .header(TenantDomainWebFilter.HEADER_X_FORWARDED_HOST, "alb-internal")   // no dot → no subdomain
+                .header(TenantDomainWebFilter.HEADER_X_TENANT, BROWSER_TENANT)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.wallet_mode").isEqualTo("browser");
+    }
+
+    // -------------------------------------------------------------------------
+    // EC-05d — neither header present → 404 (Host is not used as fallback)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void getWalletConfigMetadata_noTenantHeaders_returns404() {
+        webClient.get()
+                .uri(WalletProfileQueryController.WELL_KNOWN_PATH)
+                .header("Host", BROWSER_TENANT + ".eudistack.net")  // ignored in trust mode
+                .exchange()
+                .expectStatus().isNotFound();
     }
 }
