@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added - 2026-06-16
 
-- **EUDISTACK-533 US-01 — Hybrid KeyManager adapter skeleton**: `HybridKeyManagerAdapter` implementing `KeyManagerPort` with credential-format allow-list validation (`dc+sd-jwt`, `jwt_vc_json`). Unsupported formats rejected with `UnsupportedCredentialFormatException` at `prepareSign` time (AC-05, ES-01, FR-04). `prepareSign`/`submitSignedAssertion` are stubs pending US-04 (EUDISTACK-536).
+- **EUDISTACK-533 US-01 — Hybrid KeyManager adapter skeleton**: `HybridKeyManagerAdapter` implementing `KeyManagerPort` with credential-format allow-list validation (`vc+sd-jwt`, `jwt_vc_json`). Unsupported formats rejected with `UnsupportedCredentialFormatException` at `prepareSign` time (AC-05, ES-01, FR-04). `prepareSign`/`submitSignedAssertion` are stubs pending US-04 (EUDISTACK-536).
 - **EUDISTACK-533 US-01 — `KeyManagerPort` handshake contract** (R-1 workaround for EUDISTACK-5): `prepareSign(PrepareSignRequest)` and `submitSignedAssertion(SubmitSignedAssertionRequest)` added as default methods with `UnsupportedOperationException`. `DbKeyManagerService` inherits them without modification (FR-01).
 - **EUDISTACK-533 US-01 — `KeyManagerResolver`**: per-tenant factory resolving `DB` → `DbKeyManagerService`, `HYBRID` → `HybridKeyManagerAdapter`, `null` (BROWSER mode) → DB default, `HSM`/`QTSP` → fail-fast (AC-01, AC-02).
 - **EUDISTACK-533 US-01 — `HybridKeyManagerController`**: `POST /api/v1/keys/hybrid/sign/prepare` + `POST /api/v1/keys/hybrid/sign/submit`, guarded by `(SERVER, HYBRID)` wallet profile (AC-03, AC-04, ES-02, FR-03).
