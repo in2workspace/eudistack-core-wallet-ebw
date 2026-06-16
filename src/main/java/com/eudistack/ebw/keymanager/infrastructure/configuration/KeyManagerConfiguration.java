@@ -21,7 +21,9 @@ import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerContro
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HolderKeyR2dbcAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
+import com.eudistack.ebw.keymanager.application.KeyManagerResolver;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.DbKeyManagerService;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.service.HybridKeyManagerAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.health.KeyManagerHealthController;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -136,6 +138,19 @@ public class KeyManagerConfiguration {
     KeyManagerPort keyManagerPort(GenerateHolderKeyUseCase generateUseCase,
                                    SignHolderKeyUseCase signUseCase) {
         return new DbKeyManagerService(generateUseCase, signUseCase);
+    }
+
+    // --- EUDISTACK-533 US-01: Hybrid adapter + per-tenant resolver ---
+
+    @Bean
+    HybridKeyManagerAdapter hybridKeyManagerAdapter() {
+        return new HybridKeyManagerAdapter();
+    }
+
+    @Bean
+    KeyManagerResolver keyManagerResolver(KeyManagerPort keyManagerPort,
+                                          HybridKeyManagerAdapter hybridKeyManagerAdapter) {
+        return new KeyManagerResolver(keyManagerPort, hybridKeyManagerAdapter);
     }
 
     @Bean
