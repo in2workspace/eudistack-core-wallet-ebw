@@ -6,10 +6,10 @@ import com.eudistack.ebw.keymanager.domain.model.HolderKeyResult;
 import com.eudistack.ebw.keymanager.domain.model.SignHolderKeyCommand;
 import com.eudistack.ebw.keymanager.domain.model.SignHolderKeyResult;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.PrepareSignRequest;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.PrepareSignResponse;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.SubmitSignedAssertionRequest;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.SubmitSignedAssertionResponse;
+import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
+import com.eudistack.ebw.keymanager.domain.model.PrepareSignResponse;
+import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
+import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionResponse;
 import reactor.core.publisher.Mono;
 
 import java.util.Set;
@@ -30,8 +30,8 @@ import java.util.Set;
 public class HybridKeyManagerAdapter implements KeyManagerPort {
 
     private static final Set<String> SUPPORTED_FORMATS = Set.of(
-            "dc+sd-jwt",    // CredentialFormat.SD_JWT_VC
-            "jwt_vc_json"   // CredentialFormat.VC_JWT
+            "vc+sd-jwt",    // SD-JWT VC presentation format identifier (OID4VP, AC-05)
+            "jwt_vc_json"   // VC-JWT presentation format identifier (AC-05)
     );
 
     @Override

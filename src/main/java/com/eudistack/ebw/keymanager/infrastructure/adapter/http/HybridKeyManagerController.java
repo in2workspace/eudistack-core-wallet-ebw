@@ -2,11 +2,11 @@ package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.PrepareSignRequest;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.PrepareSignResponse;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.SubmitSignedAssertionRequest;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.SubmitSignedAssertionResponse;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.service.HybridKeyManagerAdapter;
+import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
+import com.eudistack.ebw.keymanager.domain.model.PrepareSignResponse;
+import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
+import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionResponse;
+import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
@@ -43,10 +43,10 @@ import reactor.core.publisher.Mono;
 @Validated
 public class HybridKeyManagerController {
 
-    private final HybridKeyManagerAdapter hybridAdapter;
+    private final KeyManagerPort hybridAdapter;
     private final WalletProfileQueryPort walletProfileQueryPort;
 
-    public HybridKeyManagerController(HybridKeyManagerAdapter hybridAdapter,
+    public HybridKeyManagerController(KeyManagerPort hybridAdapter,
                                        WalletProfileQueryPort walletProfileQueryPort) {
         this.hybridAdapter = hybridAdapter;
         this.walletProfileQueryPort = walletProfileQueryPort;

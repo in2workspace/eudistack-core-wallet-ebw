@@ -4,10 +4,10 @@ import com.eudistack.ebw.keymanager.domain.model.GenerateHolderKeyCommand;
 import com.eudistack.ebw.keymanager.domain.model.HolderKeyResult;
 import com.eudistack.ebw.keymanager.domain.model.SignHolderKeyCommand;
 import com.eudistack.ebw.keymanager.domain.model.SignHolderKeyResult;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.PrepareSignRequest;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.PrepareSignResponse;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.SubmitSignedAssertionRequest;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.SubmitSignedAssertionResponse;
+import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
+import com.eudistack.ebw.keymanager.domain.model.PrepareSignResponse;
+import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
+import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionResponse;
 import reactor.core.publisher.Mono;
 
 /**

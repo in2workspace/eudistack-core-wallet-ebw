@@ -3,7 +3,7 @@ package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.service.HybridKeyManagerAdapter;
+import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.TenantWalletProfile;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
@@ -51,7 +51,7 @@ class HybridKeyManagerControllerIT {
     private static final String SUBMIT_URL  = "/api/v1/keys/hybrid/sign/submit";
 
     @MockitoBean
-    HybridKeyManagerAdapter hybridAdapter;
+    KeyManagerPort hybridAdapter;
 
     @MockitoBean
     WalletProfileQueryPort walletProfileQueryPort;
@@ -91,7 +91,7 @@ class HybridKeyManagerControllerIT {
         webTestClient.post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
-                        {"credential_id":"cred-1","vp_challenge":"ch","format":"dc+sd-jwt"}
+                        {"credential_id":"cred-1","vp_challenge":"ch","format":"vc+sd-jwt"}
                         """)
                 .exchange()
                 .expectStatus().is5xxServerError();
@@ -106,7 +106,7 @@ class HybridKeyManagerControllerIT {
         webTestClient.post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
-                        {"credential_id":"cred-1","vp_challenge":"ch","format":"dc+sd-jwt"}
+                        {"credential_id":"cred-1","vp_challenge":"ch","format":"vc+sd-jwt"}
                         """)
                 .exchange()
                 .expectStatus().isForbidden()
@@ -141,7 +141,7 @@ class HybridKeyManagerControllerIT {
         webTestClient.post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
-                        {"vp_challenge":"ch","format":"dc+sd-jwt"}
+                        {"vp_challenge":"ch","format":"vc+sd-jwt"}
                         """)
                 .exchange()
                 .expectStatus().isBadRequest();

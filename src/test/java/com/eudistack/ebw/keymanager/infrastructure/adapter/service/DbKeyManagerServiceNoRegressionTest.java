@@ -3,8 +3,8 @@ package com.eudistack.ebw.keymanager.infrastructure.adapter.service;
 import com.eudistack.ebw.keymanager.application.GenerateHolderKeyUseCase;
 import com.eudistack.ebw.keymanager.application.SignHolderKeyUseCase;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.PrepareSignRequest;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.SubmitSignedAssertionRequest;
+import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
+import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
@@ -41,7 +41,7 @@ class DbKeyManagerServiceNoRegressionTest {
 
     @Test
     void prepareSign_inheritsDefaultMethodAndReturnsUnsupportedOperationException() {
-        PrepareSignRequest request = new PrepareSignRequest("cred-1", "challenge", "dc+sd-jwt");
+        PrepareSignRequest request = new PrepareSignRequest("cred-1", "challenge", "vc+sd-jwt");
 
         StepVerifier.create(service.prepareSign(request))
                 .expectErrorMatches(ex -> ex instanceof UnsupportedOperationException

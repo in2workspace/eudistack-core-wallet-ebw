@@ -1,11 +1,11 @@
-package com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto;
+package com.eudistack.ebw.keymanager.domain.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * Request DTO for {@code POST /api/v1/keys/hybrid/sign/submit}.
+ * Request for the hybrid (Passkey PRF) signing handshake — submit step.
  *
  * <p>The client echoes the {@code correlation_id} received from {@link PrepareSignResponse}
  * along with the PRF-derived signature produced client-side. The EBW verifies structural

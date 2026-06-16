@@ -25,7 +25,7 @@ import java.net.URI;
  *   <li>{@link WebExchangeBindException} → 400 without field details (ES-01 — prevents
  *       probing of valid field names via error messages).</li>
  *   <li>{@link UnsupportedCredentialFormatException} → 400 with {@code error=unsupported_format}
- *       (AC-05, ES-01 — format not in the allow-list {dc+sd-jwt, jwt_vc_json}).</li>
+ *       (AC-05, ES-01 — format not in the allow-list {vc+sd-jwt, jwt_vc_json}).</li>
  *   <li>{@link SignatureInvalidException} → 400 with {@code error=signature_invalid}
  *       (ES-03 — structurally invalid or mismatched client assertion).</li>
  *   <li>{@link TenantWalletProfileUnsupportedException}, {@link TenantUnknownException}

@@ -1,9 +1,9 @@
-package com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto;
+package com.eudistack.ebw.keymanager.domain.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Response DTO for {@code POST /api/v1/keys/hybrid/sign/submit}.
+ * Response from the hybrid (Passkey PRF) signing handshake — submit step.
  *
  * <p>Contains the key-binding JWT ({@code kb+jwt}) produced by the EBW after
  * verifying the client's signed assertion. The {@code kb_jwt} is a compact JWS

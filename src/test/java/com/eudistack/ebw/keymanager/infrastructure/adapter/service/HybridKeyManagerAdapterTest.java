@@ -1,7 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.service;
 
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.PrepareSignRequest;
+import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
@@ -53,8 +53,8 @@ class HybridKeyManagerAdapterTest {
     // --- AC-05: supported formats pass allow-list and reach the stub ---
 
     @Test
-    void prepareSign_givenSupportedFormat_dcSdJwt_thenPassesAllowList() {
-        PrepareSignRequest request = new PrepareSignRequest("cred-1", "challenge-abc", "dc+sd-jwt");
+    void prepareSign_givenSupportedFormat_vcSdJwt_thenPassesAllowList() {
+        PrepareSignRequest request = new PrepareSignRequest("cred-1", "challenge-abc", "vc+sd-jwt");
 
         // The stub throws UnsupportedOperationException (TODO US-04), NOT UnsupportedCredentialFormatException.
         // This confirms format validation passed.
