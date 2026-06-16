@@ -17,6 +17,8 @@ import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditCloudWatchAdapter;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerController;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HolderKeyR2dbcAdapter;
@@ -160,8 +162,20 @@ public class KeyManagerConfiguration {
     }
 
     @Bean
+    HybridKeyManagerController hybridKeyManagerController(
+            HybridKeyManagerAdapter hybridKeyManagerAdapter,
+            WalletProfileQueryPort walletProfileQueryPort) {
+        return new HybridKeyManagerController(hybridKeyManagerAdapter, walletProfileQueryPort);
+    }
+
+    @Bean
     KeyManagerExceptionHandler keyManagerExceptionHandler() {
         return new KeyManagerExceptionHandler();
+    }
+
+    @Bean
+    HybridKeyManagerExceptionHandler hybridKeyManagerExceptionHandler() {
+        return new HybridKeyManagerExceptionHandler();
     }
 
     @Bean
