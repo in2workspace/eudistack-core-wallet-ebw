@@ -4,6 +4,10 @@ import com.eudistack.ebw.keymanager.domain.model.GenerateHolderKeyCommand;
 import com.eudistack.ebw.keymanager.domain.model.HolderKeyResult;
 import com.eudistack.ebw.keymanager.domain.model.SignHolderKeyCommand;
 import com.eudistack.ebw.keymanager.domain.model.SignHolderKeyResult;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.PrepareSignRequest;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.PrepareSignResponse;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.SubmitSignedAssertionRequest;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.SubmitSignedAssertionResponse;
 import reactor.core.publisher.Mono;
 
 /**
@@ -37,4 +41,34 @@ public interface KeyManagerPort {
      *         domain exception on rejection
      */
     Mono<SignHolderKeyResult> signWithHolderKey(SignHolderKeyCommand cmd);
+
+    // TODO(EUDISTACK-5): prepareSign/submitSignedAssertion were to be delivered by EUDISTACK-5 SPI contract.
+    // Added here as workaround per EUDISTACK-533 R-1 decision (user approved 2026-06-16).
+
+    /**
+     * Initiates the hybrid (Passkey PRF) signing handshake.
+     *
+     * <p>The default implementation rejects with {@link UnsupportedOperationException} so
+     * that existing {@link KeyManagerPort} adapters ({@code DbKeyManagerService}) do not need
+     * to implement this method — it is only meaningful for {@code HybridKeyManagerAdapter}.</p>
+     *
+     * <p>Spec: EUDISTACK-533 FR-03, AC-03.</p>
+     */
+    default Mono<PrepareSignResponse> prepareSign(PrepareSignRequest request) {
+        return Mono.error(new UnsupportedOperationException(
+                "prepareSign not supported for this key manager type. Use signWithHolderKey instead."));
+    }
+
+    /**
+     * Finalises the hybrid signing handshake and produces the key-binding JWT.
+     *
+     * <p>The default implementation rejects with {@link UnsupportedOperationException} so
+     * that existing {@link KeyManagerPort} adapters do not need to implement this method.</p>
+     *
+     * <p>Spec: EUDISTACK-533 FR-03, AC-04.</p>
+     */
+    default Mono<SubmitSignedAssertionResponse> submitSignedAssertion(SubmitSignedAssertionRequest request) {
+        return Mono.error(new UnsupportedOperationException(
+                "submitSignedAssertion not supported for this key manager type. Use signWithHolderKey instead."));
+    }
 }
