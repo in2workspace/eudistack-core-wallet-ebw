@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - 2026-06-16
+
+- **EUDISTACK-533 US-01 — Hybrid KeyManager adapter skeleton**: `HybridKeyManagerAdapter` implementing `KeyManagerPort` with credential-format allow-list validation (`dc+sd-jwt`, `jwt_vc_json`). Unsupported formats rejected with `UnsupportedCredentialFormatException` at `prepareSign` time (AC-05, ES-01, FR-04). `prepareSign`/`submitSignedAssertion` are stubs pending US-04 (EUDISTACK-536).
+- **EUDISTACK-533 US-01 — `KeyManagerPort` handshake contract** (R-1 workaround for EUDISTACK-5): `prepareSign(PrepareSignRequest)` and `submitSignedAssertion(SubmitSignedAssertionRequest)` added as default methods with `UnsupportedOperationException`. `DbKeyManagerService` inherits them without modification (FR-01).
+- **EUDISTACK-533 US-01 — `KeyManagerResolver`**: per-tenant factory resolving `DB` → `DbKeyManagerService`, `HYBRID` → `HybridKeyManagerAdapter`, `null` (BROWSER mode) → DB default, `HSM`/`QTSP` → fail-fast (AC-01, AC-02).
+- **EUDISTACK-533 US-01 — `HybridKeyManagerController`**: `POST /api/v1/keys/hybrid/sign/prepare` + `POST /api/v1/keys/hybrid/sign/submit`, guarded by `(SERVER, HYBRID)` wallet profile (AC-03, AC-04, ES-02, FR-03).
+- **EUDISTACK-533 US-01 — `HybridKeyManagerExceptionHandler`**: maps `UnsupportedCredentialFormatException` → 400 `error=unsupported_format`; `SignatureInvalidException` → 400 `error=signature_invalid`; tenant profile mismatch → 403 opaque (AC-05, ES-01, ES-02, ES-03).
+- **EUDISTACK-533 US-01 — Handshake DTOs**: `PrepareSignRequest` (credential_id, vp_challenge, format), `PrepareSignResponse` (prf_salt, wrapped_blob, iv, tag, kdf_params, signing_input, correlation_id), `SubmitSignedAssertionRequest` (credential_id, signature, correlation_id), `SubmitSignedAssertionResponse` (kb_jwt).
+- **EUDISTACK-533 US-01 — `SignatureInvalidException`**: domain exception for structurally invalid client assertions (ES-03).
+
 ### Changed - 2026-06-12
 
 - **Tenant resolution (`trust-forwarded-host=true`)**: when `ebw.security.trust-forwarded-host` is enabled, the filter now resolves the tenant from the `X-Tenant` header first and, if that header is absent, blank or invalid, falls back to the first subdomain of `X-Forwarded-Host`. If neither trusted-proxy header yields a valid tenant, the filter now falls back to the first subdomain of the `Host` header. This preserves trusted-proxy resolution while keeping `Host` as a final fallback for requests where forwarded headers are not present.
