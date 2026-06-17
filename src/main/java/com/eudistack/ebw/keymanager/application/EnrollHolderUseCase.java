@@ -8,16 +8,11 @@ import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.dao.DataIntegrityViolationException;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.Map;
 
 /**
  * Application use case for hybrid-mode holder key enrolment.
@@ -35,8 +30,8 @@ import java.util.Map;
  * <ul>
  *   <li>Identical re-submit → acknowledge (AC-07).</li>
  *   <li>Different blob for the same tuple → {@link OnboardingStateException} (ES-03).</li>
- *   <li>Concurrent first-submit race → {@link DataIntegrityViolationException} mapped to
- *       {@link OnboardingStateException}.</li>
+ *   <li>Concurrent first-submit race → duplicate key error mapped to
+ *       {@link OnboardingStateException} (handled in the R2DBC adapter).</li>
  * </ul>
  *
  * <p>Security invariants enforced here (never in the HTTP layer):
@@ -44,8 +39,10 @@ import java.util.Map;
  *   <li>{@code wrapped_blob} ≥ 48 bytes after base64url decode (ES-01).</li>
  *   <li>{@code iv} = 12 bytes (AES-GCM nonce) (ES-01).</li>
  *   <li>{@code tag} = 16 bytes (AES-GCM authentication tag) (ES-01).</li>
- *   <li>{@code cnf_jwk} must not contain private key parameter {@code "d"} (AC-03).</li>
  * </ul>
+ *
+ * <p>{@code cnf_jwk} must not contain private key parameter {@code "d"} (AC-03) — validated
+ * by the controller before invoking this use case.</p>
  *
  * <p>The {@code holder_id} is injected by the controller from the DPoP session — it is
  * NEVER read from the request body (AC-06).</p>
@@ -60,14 +57,11 @@ public class EnrollHolderUseCase {
 
     private final PrfSaltUseCase prfSaltUseCase;
     private final WrappedKeyHandleRepository wrappedKeyHandleRepository;
-    private final ObjectMapper objectMapper;
 
     public EnrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
-                                WrappedKeyHandleRepository wrappedKeyHandleRepository,
-                                ObjectMapper objectMapper) {
+                                WrappedKeyHandleRepository wrappedKeyHandleRepository) {
         this.prfSaltUseCase = prfSaltUseCase;
         this.wrappedKeyHandleRepository = wrappedKeyHandleRepository;
-        this.objectMapper = objectMapper;
     }
 
     /**
@@ -138,24 +132,11 @@ public class EnrollHolderUseCase {
                         "tag must decode to exactly 16 bytes (AES-GCM authentication tag)"));
             }
 
-            // Step 2 — validate cnf_jwk contains only public key material (no "d")
-            try {
-                Map<String, Object> jwkFields = objectMapper.readValue(
-                        req.cnfJwk(), new TypeReference<>() { });
-                if (jwkFields.containsKey("d")) {
-                    return Mono.error(new InvalidCommitException(
-                            "cnf_jwk must not contain private key parameter 'd' (AC-03)"));
-                }
-            } catch (JsonProcessingException e) {
-                return Mono.error(new InvalidCommitException(
-                        "cnf_jwk is not valid JSON"));
-            }
-
             final byte[] blob = wrappedBlobBytes;
             final byte[] iv   = ivBytes;
             final byte[] tag  = tagBytes;
 
-            // Step 3 — idempotency check
+            // Step 2 — idempotency check
             return wrappedKeyHandleRepository.findBy(tenantId, holderId, req.credentialId())
                     .flatMap(existingOpt -> {
                         if (existingOpt.isPresent()) {
@@ -173,7 +154,7 @@ public class EnrollHolderUseCase {
                                     "for this credential (idempotency_replay)"));
                         }
 
-                        // Step 4 — first-time commit: persist and return 201
+                        // Step 3 — first-time commit: persist and return 201
                         WrappedKeyHandle handle = new WrappedKeyHandle(
                                 tenantId, holderId, req.credentialId(),
                                 blob, iv, tag,
@@ -181,10 +162,7 @@ public class EnrollHolderUseCase {
                                 req.cnfJwk(), Instant.now(), null);
 
                         return wrappedKeyHandleRepository.insert(handle)
-                                .thenReturn(new EnrollHolderCommitResponse(req.credentialId()))
-                                .onErrorMap(DataIntegrityViolationException.class, e ->
-                                        new OnboardingStateException(
-                                                "Concurrent duplicate commit for this credential"));
+                                .thenReturn(new EnrollHolderCommitResponse(req.credentialId()));
                     });
         });
     }

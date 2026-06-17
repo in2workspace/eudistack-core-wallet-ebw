@@ -3,6 +3,7 @@ package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
+import com.eudistack.ebw.keymanager.domain.exception.InvalidCommitException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitResponse;
@@ -11,6 +12,9 @@ import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
+
+import java.util.Map;
 
 /**
  * REST controller for the hybrid (Passkey PRF) onboarding flow.
@@ -47,11 +53,14 @@ public class HybridOnboardingController {
 
     private final EnrollHolderUseCase enrollHolderUseCase;
     private final WalletProfileQueryPort walletProfileQueryPort;
+    private final ObjectMapper objectMapper;
 
     public HybridOnboardingController(EnrollHolderUseCase enrollHolderUseCase,
-                                       WalletProfileQueryPort walletProfileQueryPort) {
+                                       WalletProfileQueryPort walletProfileQueryPort,
+                                       ObjectMapper objectMapper) {
         this.enrollHolderUseCase = enrollHolderUseCase;
         this.walletProfileQueryPort = walletProfileQueryPort;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -103,6 +112,17 @@ public class HybridOnboardingController {
     public Mono<ResponseEntity<EnrollHolderCommitResponse>> commit(
             @Valid @RequestBody EnrollHolderCommitRequest request,
             JwtAuthenticationToken auth) {
+
+        // Validate cnf_jwk: must be valid JSON without private key parameter "d" (AC-03)
+        try {
+            Map<String, Object> jwk = objectMapper.readValue(request.cnfJwk(), new TypeReference<>() {});
+            if (jwk.containsKey("d")) {
+                return Mono.error(new InvalidCommitException(
+                        "cnf_jwk must not contain private key parameter 'd' (AC-03)"));
+            }
+        } catch (JsonProcessingException e) {
+            return Mono.error(new InvalidCommitException("cnf_jwk is not valid JSON"));
+        }
 
         String holderId = auth.getUserId().toString();
 

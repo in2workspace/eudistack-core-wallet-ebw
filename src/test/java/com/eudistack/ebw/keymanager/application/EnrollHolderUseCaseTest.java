@@ -8,7 +8,6 @@ import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -61,7 +60,7 @@ class EnrollHolderUseCaseTest {
 
     @BeforeEach
     void setUp() {
-        useCase = new EnrollHolderUseCase(prfSaltUseCase, repository, new ObjectMapper());
+        useCase = new EnrollHolderUseCase(prfSaltUseCase, repository);
     }
 
     // ------------------------------------------------------------------ init
@@ -196,33 +195,14 @@ class EnrollHolderUseCaseTest {
                 .verify();
     }
 
-    @Test
-    void commit_cnfJwkContainsPrivateKeyField_throwsInvalidCommitException() {
-        String cnfJwkWithD = "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"abc\",\"y\":\"def\",\"d\":\"secret\"}";
-
-        StepVerifier.create(useCase.commit(TENANT, HOLDER,
-                new EnrollHolderCommitRequest(CRED_ID, BLOB_B64, IV_B64, TAG_B64,
-                        "HKDF-SHA-256", 1, cnfJwkWithD)))
-                .expectError(InvalidCommitException.class)
-                .verify();
-
-        verify(repository, never()).findBy(any(), any(), any());
-    }
+    // AC-03 (cnf_jwk must not contain "d") is validated by HybridOnboardingController before
+    // reaching this use case — see EnrollHolderControllerIT for coverage.
 
     @Test
     void commit_invalidBase64url_throwsInvalidCommitException() {
         StepVerifier.create(useCase.commit(TENANT, HOLDER,
                 new EnrollHolderCommitRequest(CRED_ID, "not-valid-base64!!!", IV_B64, TAG_B64,
                         "HKDF-SHA-256", 1, CNF_JWK)))
-                .expectError(InvalidCommitException.class)
-                .verify();
-    }
-
-    @Test
-    void commit_cnfJwkNotValidJson_throwsInvalidCommitException() {
-        StepVerifier.create(useCase.commit(TENANT, HOLDER,
-                new EnrollHolderCommitRequest(CRED_ID, BLOB_B64, IV_B64, TAG_B64,
-                        "HKDF-SHA-256", 1, "not-json")))
                 .expectError(InvalidCommitException.class)
                 .verify();
     }

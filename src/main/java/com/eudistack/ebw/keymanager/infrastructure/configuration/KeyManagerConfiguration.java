@@ -212,15 +212,15 @@ public class KeyManagerConfiguration {
 
     @Bean
     EnrollHolderUseCase enrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
-                                             WrappedKeyHandleRepository wrappedKeyHandleRepository,
-                                             ObjectMapper objectMapper) {
-        return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository, objectMapper);
+                                             WrappedKeyHandleRepository wrappedKeyHandleRepository) {
+        return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository);
     }
 
     @Bean
     HybridOnboardingController hybridOnboardingController(
             EnrollHolderUseCase enrollHolderUseCase,
-            WalletProfileQueryPort walletProfileQueryPort) {
-        return new HybridOnboardingController(enrollHolderUseCase, walletProfileQueryPort);
+            WalletProfileQueryPort walletProfileQueryPort,
+            ObjectMapper objectMapper) {
+        return new HybridOnboardingController(enrollHolderUseCase, walletProfileQueryPort, objectMapper);
     }
 }

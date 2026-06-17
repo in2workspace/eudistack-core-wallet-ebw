@@ -1,9 +1,11 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc;
 
+import com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
 import io.r2dbc.spi.Row;
 import io.r2dbc.spi.RowMetadata;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.r2dbc.core.DatabaseClient;
 import reactor.core.publisher.Mono;
 
@@ -72,7 +74,9 @@ public class HybridWrappedKeyHandleR2dbcAdapter implements WrappedKeyHandleRepos
                 .bind("createdAt",    handle.createdAt())
                 .fetch()
                 .rowsUpdated()
-                .then();
+                .then()
+                .onErrorMap(DataIntegrityViolationException.class, e ->
+                        new OnboardingStateException("Concurrent duplicate commit for this credential"));
     }
 
     private WrappedKeyHandle rowToHandle(Row row, RowMetadata metadata) {
