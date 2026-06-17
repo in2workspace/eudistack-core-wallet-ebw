@@ -17,11 +17,15 @@ import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditCloudWatchAdapter;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerController;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HolderKeyR2dbcAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
+import com.eudistack.ebw.keymanager.application.KeyManagerResolver;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.DbKeyManagerService;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.service.HybridKeyManagerAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.health.KeyManagerHealthController;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -138,6 +142,19 @@ public class KeyManagerConfiguration {
         return new DbKeyManagerService(generateUseCase, signUseCase);
     }
 
+    // --- EUDISTACK-533 US-01: Hybrid adapter + per-tenant resolver ---
+
+    @Bean
+    HybridKeyManagerAdapter hybridKeyManagerAdapter() {
+        return new HybridKeyManagerAdapter();
+    }
+
+    @Bean
+    KeyManagerResolver keyManagerResolver(KeyManagerPort keyManagerPort,
+                                          HybridKeyManagerAdapter hybridKeyManagerAdapter) {
+        return new KeyManagerResolver(keyManagerPort, hybridKeyManagerAdapter);
+    }
+
     @Bean
     KeyManagerController keyManagerController(KeyManagerPort keyManagerPort,
                                                WalletProfileQueryPort walletProfileQueryPort) {
@@ -145,8 +162,20 @@ public class KeyManagerConfiguration {
     }
 
     @Bean
+    HybridKeyManagerController hybridKeyManagerController(
+            HybridKeyManagerAdapter hybridKeyManagerAdapter,
+            WalletProfileQueryPort walletProfileQueryPort) {
+        return new HybridKeyManagerController(hybridKeyManagerAdapter, walletProfileQueryPort);
+    }
+
+    @Bean
     KeyManagerExceptionHandler keyManagerExceptionHandler() {
         return new KeyManagerExceptionHandler();
+    }
+
+    @Bean
+    HybridKeyManagerExceptionHandler hybridKeyManagerExceptionHandler() {
+        return new HybridKeyManagerExceptionHandler();
     }
 
     @Bean
