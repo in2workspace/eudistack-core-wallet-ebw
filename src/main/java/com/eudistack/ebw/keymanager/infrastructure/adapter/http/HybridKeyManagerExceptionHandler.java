@@ -1,5 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.keymanager.domain.exception.InvalidCommitException;
+import com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException;
 import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
@@ -33,10 +35,19 @@ import java.net.URI;
  *   <li>Any other {@link Exception} → 500 (catch-all, class name only to prevent leakage).</li>
  * </ul>
  *
- * <p>Spec: EUDISTACK-533 AC-03, AC-04, AC-05, ES-01, ES-03; architecture.md §8.3.</p>
+ * <p>Additional mappings for EUDISTACK-534 (onboarding endpoints):
+ * <ul>
+ *   <li>{@link InvalidCommitException} → 400 with {@code error=invalid_request}
+ *       (ES-01 — byte-length invariants, private key in cnf_jwk).</li>
+ *   <li>{@link OnboardingStateException} → 409 with {@code error=idempotency_replay}
+ *       (ES-03 — different blob for same holder+credential, or PRF salt missing).</li>
+ * </ul>
+ *
+ * <p>Spec: EUDISTACK-533 AC-03, AC-04, AC-05, ES-01, ES-03;
+ *          EUDISTACK-534 ES-01, ES-02, ES-03; architecture.md §8.3.</p>
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = HybridKeyManagerController.class)
+@RestControllerAdvice(assignableTypes = {HybridKeyManagerController.class, HybridOnboardingController.class})
 public class HybridKeyManagerExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(HybridKeyManagerExceptionHandler.class);
@@ -73,6 +84,30 @@ public class HybridKeyManagerExceptionHandler {
     @ExceptionHandler({TenantWalletProfileUnsupportedException.class, TenantUnknownException.class})
     public ResponseEntity<Void> handleForbidden(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
+
+    /**
+     * ES-01 (EUDISTACK-534): structurally invalid commit — byte lengths wrong or
+     * {@code cnf_jwk} contains the private key parameter {@code "d"}.
+     */
+    @ExceptionHandler(InvalidCommitException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidCommit(InvalidCommitException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        problem.setType(URI.create(TYPE_BASE + "invalid-request"));
+        problem.setProperty("error", "invalid_request");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    /**
+     * ES-03 (EUDISTACK-534): onboarding state conflict — different blob for same
+     * {@code (holderId, credentialId)}, missing PRF salt, or concurrent duplicate.
+     */
+    @ExceptionHandler(OnboardingStateException.class)
+    public ResponseEntity<ProblemDetail> handleOnboardingState(OnboardingStateException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
+        problem.setType(URI.create(TYPE_BASE + "idempotency-replay"));
+        problem.setProperty("error", "idempotency_replay");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
     }
 
     @ExceptionHandler(Exception.class)
