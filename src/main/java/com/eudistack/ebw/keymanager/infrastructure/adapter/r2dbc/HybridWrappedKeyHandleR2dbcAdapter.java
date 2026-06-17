@@ -3,6 +3,7 @@ package com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
 import io.r2dbc.spi.Row;
+import io.r2dbc.spi.RowMetadata;
 import org.springframework.r2dbc.core.DatabaseClient;
 import reactor.core.publisher.Mono;
 
@@ -74,7 +75,7 @@ public class HybridWrappedKeyHandleR2dbcAdapter implements WrappedKeyHandleRepos
                 .then();
     }
 
-    private WrappedKeyHandle rowToHandle(Row row) {
+    private WrappedKeyHandle rowToHandle(Row row, RowMetadata metadata) {
         return new WrappedKeyHandle(
                 row.get("tenant_id",     String.class),
                 row.get("holder_id",     String.class),
