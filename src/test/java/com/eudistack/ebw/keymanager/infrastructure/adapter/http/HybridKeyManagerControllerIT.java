@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
@@ -55,6 +56,9 @@ class HybridKeyManagerControllerIT {
 
     @MockitoBean
     WalletProfileQueryPort walletProfileQueryPort;
+
+    @MockitoBean
+    AuditService auditService;
 
     @Autowired
     WebTestClient webTestClient;
