@@ -1,13 +1,13 @@
 package com.eudistack.ebw.keymanager.infrastructure.configuration;
 
 import com.eudistack.ebw.keymanager.application.AlgorithmNegotiator;
-import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
 import com.eudistack.ebw.keymanager.application.GenerateHolderKeyUseCase;
-import com.eudistack.ebw.keymanager.application.PrfSaltUseCase;
 import com.eudistack.ebw.keymanager.application.HolderKeyFactory;
 import com.eudistack.ebw.keymanager.application.IssuanceProofSigner;
 import com.eudistack.ebw.keymanager.application.JwsSigner;
 import com.eudistack.ebw.keymanager.application.KbJwtSigner;
+import com.eudistack.ebw.keymanager.application.KeyManagerResolver;
+import com.eudistack.ebw.keymanager.application.PrfSaltService;
 import com.eudistack.ebw.keymanager.application.SignHolderKeyUseCase;
 import com.eudistack.ebw.keymanager.application.SignRejectionUniformDelay;
 import com.eudistack.ebw.keymanager.application.SignerSelector;
@@ -19,19 +19,16 @@ import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditCloudWatchAdapter;
-import com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException;
-import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerExceptionHandler;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridOnboardingController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HolderKeyR2dbcAdapter;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HybridWrappedKeyHandleR2dbcAdapter;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.PrfSaltRepository;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
-import com.eudistack.ebw.keymanager.application.KeyManagerResolver;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.DbKeyManagerService;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.HybridKeyManagerAdapter;
+import com.eudistack.ebw.keymanager.infrastructure.health.HybridHealthContributor;
 import com.eudistack.ebw.keymanager.infrastructure.health.KeyManagerHealthController;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -189,38 +186,20 @@ public class KeyManagerConfiguration {
         return new KeyManagerHealthController(connectionFactory);
     }
 
-    // --- EUDISTACK-534 US-02: Hybrid onboarding beans ---
+    // --- EUDISTACK-537 US-05: PRF salt persistence, use case + health indicator ---
 
     @Bean
-    HybridWrappedKeyHandleR2dbcAdapter hybridWrappedKeyHandleR2dbcAdapter(
-            DatabaseClient databaseClient) {
-        return new HybridWrappedKeyHandleR2dbcAdapter(databaseClient);
-    }
-
-    /**
-     * Fallback {@link PrfSaltUseCase} registered when US-05 (EUDISTACK-537) has not yet
-     * provided a real implementation. Every call to {@code init} will fail with
-     * {@link OnboardingStateException} until the real bean is registered.
-     */
-    @Bean
-    @ConditionalOnMissingBean(PrfSaltUseCase.class)
-    PrfSaltUseCase prfSaltUseCaseNotYetAvailable() {
-        return (tenantId, holderId, credentialId) -> Mono.error(
-                new OnboardingStateException(
-                        "PRF salt service not available — requires US-05 (EUDISTACK-537)"));
+    HybridHealthContributor hybridHealthContributor(DatabaseClient databaseClient) {
+        return new HybridHealthContributor(databaseClient);
     }
 
     @Bean
-    EnrollHolderUseCase enrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
-                                             WrappedKeyHandleRepository wrappedKeyHandleRepository) {
-        return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository);
+    PrfSaltRepository prfSaltRepository(DatabaseClient databaseClient) {
+        return new PrfSaltRepository(databaseClient);
     }
 
     @Bean
-    HybridOnboardingController hybridOnboardingController(
-            EnrollHolderUseCase enrollHolderUseCase,
-            WalletProfileQueryPort walletProfileQueryPort,
-            ObjectMapper objectMapper) {
-        return new HybridOnboardingController(enrollHolderUseCase, walletProfileQueryPort, objectMapper);
+    PrfSaltService prfSaltService(PrfSaltRepository prfSaltRepository) {
+        return new PrfSaltService(prfSaltRepository);
     }
 }

@@ -1,7 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
-import com.eudistack.ebw.keymanager.domain.exception.InvalidCommitException;
-import com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException;
+import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException;
+import com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException;
 import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
@@ -35,19 +35,11 @@ import java.net.URI;
  *   <li>Any other {@link Exception} → 500 (catch-all, class name only to prevent leakage).</li>
  * </ul>
  *
- * <p>Additional mappings for EUDISTACK-534 (onboarding endpoints):
- * <ul>
- *   <li>{@link InvalidCommitException} → 400 with {@code error=invalid_request}
- *       (ES-01 — byte-length invariants, private key in cnf_jwk).</li>
- *   <li>{@link OnboardingStateException} → 409 with {@code error=idempotency_replay}
- *       (ES-03 — different blob for same holder+credential, or PRF salt missing).</li>
- * </ul>
- *
  * <p>Spec: EUDISTACK-533 AC-03, AC-04, AC-05, ES-01, ES-03;
- *          EUDISTACK-534 ES-01, ES-02, ES-03; architecture.md §8.3.</p>
+ *          EUDISTACK-537 ES-02, ES-04; architecture.md §8.3.</p>
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = {HybridKeyManagerController.class, HybridOnboardingController.class})
+@RestControllerAdvice(assignableTypes = HybridKeyManagerController.class)
 public class HybridKeyManagerExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(HybridKeyManagerExceptionHandler.class);
@@ -87,27 +79,33 @@ public class HybridKeyManagerExceptionHandler {
     }
 
     /**
-     * ES-01 (EUDISTACK-534): structurally invalid commit — byte lengths wrong or
-     * {@code cnf_jwk} contains the private key parameter {@code "d"}.
+     * ES-02, ES-04 (EUDISTACK-537): PRF salt not found for the requested credential.
+     * Maps to 404 with {@code error=wrap_handle_not_found} (architecture.md §8.3).
+     * No {@code prf_salt} value is included in the response body (AC-06, NFR-S-537-01).
      */
-    @ExceptionHandler(InvalidCommitException.class)
-    public ResponseEntity<ProblemDetail> handleInvalidCommit(InvalidCommitException ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        problem.setType(URI.create(TYPE_BASE + "invalid-request"));
-        problem.setProperty("error", "invalid_request");
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    @ExceptionHandler(PrfSaltNotFoundException.class)
+    public ResponseEntity<ProblemDetail> handlePrfSaltNotFound(PrfSaltNotFoundException ex) {
+        log.debug("keymanager.hybrid.prf_salt_not_found credential_present=false");
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+        problem.setType(URI.create(TYPE_BASE + "wrap-handle-not-found"));
+        problem.setProperty("error", "wrap_handle_not_found");
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
     }
 
     /**
-     * ES-03 (EUDISTACK-534): onboarding state conflict — different blob for same
-     * {@code (holderId, credentialId)}, missing PRF salt, or concurrent duplicate.
+     * AC-04, ES-04 (EUDISTACK-537): holder attempted to access a credential owned by a
+     * different holder. Maps to 403 with {@code error=holder_isolation_violation}
+     * (architecture.md §8.3).
+     * No {@code prf_salt} value or owning {@code holder_id} is included in the response
+     * body (AC-06, NFR-S-537-01, NFR-S-537-02).
      */
-    @ExceptionHandler(OnboardingStateException.class)
-    public ResponseEntity<ProblemDetail> handleOnboardingState(OnboardingStateException ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
-        problem.setType(URI.create(TYPE_BASE + "idempotency-replay"));
-        problem.setProperty("error", "idempotency_replay");
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
+    @ExceptionHandler(HolderIsolationViolationException.class)
+    public ResponseEntity<ProblemDetail> handleHolderIsolation(HolderIsolationViolationException ex) {
+        log.debug("keymanager.hybrid.holder_isolation_violation");
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
+        problem.setType(URI.create(TYPE_BASE + "holder-isolation-violation"));
+        problem.setProperty("error", "holder_isolation_violation");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem);
     }
 
     @ExceptionHandler(Exception.class)
