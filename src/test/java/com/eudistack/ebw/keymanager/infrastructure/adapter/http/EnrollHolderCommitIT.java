@@ -140,7 +140,6 @@ class EnrollHolderCommitIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.createStatement().execute(
                     "CREATE TABLE IF NOT EXISTS " + schema + ".hybrid_wrapped_key_handle ("
-                    + "  tenant_id     TEXT NOT NULL,"
                     + "  holder_id     TEXT NOT NULL,"
                     + "  credential_id TEXT NOT NULL,"
                     + "  wrapped_blob  BYTEA NOT NULL,"
@@ -250,7 +249,7 @@ class EnrollHolderCommitIT {
                 .exchange()
                 .expectStatus().isEqualTo(409)
                 .expectBody()
-                .jsonPath("$.properties.error").isEqualTo("idempotency_replay");
+                .jsonPath("$.error").isEqualTo("idempotency_replay");
     }
 
     // ------------------------------------------------------------------ ES-01

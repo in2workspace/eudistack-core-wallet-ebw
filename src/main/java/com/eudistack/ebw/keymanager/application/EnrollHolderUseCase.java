@@ -26,7 +26,7 @@ import java.util.Base64;
  *
  * <h2>commit — full implementation (US-02)</h2>
  * <p>Receives the AES-256-GCM-wrapped holder private key and persists exactly one handle
- * per {@code (tenantId, holderId, credentialId)} tuple, with idempotency:
+ * per {@code (holderId, credentialId)} composite (tenant isolation via {@code search_path}), with idempotency:
  * <ul>
  *   <li>Identical re-submit → acknowledge (AC-07).</li>
  *   <li>Different blob for the same tuple → {@link OnboardingStateException} (ES-03).</li>
@@ -91,19 +91,18 @@ public class EnrollHolderUseCase {
      * Commits the wrapped holder key produced by the Wallet PWA.
      *
      * <p>Validates, decodes, checks idempotency, and persists exactly one handle per
-     * {@code (tenantId, holderId, credentialId)} composite. See class javadoc for the
-     * full invariant set.</p>
+     * {@code (holderId, credentialId)} composite (tenant isolation via {@code search_path}).
+     * See class javadoc for the full invariant set.</p>
      *
-     * @param tenantId  tenant extracted from Reactor context by the controller
      * @param holderId  holder UUID from DPoP session (not from the request body)
      * @param req       validated commit request
-     * @return commit response confirming the enrolled credential ID (HTTP 201)
+     * @return commit response confirming the enrolled credential ID (201 new / 200 replay)
      * @throws InvalidCommitException   if any byte-length invariant fails or {@code cnf_jwk}
      *                                  contains a private key parameter
      * @throws OnboardingStateException if a different blob already exists (409) or a
      *                                  concurrent insert races to the same composite PK
      */
-    public Mono<EnrollHolderCommitResponse> commit(String tenantId, String holderId,
+    public Mono<EnrollHolderCommitResponse> commit(String holderId,
                                                     EnrollHolderCommitRequest req) {
         return Mono.defer(() -> {
             // Step 1 — decode and validate byte lengths
@@ -137,7 +136,7 @@ public class EnrollHolderUseCase {
             final byte[] tag  = tagBytes;
 
             // Step 2 — idempotency check
-            return wrappedKeyHandleRepository.findBy(tenantId, holderId, req.credentialId())
+            return wrappedKeyHandleRepository.findBy(holderId, req.credentialId())
                     .flatMap(existingOpt -> {
                         if (existingOpt.isPresent()) {
                             WrappedKeyHandle existing = existingOpt.get();
@@ -145,8 +144,8 @@ public class EnrollHolderUseCase {
                                     && Arrays.equals(existing.iv(), iv)
                                     && Arrays.equals(existing.tag(), tag);
                             if (sameBlob) {
-                                // Identical re-submit → idempotent ACK (AC-07)
-                                return Mono.just(new EnrollHolderCommitResponse(req.credentialId()));
+                                // Identical re-submit → idempotent ACK (AC-07), returns 200
+                                return Mono.just(new EnrollHolderCommitResponse(req.credentialId(), true));
                             }
                             // Different blob → conflict (ES-03)
                             return Mono.error(new OnboardingStateException(
@@ -156,13 +155,13 @@ public class EnrollHolderUseCase {
 
                         // Step 3 — first-time commit: persist and return 201
                         WrappedKeyHandle handle = new WrappedKeyHandle(
-                                tenantId, holderId, req.credentialId(),
+                                holderId, req.credentialId(),
                                 blob, iv, tag,
                                 req.kdfAlgo(), req.kdfVersion(),
                                 req.cnfJwk(), Instant.now(), null);
 
                         return wrappedKeyHandleRepository.insert(handle)
-                                .thenReturn(new EnrollHolderCommitResponse(req.credentialId()));
+                                .thenReturn(new EnrollHolderCommitResponse(req.credentialId(), false));
                     });
         });
     }

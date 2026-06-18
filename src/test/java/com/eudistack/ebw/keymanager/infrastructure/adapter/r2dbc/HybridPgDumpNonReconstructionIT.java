@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc;
 
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
 import org.junit.jupiter.api.BeforeAll;
@@ -115,7 +116,6 @@ class HybridPgDumpNonReconstructionIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.createStatement().execute(
                     "CREATE TABLE IF NOT EXISTS " + TENANT + SCHEMA_SUFFIX + ".hybrid_wrapped_key_handle ("
-                    + "  tenant_id     TEXT NOT NULL,"
                     + "  holder_id     TEXT NOT NULL,"
                     + "  credential_id TEXT NOT NULL,"
                     + "  wrapped_blob  BYTEA NOT NULL,"
@@ -144,13 +144,14 @@ class HybridPgDumpNonReconstructionIT {
     @Test
     void pgDump_wrappedBlobColumn_doesNotContainSimulatedPlaintextKey() throws SQLException {
         WrappedKeyHandle handle = new WrappedKeyHandle(
-                TENANT, HOLDER, CRED_ID,
+                HOLDER, CRED_ID,
                 WRAPPED_BLOB, IV, TAG,
                 "HKDF-SHA-256", 1,
                 "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"abc\",\"y\":\"def\"}",
                 Instant.now(), null);
 
-        StepVerifier.create(repository.insert(handle))
+        StepVerifier.create(repository.insert(handle)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TENANT)))
                 .verifyComplete();
 
         // Read the raw blob bytes directly from JDBC to simulate a pg_dump inspection

@@ -6,7 +6,7 @@ import java.util.Objects;
 
 /**
  * Domain aggregate representing the AES-256-GCM-wrapped holder private key stored per
- * {@code (tenantId, holderId, credentialId)} tuple.
+ * {@code (holderId, credentialId)} composite key (tenant isolation via PostgreSQL {@code search_path}).
  *
  * <p>Security constraints (AC-02, AC-03, NFR-04):
  * <ul>
@@ -23,7 +23,6 @@ import java.util.Objects;
  * <p>Spec: EUDISTACK-534 AC-02, AC-03, AC-04, AC-05; architecture.md §5.3.</p>
  */
 public record WrappedKeyHandle(
-        String tenantId,
         String holderId,
         String credentialId,
         byte[] wrappedBlob,
@@ -37,8 +36,6 @@ public record WrappedKeyHandle(
 ) {
 
     public WrappedKeyHandle {
-        Objects.requireNonNull(tenantId, "tenantId must not be null");
-        if (tenantId.isBlank()) throw new IllegalArgumentException("tenantId must not be blank");
         Objects.requireNonNull(holderId, "holderId must not be null");
         if (holderId.isBlank()) throw new IllegalArgumentException("holderId must not be blank");
         Objects.requireNonNull(credentialId, "credentialId must not be null");
@@ -80,8 +77,7 @@ public record WrappedKeyHandle(
     @Override
     public String toString() {
         return "WrappedKeyHandle["
-                + "tenantId=" + tenantId
-                + ", holderId=" + holderId
+                + "holderId=" + holderId
                 + ", credentialId=" + credentialId
                 + ", wrappedBlob=[REDACTED]"
                 + ", iv=[REDACTED]"

@@ -18,7 +18,6 @@ import java.time.Instant;
  */
 public class WrappedKeyHandleRow {
 
-    private String tenantId;
     private String holderId;
     private String credentialId;
     private byte[] wrappedBlob;
@@ -29,9 +28,6 @@ public class WrappedKeyHandleRow {
     private String cnfJwk;
     private Instant createdAt;
     private Instant lastUsedAt;
-
-    public String getTenantId() { return tenantId; }
-    public void setTenantId(String tenantId) { this.tenantId = tenantId; }
 
     public String getHolderId() { return holderId; }
     public void setHolderId(String holderId) { this.holderId = holderId; }

@@ -8,8 +8,9 @@ import java.util.Optional;
 /**
  * Write + read port for wrapped key handle persistence.
  *
- * <p>One handle per {@code (tenantId, holderId, credentialId)} composite — enforced by
- * the {@code hybrid_wrapped_key_handle} composite primary key (US-03 / EUDISTACK-535 DDL).
+ * <p>One handle per {@code (holderId, credentialId)} composite — enforced by
+ * the {@code hybrid_wrapped_key_handle} primary key (US-03 / EUDISTACK-535 DDL).
+ * Tenant isolation is via PostgreSQL {@code search_path} (architecture.md §5.3).
  * A duplicate INSERT propagates a {@link org.springframework.dao.DataIntegrityViolationException}
  * to the use case, which maps it to an
  * {@link com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException}.</p>
@@ -27,16 +28,18 @@ public interface WrappedKeyHandleRepository {
      * Returns the existing handle for the given composite key, or {@link Optional#empty()}
      * if none has been committed yet.
      *
-     * @param tenantId     tenant owning the credential
-     * @param holderId     holder within that tenant
+     * <p>Tenant isolation is provided by the PostgreSQL {@code search_path} set on each
+     * connection by {@code TenantAwareConnectionFactoryDecorator} (architecture.md §5.3).</p>
+     *
+     * @param holderId     holder within the current tenant schema
      * @param credentialId the credential being enrolled
      */
-    Mono<Optional<WrappedKeyHandle>> findBy(String tenantId, String holderId, String credentialId);
+    Mono<Optional<WrappedKeyHandle>> findBy(String holderId, String credentialId);
 
     /**
      * Inserts a new wrapped key handle.
      *
-     * <p>Precondition: no handle exists for the same {@code (tenantId, holderId, credentialId)}.
+     * <p>Precondition: no handle exists for the same {@code (holderId, credentialId)}.
      * The caller ({@link com.eudistack.ebw.keymanager.application.EnrollHolderUseCase}) is
      * responsible for checking {@link #findBy} before calling this method.</p>
      *

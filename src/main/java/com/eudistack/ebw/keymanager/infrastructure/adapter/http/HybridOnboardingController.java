@@ -106,7 +106,7 @@ public class HybridOnboardingController {
      *
      * @param request the commit request carrying wrapped blob, IV, tag, KDF metadata, and cnf JWK
      * @param auth    the DPoP-bound authenticated holder principal
-     * @return 201 Created confirming the enrolled credential ID
+     * @return 201 Created (first-time commit) or 200 OK (idempotent replay — AC-07)
      */
     @PostMapping("/commit")
     public Mono<ResponseEntity<EnrollHolderCommitResponse>> commit(
@@ -134,11 +134,9 @@ public class HybridOnboardingController {
                                 Mono.error(new TenantWalletProfileUnsupportedException(
                                         ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
                     }
-                    return Mono.deferContextual(ctx -> {
-                        String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
-                        return enrollHolderUseCase.commit(tenantId, holderId, request);
-                    });
+                    return enrollHolderUseCase.commit(holderId, request);
                 })
-                .map(response -> ResponseEntity.status(HttpStatus.CREATED).body(response));
+                .map(response -> ResponseEntity.status(
+                        response.replay() ? HttpStatus.OK : HttpStatus.CREATED).body(response));
     }
 }
