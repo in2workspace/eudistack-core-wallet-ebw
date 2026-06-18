@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.configuration;
 
+import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.keymanager.application.AlgorithmNegotiator;
 import com.eudistack.ebw.keymanager.application.GenerateHolderKeyUseCase;
 import com.eudistack.ebw.keymanager.application.HolderKeyFactory;
@@ -164,8 +165,9 @@ public class KeyManagerConfiguration {
     @Bean
     HybridKeyManagerController hybridKeyManagerController(
             HybridKeyManagerAdapter hybridKeyManagerAdapter,
-            WalletProfileQueryPort walletProfileQueryPort) {
-        return new HybridKeyManagerController(hybridKeyManagerAdapter, walletProfileQueryPort);
+            WalletProfileQueryPort walletProfileQueryPort,
+            AuditService auditService) {
+        return new HybridKeyManagerController(hybridKeyManagerAdapter, walletProfileQueryPort, auditService);
     }
 
     @Bean
