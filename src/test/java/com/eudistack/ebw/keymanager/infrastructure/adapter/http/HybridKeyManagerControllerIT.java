@@ -1,6 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
 import com.eudistack.ebw.domain.service.AuditService;
+import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
@@ -16,13 +17,18 @@ import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -40,7 +46,7 @@ import static org.mockito.Mockito.when;
  *   <li>ES-01 — missing required field → 400</li>
  * </ul>
  *
- * <p>Spec: EUDISTACK-533 AC-03, AC-04, AC-05, ES-01, ES-02, ES-03.</p>
+ * <p>Spec: EUDISTACK-533 AC-03, AC-04, AC-05, ES-01, ES-02, ES-03;
  */
 @Tag("integration")
 @WebFluxTest(controllers = HybridKeyManagerController.class)
@@ -48,8 +54,9 @@ import static org.mockito.Mockito.when;
 @WithMockUser
 class HybridKeyManagerControllerIT {
 
-    private static final String PREPARE_URL = "/api/v1/keys/hybrid/sign/prepare";
-    private static final String SUBMIT_URL  = "/api/v1/keys/hybrid/sign/submit";
+    private static final String PREPARE_URL             = "/api/v1/keys/hybrid/sign/prepare";
+    private static final String SUBMIT_URL              = "/api/v1/keys/hybrid/sign/submit";
+    private static final String CONSTRAINT_ACCEPTED_URL = "/api/v1/keys/hybrid/constraint-accepted";
 
     @MockitoBean
     KeyManagerPort hybridAdapter;
@@ -149,6 +156,61 @@ class HybridKeyManagerControllerIT {
                         """)
                 .exchange()
                 .expectStatus().isBadRequest();
+    }
+
+    // --- US-06 AC-02: constraint-accepted ---
+
+    @Test
+    void acceptConstraint_givenHybridTenant_recordsAuditAndReturns204() {
+        UUID actorId = UUID.randomUUID();
+        stubHybridProfile();
+        when(auditService.record(
+                eq("hybrid_consent"), eq(actorId),
+                eq("hybrid_constraint_accepted"), eq(actorId),
+                any()))
+                .thenReturn(Mono.empty());
+
+        webTestClient
+                .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
+                        new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
+                .post().uri(CONSTRAINT_ACCEPTED_URL)
+                .exchange()
+                .expectStatus().isNoContent()
+                .expectBody().isEmpty();
+
+        verify(auditService).record(
+                eq("hybrid_consent"), eq(actorId),
+                eq("hybrid_constraint_accepted"), eq(actorId),
+                any());
+    }
+
+    @Test
+    void acceptConstraint_givenDbTenant_returns403Opaque() {
+        UUID actorId = UUID.randomUUID();
+        stubDbProfile();
+
+        webTestClient
+                .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
+                        new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
+                .post().uri(CONSTRAINT_ACCEPTED_URL)
+                .exchange()
+                .expectStatus().isForbidden()
+                .expectBody().isEmpty();
+    }
+
+    @Test
+    void acceptConstraint_givenAuditFailure_returns500() {
+        UUID actorId = UUID.randomUUID();
+        stubHybridProfile();
+        when(auditService.record(any(), any(), any(), any(), any()))
+                .thenReturn(Mono.error(new RuntimeException("audit unavailable")));
+
+        webTestClient
+                .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
+                        new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
+                .post().uri(CONSTRAINT_ACCEPTED_URL)
+                .exchange()
+                .expectStatus().is5xxServerError();
     }
 
     // --- helpers ---
