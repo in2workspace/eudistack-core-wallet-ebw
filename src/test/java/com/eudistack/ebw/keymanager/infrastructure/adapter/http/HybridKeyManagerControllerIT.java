@@ -43,13 +43,9 @@ import static org.mockito.Mockito.when;
  *   <li>ES-02 — DB tenant on hybrid endpoint → 403 opaque</li>
  *   <li>ES-03 — submit with invalid signature → 400 {@code error=signature_invalid}</li>
  *   <li>ES-01 — missing required field → 400</li>
- *   <li>US-06 AC-02 — HYBRID tenant accepts constraint → audit recorded → 204</li>
- *   <li>US-06 — DB tenant on constraint-accepted → 403 opaque</li>
- *   <li>US-06 — audit failure propagates as 500</li>
  * </ul>
  *
  * <p>Spec: EUDISTACK-533 AC-03, AC-04, AC-05, ES-01, ES-02, ES-03;
- * EUDISTACK-474 (US-06) AC-02.</p>
  */
 @WebFluxTest(controllers = HybridKeyManagerController.class)
 @Import(HybridKeyManagerExceptionHandler.class)
