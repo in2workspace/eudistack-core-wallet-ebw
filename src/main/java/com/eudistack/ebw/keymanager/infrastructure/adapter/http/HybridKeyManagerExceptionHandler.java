@@ -1,10 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
-import com.eudistack.ebw.keymanager.domain.exception.InvalidCommitException;
-import com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException;
-import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
-import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
-import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
+import com.eudistack.ebw.keymanager.domain.exception.*;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -116,5 +112,35 @@ public class HybridKeyManagerExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
         problem.setType(URI.create(TYPE_BASE + "internal"));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
+    }
+
+    /**
+     * ES-02, ES-04 (EUDISTACK-537): PRF salt not found for the requested credential.
+     * Maps to 404 with {@code error=wrap_handle_not_found} (architecture.md §8.3).
+     * No {@code prf_salt} value is included in the response body (AC-06, NFR-S-537-01).
+     */
+    @ExceptionHandler(PrfSaltNotFoundException.class)
+    public ResponseEntity<ProblemDetail> handlePrfSaltNotFound(PrfSaltNotFoundException ex) {
+        log.debug("keymanager.hybrid.prf_salt_not_found credential_present=false");
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+        problem.setType(URI.create(TYPE_BASE + "wrap-handle-not-found"));
+        problem.setProperty("error", "wrap_handle_not_found");
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
+    }
+
+    /**
+     * AC-04, ES-04 (EUDISTACK-537): holder attempted to access a credential owned by a
+     * different holder. Maps to 403 with {@code error=holder_isolation_violation}
+     * (architecture.md §8.3).
+     * No {@code prf_salt} value or owning {@code holder_id} is included in the response
+     * body (AC-06, NFR-S-537-01, NFR-S-537-02).
+     */
+    @ExceptionHandler(HolderIsolationViolationException.class)
+    public ResponseEntity<ProblemDetail> handleHolderIsolation(HolderIsolationViolationException ex) {
+        log.debug("keymanager.hybrid.holder_isolation_violation");
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
+        problem.setType(URI.create(TYPE_BASE + "holder-isolation-violation"));
+        problem.setProperty("error", "holder_isolation_violation");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem);
     }
 }

@@ -10,10 +10,6 @@ import reactor.core.publisher.Mono;
  * remains stable for its entire lifetime, ensuring the Wallet PWA always derives the same
  * wrap key across sessions (architecture.md §6.1 step 4).</p>
  *
- * <p>Implemented by US-05 (EUDISTACK-537). Until US-05 is merged,
- * {@link EnrollHolderUseCase#init} will propagate an
- * {@link com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException}
- * from the placeholder bean registered by US-05.</p>
  *
  * <p>The returned bytes MUST NOT be logged, included in API responses outside of the
  * {@code /onboarding/init} endpoint, or persisted in any location other than
