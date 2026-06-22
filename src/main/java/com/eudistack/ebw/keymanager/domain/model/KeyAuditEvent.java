@@ -39,17 +39,18 @@ public record KeyAuditEvent(
         KeyAuditEventType type,
         String tenantId,
         String holderId,
-        String credentialId,
-        CredentialFormat format,
-        KeyAlgorithm algorithm,
-        String jkt,
+        // Null for CONSTRAINT_ACCEPTED events (no key or credential yet — US-06)
+        @Nullable String credentialId,
+        @Nullable CredentialFormat format,
+        @Nullable KeyAlgorithm algorithm,
+        @Nullable String jkt,
         Instant timestamp,
         String correlationId,
         // Optional fields — null for generation events (US-02 backward-compat)
-        SigningType signingType,
-        SignaturePurpose purpose,
-        ConsumerOrigin consumerOrigin,
-        String reason,
+        @Nullable SigningType signingType,
+        @Nullable SignaturePurpose purpose,
+        @Nullable ConsumerOrigin consumerOrigin,
+        @Nullable String reason,
         @Nullable String keyId
 ) {
 
@@ -72,7 +73,9 @@ public record KeyAuditEvent(
         /** Signing timed out (kill-switch 2.5 s — ES-05). */
         SIGN_TIMEOUT,
         /** A dependency (DB) was unavailable during signing (ES-04). */
-        SIGN_DEPENDENCY_FAILURE
+        SIGN_DEPENDENCY_FAILURE,
+        /** Holder accepted the multi-device constraint before hybrid onboarding (US-06, EUDISTACK-538). */
+        CONSTRAINT_ACCEPTED
     }
 
     public KeyAuditEvent {
@@ -85,23 +88,24 @@ public record KeyAuditEvent(
         if (holderId.isBlank()) {
             throw new IllegalArgumentException("holderId must not be blank");
         }
-        Objects.requireNonNull(credentialId, "credentialId must not be null");
-        if (credentialId.isBlank()) {
-            throw new IllegalArgumentException("credentialId must not be blank");
-        }
-        Objects.requireNonNull(format, "format must not be null");
-        Objects.requireNonNull(algorithm, "algorithm must not be null");
-        Objects.requireNonNull(jkt, "jkt must not be null");
-        if (jkt.isBlank()) {
-            throw new IllegalArgumentException("jkt must not be blank");
+        // credentialId, format, algorithm, jkt are null for CONSTRAINT_ACCEPTED (no key exists yet)
+        if (type != KeyAuditEventType.CONSTRAINT_ACCEPTED) {
+            Objects.requireNonNull(credentialId, "credentialId must not be null");
+            if (credentialId.isBlank()) {
+                throw new IllegalArgumentException("credentialId must not be blank");
+            }
+            Objects.requireNonNull(format, "format must not be null");
+            Objects.requireNonNull(algorithm, "algorithm must not be null");
+            Objects.requireNonNull(jkt, "jkt must not be null");
+            if (jkt.isBlank()) {
+                throw new IllegalArgumentException("jkt must not be blank");
+            }
         }
         Objects.requireNonNull(timestamp, "timestamp must not be null");
         Objects.requireNonNull(correlationId, "correlationId must not be null");
         if (correlationId.isBlank()) {
             throw new IllegalArgumentException("correlationId must not be blank");
         }
-        // signingType, purpose, consumerOrigin, reason, keyId are intentionally nullable
-        // (null for KEY_GENERATED / KEY_FETCHED — US-02 backward-compat)
     }
 
     /**
@@ -120,6 +124,23 @@ public record KeyAuditEvent(
         return new KeyAuditEvent(
                 type, tenantId, holderId, credentialId, format, algorithm,
                 jkt, timestamp, correlationId,
+                null, null, null, null, null);
+    }
+
+    /**
+     * Factory for US-06 consent events — no key material exists yet.
+     * credentialId, format, algorithm, and jkt are null by design.
+     */
+    public static KeyAuditEvent forConsent(
+            String tenantId,
+            String holderId,
+            Instant timestamp,
+            String correlationId) {
+        return new KeyAuditEvent(
+                KeyAuditEventType.CONSTRAINT_ACCEPTED,
+                tenantId, holderId,
+                null, null, null, null,
+                timestamp, correlationId,
                 null, null, null, null, null);
     }
 

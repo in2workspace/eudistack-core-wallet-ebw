@@ -1,7 +1,8 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
-import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.spi.TokenSigner;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
+import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.infrastructure.adapter.properties.RateLimitProperties;
 import com.eudistack.ebw.infrastructure.adapter.properties.SecurityProperties;
 import com.eudistack.ebw.wallet.profile.infrastructure.observability.WalletProfileQueryTelemetry;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -77,7 +79,7 @@ class HybridKeyManagerControllerIT {
     WalletProfileQueryPort walletProfileQueryPort;
 
     @MockitoBean
-    AuditService auditService;
+    KeyAuditPort keyAuditPort;
 
     @MockitoBean
     TokenSigner tokenSigner;
@@ -182,11 +184,7 @@ class HybridKeyManagerControllerIT {
     void acceptConstraint_givenHybridTenant_recordsAuditAndReturns204() {
         UUID actorId = UUID.randomUUID();
         stubHybridProfile();
-        when(auditService.record(
-                eq("hybrid_consent"), eq(actorId),
-                eq("hybrid_constraint_accepted"), eq(actorId),
-                any()))
-                .thenReturn(Mono.empty());
+        when(keyAuditPort.emit(any(KeyAuditEvent.class))).thenReturn(Mono.empty());
 
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
@@ -196,10 +194,11 @@ class HybridKeyManagerControllerIT {
                 .expectStatus().isNoContent()
                 .expectBody().isEmpty();
 
-        verify(auditService).record(
-                eq("hybrid_consent"), eq(actorId),
-                eq("hybrid_constraint_accepted"), eq(actorId),
-                any());
+        verify(keyAuditPort).emit(argThat(event ->
+                event.type() == KeyAuditEvent.KeyAuditEventType.CONSTRAINT_ACCEPTED
+                && event.holderId().equals(actorId.toString())
+                && event.credentialId() == null
+        ));
     }
 
     @Test
@@ -220,7 +219,7 @@ class HybridKeyManagerControllerIT {
     void acceptConstraint_givenAuditFailure_returns500() {
         UUID actorId = UUID.randomUUID();
         stubHybridProfile();
-        when(auditService.record(any(), any(), any(), any(), any()))
+        when(keyAuditPort.emit(any(KeyAuditEvent.class)))
                 .thenReturn(Mono.error(new RuntimeException("audit unavailable")));
 
         webTestClient

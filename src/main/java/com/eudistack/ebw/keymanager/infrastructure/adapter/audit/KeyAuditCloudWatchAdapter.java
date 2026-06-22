@@ -223,15 +223,16 @@ public class KeyAuditCloudWatchAdapter implements KeyAuditPort, DisposableBean {
     private static Map<String, Object> toEventMap(KeyAuditEvent event, String batchId) {
         // TreeMap so each event entry also has sorted keys in canonical JSON
         TreeMap<String, Object> map = new TreeMap<>();
-        map.put("algorithm", event.algorithm().name());
+        // algorithm, credential_id, format, jkt are absent for CONSTRAINT_ACCEPTED events
+        if (event.algorithm() != null) map.put("algorithm", event.algorithm().name());
         map.put("batch_id", batchId);
         map.put("correlation_id", event.correlationId());
-        map.put("credential_id", event.credentialId());
+        if (event.credentialId() != null) map.put("credential_id", event.credentialId());
         map.put("event_type", event.type().name().toLowerCase().replace('_', '.'));
         map.put("event_version", "1");
-        map.put("format", event.format().dbValue());
+        if (event.format() != null) map.put("format", event.format().dbValue());
         map.put("holder_id", event.holderId());
-        map.put("jkt", event.jkt());
+        if (event.jkt() != null) map.put("jkt", event.jkt());
         map.put("tenant_id", event.tenantId());
         map.put("timestamp", event.timestamp().toString());
 

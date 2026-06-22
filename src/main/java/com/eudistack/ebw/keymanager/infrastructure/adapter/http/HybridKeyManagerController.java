@@ -1,13 +1,14 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
-import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
 import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
 import com.eudistack.ebw.keymanager.domain.model.PrepareSignResponse;
 import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
 import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionResponse;
+import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
@@ -21,7 +22,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
-import java.util.Map;
+import java.time.Instant;
+import java.util.UUID;
 
 /**
  * REST controller for the hybrid (Passkey PRF) two-step signing handshake and audit events.
@@ -51,14 +53,14 @@ public class HybridKeyManagerController {
 
     private final KeyManagerPort hybridAdapter;
     private final WalletProfileQueryPort walletProfileQueryPort;
-    private final AuditService auditService;
+    private final KeyAuditPort keyAuditPort;
 
     public HybridKeyManagerController(KeyManagerPort hybridAdapter,
                                        WalletProfileQueryPort walletProfileQueryPort,
-                                       AuditService auditService) {
+                                       KeyAuditPort keyAuditPort) {
         this.hybridAdapter = hybridAdapter;
         this.walletProfileQueryPort = walletProfileQueryPort;
-        this.auditService = auditService;
+        this.keyAuditPort = keyAuditPort;
     }
 
     /**
@@ -138,13 +140,16 @@ public class HybridKeyManagerController {
                                 Mono.error(new TenantWalletProfileUnsupportedException(
                                         ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
                     }
-                    return auditService.record(
-                            "hybrid_consent",
-                            auth.getUserId(),
-                            "hybrid_constraint_accepted",
-                            auth.getUserId(),
-                            Map.of("key_manager", "hybrid")
-                    );
+                    return Mono.deferContextual(ctx -> {
+                        String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
+                        KeyAuditEvent event = KeyAuditEvent.forConsent(
+                                tenantId,
+                                auth.getUserId().toString(),
+                                Instant.now(),
+                                UUID.randomUUID().toString()
+                        );
+                        return keyAuditPort.emit(event);
+                    });
                 })
                 .thenReturn(ResponseEntity.<Void>noContent().build());
     }
