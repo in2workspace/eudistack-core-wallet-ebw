@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - 2026-06-17
+
+- **EUDISTACK-534 US-02 — Hybrid onboarding `POST /api/v1/keys/hybrid/onboarding/init`**: returns `{prf_salt, kdf_params, signing_pubkey_envelope_format}` for hybrid tenants. `prf_salt` delegated to `PrfSaltUseCase` (implemented by US-05/EUDISTACK-537; fallback `@ConditionalOnMissingBean` raises 409 until US-05 merges). `holderId` always from DPoP session token — never from request body (AC-01, AC-06).
+- **EUDISTACK-534 US-02 — Hybrid onboarding `POST /api/v1/keys/hybrid/onboarding/commit`**: persists `{wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk}` keyed by `(tenantId, holderId, credentialId)`. Idempotent: identical re-submit → 200 ACK; different blob for same key → 409 `idempotency_replay` (AC-04, AC-07). Validates `wrappedBlob ≥ 48B`, `iv = 12B`, `tag = 16B`, `cnf_jwk` contains no private key parameter `d` (AC-03, ES-01).
+- **EUDISTACK-534 US-02 — `EnrollHolderUseCase`**: application use case for `init` and `commit` flows; enforces holder isolation (AC-06), length invariants, cnf.jwk sanitisation, and idempotency check before insert (AC-07).
+- **EUDISTACK-534 US-02 — `WrappedKeyHandle` domain model**: immutable record with defensive copies for binary fields; `toString()` redacts `wrappedBlob`, `iv`, `tag` (NFR-06). Composite PK `(tenant_id, holder_id, credential_id)` via raw `DatabaseClient` SQL (Spring Data R2DBC composite PK limitation).
+- **EUDISTACK-534 US-02 — `HybridWrappedKeyHandleR2dbcAdapter`**: R2DBC adapter backed by raw `DatabaseClient` SQL for `findBy` and `insert` on `hybrid_wrapped_key_handle`. DDL provided by US-03 (EUDISTACK-535) Flyway migration; tests use a temporary DDL stub.
+- **EUDISTACK-534 US-02 — `PrfSaltUseCase` port**: application interface defining `getOrCreatePrfSalt(tenantId, holderId, credentialId): Mono<byte[]>`; implementation provided by US-05 (EUDISTACK-537).
+- **EUDISTACK-534 US-02 — `HybridOnboardingController`**: WebFlux controller at `/api/v1/keys/hybrid/onboarding`; guarded by `(SERVER, HYBRID)` wallet profile (ES-02).
+- **EUDISTACK-534 US-02 — Exception handlers extended**: `InvalidCommitException` → 400 `invalid_request`; `OnboardingStateException` → 409 `idempotency_replay`; no `wrapped_blob` or `prf_salt` in error responses (NFR-06). Added to `HybridKeyManagerExceptionHandler`.
+- **EUDISTACK-534 US-02 — Integration tests**: `EnrollHolderCommitIT` (201 new, 200 replay, 409 conflict, 400, 403), `EnrollHolderInitIT` (200 with base64url `prf_salt`, 400, 403), `HybridPgDumpNonReconstructionIT` (AC-05/NFR-04: stored blob does not contain plaintext key bytes; no `private`/`plaintext` columns).
+
 ### Added - 2026-06-16
 
 - **EUDISTACK-533 US-01 — Hybrid KeyManager adapter skeleton**: `HybridKeyManagerAdapter` implementing `KeyManagerPort` with credential-format allow-list validation (`vc+sd-jwt`, `jwt_vc_json`). Unsupported formats rejected with `UnsupportedCredentialFormatException` at `prepareSign` time (AC-05, ES-01, FR-04). `prepareSign`/`submitSignedAssertion` are stubs pending US-04 (EUDISTACK-536).
