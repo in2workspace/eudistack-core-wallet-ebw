@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - 2026-06-22
+
+- **EUDISTACK-538 US-06 — `POST /api/v1/keys/hybrid/constraint-accepted`**: records hybrid_constraint_accepted audit event when the holder accepts the multi-device constraint. Returns 204; 403 opaque for non-HYBRID tenants. actorId always from JWT, never from body.
+
 ### Added - 2026-06-17
 
 - **EUDISTACK-534 US-02 — Hybrid onboarding `POST /api/v1/keys/hybrid/onboarding/init`**: returns `{prf_salt, kdf_params, signing_pubkey_envelope_format}` for hybrid tenants. `prf_salt` delegated to `PrfSaltUseCase` (implemented by US-05/EUDISTACK-537; fallback `@ConditionalOnMissingBean` raises 409 until US-05 merges). `holderId` always from DPoP session token — never from request body (AC-01, AC-06).
