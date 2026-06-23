@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-06-25
+
+### Fixed - 2026-06-25
+
+- **EUDISTACK-537 code-review fixes — bean wiring**: removed `@Service` from `PrfSaltService` (prevents double-registration with the explicit `@Bean` in `KeyManagerConfiguration`); added `@Primary` to `prfSaltService` `@Bean`; removed the stale `prfSaltUseCaseNotYetAvailable` `@ConditionalOnMissingBean` stub (US-02→US-05 bridge no longer needed).
+- **EUDISTACK-537 code-review fixes — duplicate-key swallow**: narrowed `onErrorResume(DataIntegrityViolationException.class, …)` in `PrfSaltRepository.insert` to only swallow SQLSTATE `23505` (`unique_violation`). FK violations (`23503`) and CHECK violations (`23514`) now propagate as typed errors. Added `isUniqueViolation()` helper; new unit test asserts FK propagation path is not silently suppressed.
+- **EUDISTACK-537 code-review fixes — lazy reactive assembly**: wrapped `generateAndInsert` and `resolveAbsence` in `Mono.defer(…)` in `PrfSaltService`. CSPRNG `nextBytes` and `countByCredential` now execute only on a real cache miss, not on every call. Hit-path unit tests tightened with `verify(…, never())` assertions.
+- **EUDISTACK-537 code-review fixes — redundant `created_at` bind**: removed `:createdAt` parameter and `created_at` column from `INSERT_SQL` in `PrfSaltRepository`; DDL `DEFAULT NOW()` is the single source for timestamp.
+- **EUDISTACK-537 code-review fixes — credentialId logging**: replaced `credentialId.hashCode()` with `credentialId` in all `PrfSaltService` log statements. Per AC-06, `credential_id` may appear in logs; `prf_salt` and `holder_id` remain absent.
+- **EUDISTACK-537 code-review fixes — `salt_coherent` health indicator**: removed tautological `GROUP BY (holder_id, credential_id) HAVING COUNT(*) > 1` query (PK guarantee makes this condition structurally unreachable). Replaced with a table-reachability probe. Added no-tenant-context guard: when `HybridHealthContributor` is invoked without a tenant domain in Reactor context (e.g. Actuator background polls), it returns `UP` with a note instead of a misleading `DOWN`. Full per-tenant coherence (detecting credentials without a salt row) is delegated to EUDISTACK-541 (US-09) per architecture §5.4. Updated `HybridHealthSaltCoherentIT`: removed the artificial PK-drop duplicate test; added no-false-DOWN assertion for no-context invocation.
+- **EUDISTACK-537 code-review fixes — HTTP-layer isolation test**: added `PrfSaltIsolationIT` (`@WebFluxTest` + test-only stub `@RestController`) asserting that cross-holder access returns 403 `holder_isolation_violation` and absent credential returns 404, with no `prf_salt` or `holder_id` in any error response body (NFR-S-537-01/02, AC-04, AC-06, ES-04).
+
 ### Added - 2026-06-19
 
 - **EUDISTACK-537 US-05 — Flyway migration `V3__create_hybrid_prf_salt.sql`**: creates `hybrid_prf_salt` tenant table with composite PK `(holder_id, credential_id)`, FK `holder_id → wallet_user(id)` ON DELETE RESTRICT, `prf_salt BYTEA NOT NULL` with CHECK `octet_length(prf_salt) = 32`, and `created_at TIMESTAMPTZ`. ACL `SELECT, INSERT` only — no `UPDATE/DELETE` grant (immutability invariant AD-3, NFR-S-537-04). Ordered before US-03 migration (R-4).

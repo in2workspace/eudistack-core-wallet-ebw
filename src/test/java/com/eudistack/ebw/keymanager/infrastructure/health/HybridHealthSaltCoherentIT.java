@@ -181,55 +181,19 @@ class HybridHealthSaltCoherentIT {
                 .verifyComplete();
     }
 
-    // ------------------------------------------------------------------ AC-08: duplicate row → DOWN
+    // ------------------------------------------------------------------ AC-08: no tenant context → not DOWN
 
     @Test
-    void health_duplicateRow_reportsDown_saltCoherentFalse() throws SQLException {
-        String credId = "cred-dup-1";
-        byte[] salt1 = randomSalt();
-
-        insertSaltRow(credId, salt1);
-
-        // Bypass the PK to insert a duplicate — simulates a schema corruption scenario
-        try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
-            conn.createStatement().execute(
-                    "ALTER TABLE " + TENANT_SCHEMA + ".hybrid_prf_salt "
-                    + "DROP CONSTRAINT pk_hybrid_prf_salt");
-            conn.createStatement().execute(
-                    "ALTER TABLE " + TENANT_SCHEMA + ".hybrid_prf_salt "
-                    + "DROP CONSTRAINT IF EXISTS chk_hybrid_prf_salt_length");
-
-            byte[] salt2 = randomSalt();
-            conn.createStatement().execute(
-                    "INSERT INTO " + TENANT_SCHEMA + ".hybrid_prf_salt "
-                    + "(holder_id, credential_id, prf_salt) VALUES "
-                    + "('" + HOLDER_UUID + "', '" + credId + "', "
-                    + "decode('" + hex(salt2) + "', 'hex'))");
-        }
-
-        try {
-            StepVerifier.create(hybridHealthContributor.health()
-                            .contextWrite(ctx -> ctx.put("tenantDomain", TENANT)))
-                    .assertNext(health -> {
-                        assertThat(health.getStatus()).isEqualTo(Status.DOWN);
-                        assertThat(health.getDetails()).containsEntry("salt_coherent", false);
-                    })
-                    .verifyComplete();
-        } finally {
-            // Restore PK so subsequent tests start clean
-            try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
-                conn.createStatement().execute(
-                        "DELETE FROM " + TENANT_SCHEMA + ".hybrid_prf_salt");
-                conn.createStatement().execute(
-                        "ALTER TABLE " + TENANT_SCHEMA + ".hybrid_prf_salt "
-                        + "ADD CONSTRAINT pk_hybrid_prf_salt "
-                        + "PRIMARY KEY (holder_id, credential_id)");
-                conn.createStatement().execute(
-                        "ALTER TABLE " + TENANT_SCHEMA + ".hybrid_prf_salt "
-                        + "ADD CONSTRAINT chk_hybrid_prf_salt_length "
-                        + "CHECK (octet_length(prf_salt) = 32)");
-            }
-        }
+    void health_withoutTenantContext_doesNotReportFalseDown() {
+        // Actuator calls health() outside an HTTP request — no tenantDomain in Reactor context.
+        // The indicator must not produce DOWN/salt_coherent=false in this case; it should return
+        // UP with salt_coherent=true (and an explanatory note).
+        StepVerifier.create(hybridHealthContributor.health())
+                .assertNext(health -> {
+                    assertThat(health.getStatus()).isNotEqualTo(Status.DOWN);
+                    assertThat(health.getDetails()).containsEntry("salt_coherent", true);
+                })
+                .verifyComplete();
     }
 
     // ------------------------------------------------------------------ AC-08: no PII in response

@@ -8,7 +8,6 @@ import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditCloudWatchAdapter;
-import com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerExceptionHandler;
@@ -31,6 +30,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.r2dbc.core.DatabaseClient;
 import reactor.core.publisher.Mono;
 
@@ -187,19 +187,6 @@ public class KeyManagerConfiguration {
         return new HybridWrappedKeyHandleR2dbcAdapter(databaseClient);
     }
 
-    /**
-     * Fallback {@link PrfSaltUseCase} registered when US-05 (EUDISTACK-537) has not yet
-     * provided a real implementation. Every call to {@code init} will fail with
-     * {@link OnboardingStateException} until the real bean is registered.
-     */
-    @Bean
-    @ConditionalOnMissingBean(PrfSaltUseCase.class)
-    PrfSaltUseCase prfSaltUseCaseNotYetAvailable() {
-        return (tenantId, holderId, credentialId) -> Mono.error(
-                new OnboardingStateException(
-                        "PRF salt service not available — requires US-05 (EUDISTACK-537)"));
-    }
-
     @Bean
     EnrollHolderUseCase enrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
                                             WrappedKeyHandleRepository wrappedKeyHandleRepository) {
@@ -227,6 +214,7 @@ public class KeyManagerConfiguration {
     }
 
     @Bean
+    @Primary
     PrfSaltService prfSaltService(PrfSaltRepository prfSaltRepository) {
         return new PrfSaltService(prfSaltRepository);
     }

@@ -4,7 +4,6 @@ import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationExc
 import com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.security.SecureRandom;
@@ -39,7 +38,6 @@ import java.security.SecureRandom;
  * <p>Spec: EUDISTACK-537 AC-01, AC-02, AC-04, AC-05, EC-01, EC-03, ES-01, ES-02, ES-04,
  * ES-05, NFR-S-537-01, NFR-S-537-05; architecture.md §5.1, §6.1.</p>
  */
-@Service
 public class PrfSaltService implements PrfSaltUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(PrfSaltService.class);
@@ -63,7 +61,7 @@ public class PrfSaltService implements PrfSaltUseCase {
     @Override
     public Mono<byte[]> getOrCreatePrfSalt(String tenantId, String holderId, String credentialId) {
         return prfSaltPort.findBy(holderId, credentialId)
-                .switchIfEmpty(generateAndInsert(holderId, credentialId));
+                .switchIfEmpty(Mono.defer(() -> generateAndInsert(holderId, credentialId)));
     }
 
     /**
@@ -87,7 +85,7 @@ public class PrfSaltService implements PrfSaltUseCase {
      */
     public Mono<byte[]> getForHolder(String tenantId, String holderId, String credentialId) {
         return prfSaltPort.findBy(holderId, credentialId)
-                .switchIfEmpty(resolveAbsence(holderId, credentialId));
+                .switchIfEmpty(Mono.defer(() -> resolveAbsence(holderId, credentialId)));
     }
 
     private Mono<byte[]> generateAndInsert(String holderId, String credentialId) {
@@ -96,20 +94,20 @@ public class PrfSaltService implements PrfSaltUseCase {
         return prfSaltPort.insert(holderId, credentialId, salt)
                 .then(prfSaltPort.findBy(holderId, credentialId))
                 .doOnSuccess(found ->
-                        log.debug("keymanager.prf_salt.get_or_create holder_present=true credential_id_hash={}",
-                                credentialId.hashCode()));
+                        log.debug("keymanager.prf_salt.get_or_create holder_present=true credential_id={}",
+                                credentialId));
     }
 
     private Mono<byte[]> resolveAbsence(String holderId, String credentialId) {
         return prfSaltPort.countByCredential(credentialId)
                 .flatMap(count -> {
                     if (count > 0) {
-                        log.debug("keymanager.prf_salt.isolation_violation credential_id_hash={}",
-                                credentialId.hashCode());
+                        log.debug("keymanager.prf_salt.isolation_violation credential_id={}",
+                                credentialId);
                         return Mono.error(new HolderIsolationViolationException(credentialId));
                     }
-                    log.debug("keymanager.prf_salt.not_found credential_id_hash={}",
-                            credentialId.hashCode());
+                    log.debug("keymanager.prf_salt.not_found credential_id={}",
+                            credentialId);
                     return Mono.error(new PrfSaltNotFoundException(credentialId));
                 });
     }

@@ -2,12 +2,14 @@ package com.eudistack.ebw.keymanager.application;
 
 import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException;
 import com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException;
+import io.r2dbc.spi.R2dbcDataIntegrityViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -106,17 +108,14 @@ class PrfSaltUseCaseTest {
         byte[] existingSalt = new byte[32];
         existingSalt[0] = 0x11;
 
-        // PrfSaltService.getOrCreatePrfSalt calls generateAndInsert() eagerly as an argument
-        // to switchIfEmpty() — so insert() is called, but switchIfEmpty does NOT subscribe to
-        // the result when findBy() is non-empty. Stub insert to avoid NPE from Mockito default null.
         when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.just(existingSalt));
-        when(prfSaltPort.insert(eq(HOLDER_1), eq(CRED_ID), any(byte[].class)))
-                .thenReturn(Mono.empty());
 
         StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
                 .assertNext(salt -> assertThat(salt).isEqualTo(existingSalt))
                 .verifyComplete();
-        // The salt returned is the one from findBy, not from insert's re-SELECT
+
+        // Mono.defer makes generateAndInsert lazy — insert must never be called on a cache hit
+        verify(prfSaltPort, never()).insert(any(), any(), any());
     }
 
     @Test
@@ -124,20 +123,19 @@ class PrfSaltUseCaseTest {
         byte[] existingSalt = new byte[32];
         existingSalt[1] = 0x22;
 
-        // Stub insert defensively because generateAndInsert is evaluated eagerly (see above).
         when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.just(existingSalt));
-        when(prfSaltPort.insert(eq(HOLDER_1), eq(CRED_ID), any(byte[].class)))
-                .thenReturn(Mono.empty());
 
         // First call
         StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
                 .assertNext(salt -> assertThat(salt).isEqualTo(existingSalt))
                 .verifyComplete();
 
-        // Second call — same result; switchIfEmpty never subscribes to the fallback (EC-01)
+        // Second call — same result; Mono.defer means insert is never invoked (EC-01)
         StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
                 .assertNext(salt -> assertThat(salt).isEqualTo(existingSalt))
                 .verifyComplete();
+
+        verify(prfSaltPort, never()).insert(any(), any(), any());
     }
 
     // ------------------------------------------------------------------ getOrCreatePrfSalt — DB failure (ES-05, NFR-S-537-01)
@@ -160,6 +158,24 @@ class PrfSaltUseCaseTest {
                     assertThat(msg).doesNotContainIgnoringCase("prf_salt");
                     assertThat(msg).doesNotContainIgnoringCase("salt bytes");
                 })
+                .verify();
+    }
+
+    @Test
+    void getOrCreatePrfSalt_fkViolation_errorPropagates() {
+        // A FK violation (SQLSTATE 23503) wrapped in DataIntegrityViolationException must NOT
+        // be swallowed — only duplicate-key (23505) is benign in the get-or-create scenario.
+        R2dbcDataIntegrityViolationException r2dbcCause =
+                new R2dbcDataIntegrityViolationException("fk violation", "23503");
+        DataIntegrityViolationException fkError =
+                new DataIntegrityViolationException("fk", r2dbcCause);
+
+        when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.empty());
+        when(prfSaltPort.insert(eq(HOLDER_1), eq(CRED_ID), any(byte[].class)))
+                .thenReturn(Mono.error(fkError));
+
+        StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
+                .expectErrorMatches(ex -> ex instanceof DataIntegrityViolationException)
                 .verify();
     }
 
@@ -225,19 +241,15 @@ class PrfSaltUseCaseTest {
         byte[] salt = new byte[32];
         salt[5] = 0x55;
 
-        // generateAndInsert is evaluated eagerly as a switchIfEmpty argument.
-        // That causes findBy to be called twice (initial SELECT + re-SELECT inside generateAndInsert)
-        // and insert once, even when the first findBy returns a hit.
-        // We verify HOLDER_1 is used consistently and HOLDER_2 is never used.
         when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.just(salt));
-        when(prfSaltPort.insert(eq(HOLDER_1), eq(CRED_ID), any(byte[].class)))
-                .thenReturn(Mono.empty());
 
         StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
                 .expectNextCount(1)
                 .verifyComplete();
 
-        // Key assertion: HOLDER_2 was never used — holderId comes from the method parameter only
+        // Mono.defer makes generateAndInsert lazy — insert never called on a cache hit (EC-01)
+        verify(prfSaltPort, never()).insert(any(), any(), any());
+        // HOLDER_2 was never used — holderId comes from the method parameter only
         verify(prfSaltPort, never()).findBy(eq(HOLDER_2), any());
         verify(prfSaltPort, never()).insert(eq(HOLDER_2), any(), any());
     }
@@ -247,19 +259,15 @@ class PrfSaltUseCaseTest {
         byte[] salt = new byte[32];
         salt[7] = 0x77;
 
-        // getForHolder uses switchIfEmpty(resolveAbsence(...)).
-        // resolveAbsence() is evaluated eagerly as a switchIfEmpty argument, which means
-        // countByCredential() is called unconditionally to build the Mono chain — even when
-        // findBy() returns a non-empty Mono and switchIfEmpty never subscribes to the fallback.
-        // Stub countByCredential defensively to avoid NPE.
         when(prfSaltPort.findBy(HOLDER_2, CRED_ID)).thenReturn(Mono.just(salt));
-        when(prfSaltPort.countByCredential(CRED_ID)).thenReturn(Mono.just(0L));
 
         StepVerifier.create(service.getForHolder(TENANT, HOLDER_2, CRED_ID))
                 .expectNextCount(1)
                 .verifyComplete();
 
-        // Key assertion: HOLDER_1 was never used — holderId comes from the method parameter only
+        // Mono.defer makes resolveAbsence lazy — countByCredential never called on a cache hit
+        verify(prfSaltPort, never()).countByCredential(any());
+        // HOLDER_1 was never used — holderId comes from the method parameter only
         verify(prfSaltPort).findBy(HOLDER_2, CRED_ID);
         verify(prfSaltPort, never()).findBy(eq(HOLDER_1), any());
     }

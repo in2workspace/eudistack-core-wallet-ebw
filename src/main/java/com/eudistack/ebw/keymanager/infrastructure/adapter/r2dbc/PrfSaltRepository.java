@@ -1,11 +1,11 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc;
 
 import com.eudistack.ebw.keymanager.application.PrfSaltPort;
+import io.r2dbc.spi.R2dbcException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.r2dbc.core.DatabaseClient;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -30,8 +30,8 @@ public class PrfSaltRepository implements PrfSaltPort {
             + "WHERE holder_id = :holderId AND credential_id = :credentialId";
 
     private static final String INSERT_SQL =
-            "INSERT INTO hybrid_prf_salt (holder_id, credential_id, prf_salt, created_at) "
-            + "VALUES (:holderId, :credentialId, :prfSalt, :createdAt)";
+            "INSERT INTO hybrid_prf_salt (holder_id, credential_id, prf_salt) "
+            + "VALUES (:holderId, :credentialId, :prfSalt)";
 
     private static final String COUNT_SQL =
             "SELECT COUNT(*) FROM hybrid_prf_salt WHERE credential_id = :credentialId";
@@ -61,9 +61,10 @@ public class PrfSaltRepository implements PrfSaltPort {
      * {@inheritDoc}
      *
      * <p>Executes {@code INSERT INTO hybrid_prf_salt …}. A
-     * {@link DataIntegrityViolationException} caused by a duplicate composite key is
-     * swallowed silently — the caller must re-SELECT to obtain the persisted value (EC-03).
-     * Any other exception propagates as-is.</p>
+     * {@link DataIntegrityViolationException} caused by a duplicate composite key
+     * (SQLSTATE 23505) is swallowed silently — the caller must re-SELECT to obtain the
+     * persisted value (EC-03). Any other integrity violation (e.g. FK violation 23503,
+     * CHECK violation 23514) propagates as-is so the caller is not misled.</p>
      */
     @Override
     public Mono<Void> insert(String holderId, String credentialId, byte[] prfSalt) {
@@ -71,11 +72,28 @@ public class PrfSaltRepository implements PrfSaltPort {
                 .bind("holderId", UUID.fromString(holderId))
                 .bind("credentialId", credentialId)
                 .bind("prfSalt", prfSalt)
-                .bind("createdAt", Instant.now())
                 .fetch()
                 .rowsUpdated()
                 .then()
-                .onErrorResume(DataIntegrityViolationException.class, ex -> Mono.empty());
+                .onErrorResume(
+                        ex -> ex instanceof DataIntegrityViolationException && isUniqueViolation(ex),
+                        ex -> Mono.empty());
+    }
+
+    /**
+     * Returns {@code true} only when the root cause is an R2DBC unique-constraint violation
+     * (SQLSTATE {@code 23505}). Traverses the cause chain because Spring's
+     * {@link DataIntegrityViolationException} wraps the underlying {@link R2dbcException}.
+     */
+    private boolean isUniqueViolation(Throwable ex) {
+        Throwable cause = ex;
+        while (cause != null) {
+            if (cause instanceof R2dbcException r2dbc && "23505".equals(r2dbc.getSqlState())) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     /**
