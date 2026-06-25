@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
@@ -29,6 +30,7 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.web.server.WebFilter;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
@@ -272,6 +274,12 @@ class HybridKeyManagerControllerIT {
                     )
                     .authorizeExchange(exchanges -> exchanges.anyExchange().authenticated())
                     .build();
+        }
+
+        @Bean
+        WebFilter testTenantContextFilter() {
+            return (exchange, chain) -> chain.filter(exchange)
+                    .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "test-tenant"));
         }
     }
 }

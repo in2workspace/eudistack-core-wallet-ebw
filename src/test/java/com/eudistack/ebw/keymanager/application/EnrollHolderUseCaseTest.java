@@ -6,7 +6,10 @@ import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitResponse;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent.KeyAuditEventType;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
+import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,12 +58,13 @@ class EnrollHolderUseCaseTest {
 
     @Mock private PrfSaltUseCase prfSaltUseCase;
     @Mock private WrappedKeyHandleRepository repository;
+    @Mock private KeyAuditPort auditPort;
 
     private EnrollHolderUseCase useCase;
 
     @BeforeEach
     void setUp() {
-        useCase = new EnrollHolderUseCase(prfSaltUseCase, repository);
+        useCase = new EnrollHolderUseCase(prfSaltUseCase, repository, auditPort);
     }
 
     // ------------------------------------------------------------------ init
@@ -101,8 +105,9 @@ class EnrollHolderUseCaseTest {
     void commit_newHandle_returns201WithCredentialId() {
         when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.empty()));
         when(repository.insert(any())).thenReturn(Mono.empty());
+        when(auditPort.emit(any(KeyAuditEvent.class))).thenReturn(Mono.empty());
 
-        StepVerifier.create(useCase.commit(HOLDER, validCommitRequest()))
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
                 .assertNext(response -> assertThat(response.credentialId()).isEqualTo(CRED_ID))
                 .verifyComplete();
 
@@ -115,8 +120,9 @@ class EnrollHolderUseCaseTest {
     void commit_newHandle_persistsKdfMetadata() {
         when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.empty()));
         when(repository.insert(any())).thenReturn(Mono.empty());
+        when(auditPort.emit(any(KeyAuditEvent.class))).thenReturn(Mono.empty());
 
-        StepVerifier.create(useCase.commit(HOLDER, validCommitRequest()))
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
                 .assertNext(r -> assertThat(r.credentialId()).isEqualTo(CRED_ID))
                 .verifyComplete();
 
@@ -126,6 +132,35 @@ class EnrollHolderUseCaseTest {
                 && handle.cnfJwk().equals(CNF_JWK)));
     }
 
+    @Test
+    void commit_newHandle_emitsWrapCompletedAuditEvent() {
+        when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.empty()));
+        when(repository.insert(any())).thenReturn(Mono.empty());
+        when(auditPort.emit(any(KeyAuditEvent.class))).thenReturn(Mono.empty());
+
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
+                .assertNext(r -> assertThat(r.credentialId()).isEqualTo(CRED_ID))
+                .verifyComplete();
+
+        verify(auditPort).emit(argThat(event ->
+                event.type() == KeyAuditEventType.WRAP_COMPLETED
+                && event.tenantId().equals(TENANT)
+                && event.holderId().equals(HOLDER)
+                && event.credentialId().equals(CRED_ID)));
+    }
+
+    @Test
+    void commit_auditFailure_doesNotFailMainFlow() {
+        when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.empty()));
+        when(repository.insert(any())).thenReturn(Mono.empty());
+        when(auditPort.emit(any(KeyAuditEvent.class)))
+                .thenReturn(Mono.error(new RuntimeException("cw unavailable")));
+
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
+                .assertNext(r -> assertThat(r.credentialId()).isEqualTo(CRED_ID))
+                .verifyComplete();
+    }
+
     // --------------------------------------------------------------- commit: idempotency
 
     @Test
@@ -133,11 +168,12 @@ class EnrollHolderUseCaseTest {
         WrappedKeyHandle existing = existingHandle(BLOB_BYTES, IV_BYTES, TAG_BYTES);
         when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.of(existing)));
 
-        StepVerifier.create(useCase.commit(HOLDER, validCommitRequest()))
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
                 .assertNext(response -> assertThat(response.credentialId()).isEqualTo(CRED_ID))
                 .verifyComplete();
 
         verify(repository, never()).insert(any());
+        verify(auditPort, never()).emit(any());
     }
 
     @Test
@@ -147,7 +183,7 @@ class EnrollHolderUseCaseTest {
         WrappedKeyHandle existing = existingHandle(differentBlob, IV_BYTES, TAG_BYTES);
         when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.of(existing)));
 
-        StepVerifier.create(useCase.commit(HOLDER, validCommitRequest()))
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
                 .expectError(OnboardingStateException.class)
                 .verify();
 
@@ -161,7 +197,7 @@ class EnrollHolderUseCaseTest {
         byte[] shortBlob = new byte[47];
         String shortBlobB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(shortBlob);
 
-        StepVerifier.create(useCase.commit(HOLDER,
+        StepVerifier.create(useCase.commit(TENANT, HOLDER,
                 new EnrollHolderCommitRequest(CRED_ID, shortBlobB64, IV_B64, TAG_B64,
                         "HKDF-SHA-256", 1, CNF_JWK)))
                 .expectError(InvalidCommitException.class)
@@ -175,7 +211,7 @@ class EnrollHolderUseCaseTest {
         byte[] wrongIv = new byte[11];
         String wrongIvB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(wrongIv);
 
-        StepVerifier.create(useCase.commit(HOLDER,
+        StepVerifier.create(useCase.commit(TENANT, HOLDER,
                 new EnrollHolderCommitRequest(CRED_ID, BLOB_B64, wrongIvB64, TAG_B64,
                         "HKDF-SHA-256", 1, CNF_JWK)))
                 .expectError(InvalidCommitException.class)
@@ -187,7 +223,7 @@ class EnrollHolderUseCaseTest {
         byte[] wrongTag = new byte[15];
         String wrongTagB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(wrongTag);
 
-        StepVerifier.create(useCase.commit(HOLDER,
+        StepVerifier.create(useCase.commit(TENANT, HOLDER,
                 new EnrollHolderCommitRequest(CRED_ID, BLOB_B64, IV_B64, wrongTagB64,
                         "HKDF-SHA-256", 1, CNF_JWK)))
                 .expectError(InvalidCommitException.class)
@@ -199,7 +235,7 @@ class EnrollHolderUseCaseTest {
 
     @Test
     void commit_invalidBase64url_throwsInvalidCommitException() {
-        StepVerifier.create(useCase.commit(HOLDER,
+        StepVerifier.create(useCase.commit(TENANT, HOLDER,
                 new EnrollHolderCommitRequest(CRED_ID, "not-valid-base64!!!", IV_B64, TAG_B64,
                         "HKDF-SHA-256", 1, CNF_JWK)))
                 .expectError(InvalidCommitException.class)

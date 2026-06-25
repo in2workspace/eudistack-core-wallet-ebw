@@ -5,6 +5,8 @@ import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
 import com.eudistack.ebw.keymanager.domain.exception.InvalidCommitException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
+import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitResponse;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
@@ -25,7 +27,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * REST controller for the hybrid (Passkey PRF) onboarding flow.
@@ -54,13 +58,16 @@ public class HybridOnboardingController {
     private final EnrollHolderUseCase enrollHolderUseCase;
     private final WalletProfileQueryPort walletProfileQueryPort;
     private final ObjectMapper objectMapper;
+    private final KeyAuditPort keyAuditPort;
 
     public HybridOnboardingController(EnrollHolderUseCase enrollHolderUseCase,
                                        WalletProfileQueryPort walletProfileQueryPort,
-                                       ObjectMapper objectMapper) {
+                                       ObjectMapper objectMapper,
+                                       KeyAuditPort keyAuditPort) {
         this.enrollHolderUseCase = enrollHolderUseCase;
         this.walletProfileQueryPort = walletProfileQueryPort;
         this.objectMapper = objectMapper;
+        this.keyAuditPort = keyAuditPort;
     }
 
     /**
@@ -134,9 +141,43 @@ public class HybridOnboardingController {
                                 Mono.error(new TenantWalletProfileUnsupportedException(
                                         ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
                     }
-                    return enrollHolderUseCase.commit(holderId, request);
+                    return Mono.deferContextual(ctx -> {
+                        String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
+                        return enrollHolderUseCase.commit(tenantId, holderId, request);
+                    });
                 })
                 .map(response -> ResponseEntity.status(
                         response.replay() ? HttpStatus.OK : HttpStatus.CREATED).body(response));
+    }
+
+    /**
+     * Records that hybrid onboarding was blocked because the holder's device does not support
+     * Passkey PRF. The PWA calls this endpoint when the WebAuthn PRF extension is unavailable,
+     * so the server can audit the attempt (US-08, AC-01).
+     *
+     * @param auth the authenticated holder principal
+     * @return 204 No Content on success
+     */
+    @PostMapping("/prf-unsupported")
+    public Mono<ResponseEntity<Void>> prfUnsupported(JwtAuthenticationToken auth) {
+        return walletProfileQueryPort.queryByCurrentTenant()
+                .flatMap(profile -> {
+                    if (profile.walletMode() != WalletMode.SERVER
+                            || profile.keyManager() != KeyManager.HYBRID) {
+                        return Mono.deferContextual(ctx ->
+                                Mono.error(new TenantWalletProfileUnsupportedException(
+                                        ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
+                    }
+                    return Mono.deferContextual(ctx -> {
+                        String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
+                        KeyAuditEvent event = KeyAuditEvent.forPrfUnsupported(
+                                tenantId,
+                                auth.getUserId().toString(),
+                                Instant.now(),
+                                UUID.randomUUID().toString());
+                        return keyAuditPort.emit(event);
+                    });
+                })
+                .thenReturn(ResponseEntity.<Void>noContent().build());
     }
 }

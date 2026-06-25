@@ -75,7 +75,15 @@ public record KeyAuditEvent(
         /** A dependency (DB) was unavailable during signing (ES-04). */
         SIGN_DEPENDENCY_FAILURE,
         /** Holder accepted the multi-device constraint before hybrid onboarding (US-06, EUDISTACK-538). */
-        CONSTRAINT_ACCEPTED
+        CONSTRAINT_ACCEPTED,
+        /** Holder key wrapped and committed after client-side generation (US-08, EUDISTACK-540). */
+        WRAP_COMPLETED,
+        /** Holder key unwrapped and signing completed in hybrid two-step flow (US-04/US-08). */
+        UNWRAP_SIGN_COMPLETED,
+        /** Holder key unwrap failed during hybrid signing (US-04/US-08). */
+        UNWRAP_FAILED,
+        /** Hybrid onboarding blocked — holder device does not support Passkey PRF (US-08, EUDISTACK-540). */
+        ONBOARDING_BLOCKED_PRF_UNSUPPORTED
     }
 
     public KeyAuditEvent {
@@ -88,12 +96,20 @@ public record KeyAuditEvent(
         if (holderId.isBlank()) {
             throw new IllegalArgumentException("holderId must not be blank");
         }
-        // credentialId, format, algorithm, jkt are null for CONSTRAINT_ACCEPTED (no key exists yet)
-        if (type != KeyAuditEventType.CONSTRAINT_ACCEPTED) {
+        // Types where no key context exists yet (consent / device-blocked events)
+        boolean noKeyContext = type == KeyAuditEventType.CONSTRAINT_ACCEPTED
+                || type == KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED;
+        // Types where credentialId is present but format/algorithm/jkt are not available server-side
+        // (key was generated and wrapped client-side — US-08)
+        boolean wrapContext = type == KeyAuditEventType.WRAP_COMPLETED;
+
+        if (!noKeyContext) {
             Objects.requireNonNull(credentialId, "credentialId must not be null");
             if (credentialId.isBlank()) {
                 throw new IllegalArgumentException("credentialId must not be blank");
             }
+        }
+        if (!noKeyContext && !wrapContext) {
             Objects.requireNonNull(format, "format must not be null");
             Objects.requireNonNull(algorithm, "algorithm must not be null");
             Objects.requireNonNull(jkt, "jkt must not be null");
@@ -138,6 +154,40 @@ public record KeyAuditEvent(
             String correlationId) {
         return new KeyAuditEvent(
                 KeyAuditEventType.CONSTRAINT_ACCEPTED,
+                tenantId, holderId,
+                null, null, null, null,
+                timestamp, correlationId,
+                null, null, null, null, null);
+    }
+
+    /**
+     * Factory for US-08 wrap events — key was generated and wrapped client-side.
+     * format, algorithm, and jkt are null because the server never holds the plaintext key.
+     */
+    public static KeyAuditEvent forWrap(
+            String tenantId,
+            String holderId,
+            String credentialId,
+            Instant timestamp,
+            String correlationId) {
+        return new KeyAuditEvent(
+                KeyAuditEventType.WRAP_COMPLETED,
+                tenantId, holderId,
+                credentialId, null, null, null,
+                timestamp, correlationId,
+                null, null, null, null, null);
+    }
+
+    /**
+     * Factory for US-08 PRF-unsupported events — onboarding blocked at device level, no key material.
+     */
+    public static KeyAuditEvent forPrfUnsupported(
+            String tenantId,
+            String holderId,
+            Instant timestamp,
+            String correlationId) {
+        return new KeyAuditEvent(
+                KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED,
                 tenantId, holderId,
                 null, null, null, null,
                 timestamp, correlationId,

@@ -57,6 +57,9 @@ public class HybridKeyManagerAdapter implements KeyManagerPort {
         }
         // TODO(EUDISTACK-536/US-04): retrieve prf_salt + wrapped_blob from DB (US-05, EUDISTACK-537)
         // and return PRF challenge metadata to the PWA so it can derive the unwrap key via Passkey PRF.
+        // TODO(EUDISTACK-540/US-08): once US-04 implements the handshake, inject KeyAuditPort here and
+        // emit UNWRAP_SIGN_COMPLETED (success) or UNWRAP_FAILED (error) with credentialId, format,
+        // algorithm, jkt, and correlationId from the PrepareSignResponse.
         return Mono.error(new UnsupportedOperationException(
                 "prepareSign skeleton — full implementation in US-04 (EUDISTACK-536)."));
     }
@@ -65,6 +68,9 @@ public class HybridKeyManagerAdapter implements KeyManagerPort {
     public Mono<SubmitSignedAssertionResponse> submitSignedAssertion(SubmitSignedAssertionRequest request) {
         // TODO(EUDISTACK-536/US-04): verify client's signed assertion against cnf.jwk,
         // unwrap the holder key, and produce the kb+jwt.
+        // TODO(EUDISTACK-540/US-08): emit UNWRAP_SIGN_COMPLETED on success or UNWRAP_FAILED on
+        // signature/unwrap error; correlationId must be echoed from request.correlationId()
+        // (not a fresh UUID) to link this event to the prepare event in the audit chain.
         return Mono.error(new UnsupportedOperationException(
                 "submitSignedAssertion skeleton — full implementation in US-04 (EUDISTACK-536)."));
     }

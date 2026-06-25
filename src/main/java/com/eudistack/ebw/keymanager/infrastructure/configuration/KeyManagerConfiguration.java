@@ -1,6 +1,5 @@
 package com.eudistack.ebw.keymanager.infrastructure.configuration;
 
-import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.application.AlgorithmNegotiator;
 import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
 import com.eudistack.ebw.keymanager.application.GenerateHolderKeyUseCase;
@@ -214,15 +213,17 @@ public class KeyManagerConfiguration {
 
     @Bean
     EnrollHolderUseCase enrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
-                                             WrappedKeyHandleRepository wrappedKeyHandleRepository) {
-        return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository);
+                                             WrappedKeyHandleRepository wrappedKeyHandleRepository,
+                                             KeyAuditPort auditPort) {
+        return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository, auditPort);
     }
 
     @Bean
     HybridOnboardingController hybridOnboardingController(
             EnrollHolderUseCase enrollHolderUseCase,
             WalletProfileQueryPort walletProfileQueryPort,
-            ObjectMapper objectMapper) {
-        return new HybridOnboardingController(enrollHolderUseCase, walletProfileQueryPort, objectMapper);
+            ObjectMapper objectMapper,
+            KeyAuditPort keyAuditPort) {
+        return new HybridOnboardingController(enrollHolderUseCase, walletProfileQueryPort, objectMapper, keyAuditPort);
     }
 }
