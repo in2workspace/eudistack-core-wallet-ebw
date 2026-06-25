@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - 2026-06-25
+- **EUDISTACK-359 US-07:**
+  - Added hybrid onboarding block endpoint.
+  - Added `PrfUnsupportedException` and HTTP 422 (`prf_unsupported`) error handling.
+  - Rejected onboarding requests for hybrid tenants when PRF support is unavailable.
+  - Prevented hybrid onboarding from continuing when PRF support validation fails.
+
 ### Added - 2026-06-17
 
 - **EUDISTACK-534 US-02 — Hybrid onboarding `POST /api/v1/keys/hybrid/onboarding/init`**: returns `{prf_salt, kdf_params, signing_pubkey_envelope_format}` for hybrid tenants. `prf_salt` delegated to `PrfSaltUseCase` (implemented by US-05/EUDISTACK-537; fallback `@ConditionalOnMissingBean` raises 409 until US-05 merges). `holderId` always from DPoP session token — never from request body (AC-01, AC-06).
