@@ -11,6 +11,7 @@ plugins {
 
 group = 'com.eudistack'
 version = '1.9.0'
+ext['netty.version'] = '4.1.132.Final'
 
 java {
     toolchain {
@@ -61,8 +62,8 @@ dependencies {
     implementation 'software.amazon.awssdk:cloudwatchlogs:2.31.78'
 
     // --- Cryptography ---
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
-    implementation 'org.bouncycastle:bcpkix-jdk18on:1.80'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.84'
 
     // --- Monitoring & Telemetry ---
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
