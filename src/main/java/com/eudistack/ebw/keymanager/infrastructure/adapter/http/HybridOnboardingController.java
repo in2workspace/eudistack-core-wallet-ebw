@@ -5,6 +5,8 @@ import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
 import com.eudistack.ebw.keymanager.domain.exception.InvalidCommitException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
+import com.eudistack.ebw.keymanager.domain.exception.PrfUnsupportedException;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.BlockOnboardingRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitResponse;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
@@ -138,5 +140,20 @@ public class HybridOnboardingController {
                 })
                 .map(response -> ResponseEntity.status(
                         response.replay() ? HttpStatus.OK : HttpStatus.CREATED).body(response));
+    }
+
+    @PostMapping("/block")
+    public Mono<Void> block(@Valid @RequestBody BlockOnboardingRequest request, JwtAuthenticationToken auth) {
+        return walletProfileQueryPort.queryByCurrentTenant()
+                .flatMap(profile -> {
+                    if (profile.walletMode() != WalletMode.SERVER
+                            || profile.keyManager() != KeyManager.HYBRID) {
+                        return Mono.deferContextual(ctx ->
+                                Mono.error(new TenantWalletProfileUnsupportedException(
+                                        ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
+                    }
+
+                    return Mono.error(new PrfUnsupportedException());
+                });
     }
 }

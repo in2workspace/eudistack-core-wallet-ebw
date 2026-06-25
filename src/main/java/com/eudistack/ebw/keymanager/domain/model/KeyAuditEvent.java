@@ -72,7 +72,9 @@ public record KeyAuditEvent(
         /** Signing timed out (kill-switch 2.5 s — ES-05). */
         SIGN_TIMEOUT,
         /** A dependency (DB) was unavailable during signing (ES-04). */
-        SIGN_DEPENDENCY_FAILURE
+        SIGN_DEPENDENCY_FAILURE,
+        ONBOARDING_BLOCKED_PRF_UNSUPPORTED
+
     }
 
     public KeyAuditEvent {

@@ -5,6 +5,7 @@ import com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException;
 import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
+import com.eudistack.ebw.keymanager.domain.exception.PrfUnsupportedException;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -116,5 +117,16 @@ public class HybridKeyManagerExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
         problem.setType(URI.create(TYPE_BASE + "internal"));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
+    }
+
+    @ExceptionHandler(PrfUnsupportedException.class)
+    public ResponseEntity<ProblemDetail> handlePrfUnsupported(
+            PrfUnsupportedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
+        problem.setType(URI.create(TYPE_BASE + "prf-unsupported"));
+        problem.setProperty("error", "prf_unsupported");
+        return ResponseEntity
+                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(problem);
     }
 }
