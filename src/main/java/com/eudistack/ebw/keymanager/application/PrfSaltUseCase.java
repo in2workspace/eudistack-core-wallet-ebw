@@ -29,4 +29,26 @@ public interface PrfSaltUseCase {
      * @return 32-byte raw PRF salt; never empty
      */
     Mono<byte[]> getOrCreatePrfSalt(String tenantId, String holderId, String credentialId);
+
+    /**
+     * Read-only lookup of the PRF salt with holder isolation.
+     *
+     * <p>Used by {@code PrepareSignUseCase} (US-04) during the signing handshake.
+     * Unlike {@link #getOrCreatePrfSalt}, this method NEVER generates a new salt —
+     * it only reads an existing one, enforcing holder isolation:
+     * <ul>
+     *   <li>Absent for {@code (holderId, credentialId)} AND {@code countByCredential == 0}
+     *       → {@link com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException}
+     *       (404 {@code wrap_handle_not_found}).</li>
+     *   <li>Absent for this holder but present for another
+     *       → {@link com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException}
+     *       (403).</li>
+     * </ul>
+     *
+     * @param tenantId     the tenant (for traceability — isolation enforced via DB {@code search_path})
+     * @param holderId     the holder UUID (DPoP-bound, never from body — ES-04)
+     * @param credentialId the credential being signed
+     * @return 32-byte raw PRF salt; never empty
+     */
+    Mono<byte[]> getForHolder(String tenantId, String holderId, String credentialId);
 }
