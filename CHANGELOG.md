@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-06-29
+
 ### Added - 2026-06-29
 
 - **EUDISTACK-535 US-03 — Flyway migration `V4__create_hybrid_wrapped_key_handle.sql`**: creates `hybrid_wrapped_key_handle` tenant table with composite PK `(holder_id, credential_id)`, FK `holder_id → wallet_user(id)` ON DELETE RESTRICT, composite FK `(holder_id, credential_id) → hybrid_prf_salt(holder_id, credential_id)` enforcing referential integrity with US-05, column `cnf_jwk TEXT NOT NULL` (public confirmation JWK — no private key column), cryptographic columns `wrapped_blob BYTEA`, `iv BYTEA`, `tag BYTEA` with CHECK constraints (≥48 B, =12 B, =16 B respectively), and `kdf_algo/kdf_version` metadata. ACL: column-level `GRANT SELECT, INSERT` + `GRANT UPDATE (last_used_at)` only — no table-level UPDATE, no DELETE (no-custody invariant, FR-06/07, AC-01/02/03). GRANT statements are idempotent via `DO $$ BEGIN … EXCEPTION WHEN undefined_object THEN NULL; END $$`.
