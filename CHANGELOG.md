@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EUDISTACK-535 US-03 — `V4__create_hybrid_wrapped_key_handle.sql` PUBLIC revoke**: added `REVOKE ALL ON hybrid_wrapped_key_handle FROM PUBLIC;` immediately after the `CREATE TABLE` statement, matching the V1/V3 least-privilege pattern. Without this line PostgreSQL default grants read access to `PUBLIC`, violating the ACL baseline (AC-04, NFR-S-535-03, AD-1).
 - **EUDISTACK-535 US-03 — `HybridWrappedKeyHandleR2dbcAdapter` UUID binding**: corrected R2DBC parameter binding to use `UUID.fromString(holderId)` (instead of raw `String`) for both `SELECT` and `INSERT` on the `holder_id UUID` column. Row mapping also updated to read `holder_id` as `UUID.class`. Binding a `String` to a `UUID` column caused `BadSqlGrammarException` at runtime once the V4 Flyway migration replaced the US-02 stub table's `TEXT` column with the correct `UUID` type (AC-04, AC-06).
 
+## [1.10.2] - 2026-06-29
+
+### Added - 2026-06-22
+
+- **EUDISTACK-538 US-06 — `POST /api/v1/keys/hybrid/constraint-accepted`**: records hybrid_constraint_accepted audit event when the holder accepts the multi-device constraint. Returns 204; 403 opaque for non-HYBRID tenants. actorId always from JWT, never from body.
+
 ## [1.10.1] - 2026-06-25
 
 ### Fixed - 2026-06-25
