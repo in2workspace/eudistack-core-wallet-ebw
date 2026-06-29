@@ -7,21 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.2] - 2026-06-29
+
 ### Added - 2026-06-22
 
 - **EUDISTACK-538 US-06 — `POST /api/v1/keys/hybrid/constraint-accepted`**: records hybrid_constraint_accepted audit event when the holder accepts the multi-device constraint. Returns 204; 403 opaque for non-HYBRID tenants. actorId always from JWT, never from body.
 
-### Added - 2026-06-17
+## [1.10.1] - 2026-06-25
 
-- **EUDISTACK-534 US-02 — Hybrid onboarding `POST /api/v1/keys/hybrid/onboarding/init`**: returns `{prf_salt, kdf_params, signing_pubkey_envelope_format}` for hybrid tenants. `prf_salt` delegated to `PrfSaltUseCase` (implemented by US-05/EUDISTACK-537; fallback `@ConditionalOnMissingBean` raises 409 until US-05 merges). `holderId` always from DPoP session token — never from request body (AC-01, AC-06).
-- **EUDISTACK-534 US-02 — Hybrid onboarding `POST /api/v1/keys/hybrid/onboarding/commit`**: persists `{wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk}` keyed by `(tenantId, holderId, credentialId)`. Idempotent: identical re-submit → 200 ACK; different blob for same key → 409 `idempotency_replay` (AC-04, AC-07). Validates `wrappedBlob ≥ 48B`, `iv = 12B`, `tag = 16B`, `cnf_jwk` contains no private key parameter `d` (AC-03, ES-01).
-- **EUDISTACK-534 US-02 — `EnrollHolderUseCase`**: application use case for `init` and `commit` flows; enforces holder isolation (AC-06), length invariants, cnf.jwk sanitisation, and idempotency check before insert (AC-07).
-- **EUDISTACK-534 US-02 — `WrappedKeyHandle` domain model**: immutable record with defensive copies for binary fields; `toString()` redacts `wrappedBlob`, `iv`, `tag` (NFR-06). Composite PK `(tenant_id, holder_id, credential_id)` via raw `DatabaseClient` SQL (Spring Data R2DBC composite PK limitation).
-- **EUDISTACK-534 US-02 — `HybridWrappedKeyHandleR2dbcAdapter`**: R2DBC adapter backed by raw `DatabaseClient` SQL for `findBy` and `insert` on `hybrid_wrapped_key_handle`. DDL provided by US-03 (EUDISTACK-535) Flyway migration; tests use a temporary DDL stub.
-- **EUDISTACK-534 US-02 — `PrfSaltUseCase` port**: application interface defining `getOrCreatePrfSalt(tenantId, holderId, credentialId): Mono<byte[]>`; implementation provided by US-05 (EUDISTACK-537).
-- **EUDISTACK-534 US-02 — `HybridOnboardingController`**: WebFlux controller at `/api/v1/keys/hybrid/onboarding`; guarded by `(SERVER, HYBRID)` wallet profile (ES-02).
-- **EUDISTACK-534 US-02 — Exception handlers extended**: `InvalidCommitException` → 400 `invalid_request`; `OnboardingStateException` → 409 `idempotency_replay`; no `wrapped_blob` or `prf_salt` in error responses (NFR-06). Added to `HybridKeyManagerExceptionHandler`.
-- **EUDISTACK-534 US-02 — Integration tests**: `EnrollHolderCommitIT` (201 new, 200 replay, 409 conflict, 400, 403), `EnrollHolderInitIT` (200 with base64url `prf_salt`, 400, 403), `HybridPgDumpNonReconstructionIT` (AC-05/NFR-04: stored blob does not contain plaintext key bytes; no `private`/`plaintext` columns).
+### Fixed - 2026-06-25
+
+- **EUDISTACK-537 code-review fixes — bean wiring**: removed `@Service` from `PrfSaltService` (prevents double-registration with the explicit `@Bean` in `KeyManagerConfiguration`); added `@Primary` to `prfSaltService` `@Bean`; removed the stale `prfSaltUseCaseNotYetAvailable` `@ConditionalOnMissingBean` stub (US-02→US-05 bridge no longer needed).
+- **EUDISTACK-537 code-review fixes — duplicate-key swallow**: narrowed `onErrorResume(DataIntegrityViolationException.class, …)` in `PrfSaltRepository.insert` to only swallow SQLSTATE `23505` (`unique_violation`). FK violations (`23503`) and CHECK violations (`23514`) now propagate as typed errors. Added `isUniqueViolation()` helper; new unit test asserts FK propagation path is not silently suppressed.
+- **EUDISTACK-537 code-review fixes — lazy reactive assembly**: wrapped `generateAndInsert` and `resolveAbsence` in `Mono.defer(…)` in `PrfSaltService`. CSPRNG `nextBytes` and `countByCredential` now execute only on a real cache miss, not on every call. Hit-path unit tests tightened with `verify(…, never())` assertions.
+- **EUDISTACK-537 code-review fixes — redundant `created_at` bind**: removed `:createdAt` parameter and `created_at` column from `INSERT_SQL` in `PrfSaltRepository`; DDL `DEFAULT NOW()` is the single source for timestamp.
+- **EUDISTACK-537 code-review fixes — credentialId logging**: replaced `credentialId.hashCode()` with `credentialId` in all `PrfSaltService` log statements. Per AC-06, `credential_id` may appear in logs; `prf_salt` and `holder_id` remain absent.
+- **EUDISTACK-537 code-review fixes — `salt_coherent` health indicator**: removed tautological `GROUP BY (holder_id, credential_id) HAVING COUNT(*) > 1` query (PK guarantee makes this condition structurally unreachable). Replaced with a table-reachability probe. Added no-tenant-context guard: when `HybridHealthContributor` is invoked without a tenant domain in Reactor context (e.g. Actuator background polls), it returns `UP` with a note instead of a misleading `DOWN`. Full per-tenant coherence (detecting credentials without a salt row) is delegated to EUDISTACK-541 (US-09) per architecture §5.4. Updated `HybridHealthSaltCoherentIT`: removed the artificial PK-drop duplicate test; added no-false-DOWN assertion for no-context invocation.
+- **EUDISTACK-537 code-review fixes — HTTP-layer isolation test**: added `PrfSaltIsolationIT` (`@WebFluxTest` + test-only stub `@RestController`) asserting that cross-holder access returns 403 `holder_isolation_violation` and absent credential returns 404, with no `prf_salt` or `holder_id` in any error response body (NFR-S-537-01/02, AC-04, AC-06, ES-04).
+
+### Added - 2026-06-19
+
+- **EUDISTACK-537 US-05 — Flyway migration `V3__create_hybrid_prf_salt.sql`**: creates `hybrid_prf_salt` tenant table with composite PK `(holder_id, credential_id)`, FK `holder_id → wallet_user(id)` ON DELETE RESTRICT, `prf_salt BYTEA NOT NULL` with CHECK `octet_length(prf_salt) = 32`, and `created_at TIMESTAMPTZ`. ACL `SELECT, INSERT` only — no `UPDATE/DELETE` grant (immutability invariant AD-3, NFR-S-537-04). Ordered before US-03 migration (R-4).
+- **EUDISTACK-537 US-05 — `PrfSaltPort`**: outgoing application port with `findBy`, `insert`, and `countByCredential` — all reactive `Mono<…>`.
+- **EUDISTACK-537 US-05 — `PrfSaltRepository`**: R2DBC adapter implementing `PrfSaltPort` via raw `DatabaseClient` SQL (composite PK). Duplicate-key on `insert` is silently swallowed (get-or-create concurrency, EC-03). Path 100% non-blocking (NFR-S-537-05).
+- **EUDISTACK-537 US-05 — `PrfSaltService`**: `@Service` implementing `PrfSaltUseCase` (defined by US-02). `getOrCreatePrfSalt`: get-or-create — SELECT → miss → CSPRNG 32B → INSERT → re-SELECT (idempotent, EC-01, EC-03). `getForHolder`: read-only with holder isolation — absent + count=0 → `PrfSaltNotFoundException` 404; absent + count>0 → `HolderIsolationViolationException` 403 (AC-04, ES-02, ES-04).
+- **EUDISTACK-537 US-05 — `PrfSaltNotFoundException` + `HolderIsolationViolationException`**: typed domain exceptions mapping to `wrap_handle_not_found` 404 and `holder_isolation_violation` 403 respectively (architecture.md §8.3). `HolderIsolationViolationException` fills gap from US-01 (EUDISTACK-533). Handler mappings added to `HybridKeyManagerExceptionHandler`; no `prf_salt` in any error response.
+- **EUDISTACK-537 US-05 — `HybridHealthContributor`**: Spring Boot Actuator `ReactiveHealthIndicator` with `salt_coherent` detail. Queries `hybrid_prf_salt` for duplicate `(holder_id, credential_id)` pairs (coherence check); reports `UP/true` when clean, `DOWN/false` on violations. No `prf_salt` bytes or `holder_id` values in the health response (AC-08, NFR-S-537-01).
+- **EUDISTACK-537 US-05 — Invariante R-5 (dueña del test)**: `PrfSaltFkInvariantIT` verifies that every `holder_id` in `hybrid_prf_salt` is a UUID v4 opaque `wallet_user.id`; INSERT with non-existent `holder_id` → FK violation; PII-like values rejected (AC-07, NFR-S-537-03).
 
 ### Added - 2026-06-16
 
