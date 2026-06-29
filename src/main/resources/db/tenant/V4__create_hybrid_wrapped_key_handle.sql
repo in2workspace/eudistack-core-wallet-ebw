@@ -66,6 +66,8 @@ CREATE TABLE hybrid_wrapped_key_handle (
     CONSTRAINT chk_hwkh_tag_len      CHECK (octet_length(tag) = 16)
 );
 
+REVOKE ALL ON hybrid_wrapped_key_handle FROM PUBLIC;
+
 -- =============================================================================
 -- ACL: immutability except last_used_at; no DELETE (AD-1)
 -- Wrapped in DO/EXCEPTION to tolerate role absence in environments where

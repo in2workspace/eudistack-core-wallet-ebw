@@ -152,6 +152,34 @@ class HybridWrappedKeyHandleConstraintIT {
     }
 
     // -------------------------------------------------------------------------
+    // AC-03 — tag != 16 bytes -> CHECK violation
+    // -------------------------------------------------------------------------
+
+    @Test
+    void insert_with_tag_length_not_16_bytes_is_rejected_by_check() throws SQLException {
+        byte[] shortTag = new byte[15]; // 15 instead of 16
+        String credId = "cred-bad-tag";
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
+            conn.setAutoCommit(false);
+            conn.createStatement().execute("SET search_path TO " + testSchema);
+            try {
+                conn.createStatement().execute(insertSql(
+                        holderId, credId,
+                        validBlob(), validIv(), shortTag));
+                fail("Expected SQLSTATE " + SQLSTATE_CHECK_VIOLATION
+                        + " for tag != 16 bytes but no exception was thrown");
+            } catch (SQLException ex) {
+                assertThat(ex.getSQLState())
+                        .as("tag != 16 bytes must be rejected with SQLSTATE 23514 (check_violation)")
+                        .isEqualTo(SQLSTATE_CHECK_VIOLATION);
+            } finally {
+                conn.rollback();
+            }
+        }
+        assertNoRow(credId);
+    }
+
+    // -------------------------------------------------------------------------
     // ES-01 — wrapped_blob NULL -> NOT NULL violation
     // -------------------------------------------------------------------------
 

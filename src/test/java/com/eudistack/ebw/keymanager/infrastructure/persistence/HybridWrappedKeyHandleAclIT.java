@@ -65,6 +65,13 @@ class HybridWrappedKeyHandleAclIT {
     private static final String EBW_APP_USER     = "ebw_app_user_acl";
     private static final String EBW_APP_PASSWORD = "test_acl_pass";
 
+    /**
+     * Login user with NO group-role membership (models a PUBLIC / unprivileged connection).
+     * Used to verify that the {@code REVOKE ALL FROM PUBLIC} baseline is in effect.
+     */
+    private static final String UNPRIV_USER     = "ebw_unpriv_user_acl";
+    private static final String UNPRIV_PASSWORD = "test_unpriv_pass";
+
     @Container
     static final PostgreSQLContainer<?> postgres =
             new PostgreSQLContainer<>("postgres:17-alpine")
@@ -223,6 +230,38 @@ class HybridWrappedKeyHandleAclIT {
     }
 
     // -------------------------------------------------------------------------
+    // PUBLIC denial — unprivileged login (no ebw_app_role) cannot SELECT
+    // Verifies that REVOKE ALL ON hybrid_wrapped_key_handle FROM PUBLIC is in
+    // effect: a bare login user with no role membership is denied access.
+    //
+    // PostgreSQL raises 42501 (insufficient_privilege) when the user has schema
+    // USAGE but lacks table privilege.  When schema USAGE is also absent it
+    // raises 42P01 (undefined_table) because the object is invisible to the
+    // caller.  Both states prove that REVOKE ALL FROM PUBLIC is effective.
+    // -------------------------------------------------------------------------
+
+    /** SQLSTATE for undefined_table — raised when schema USAGE is denied. */
+    private static final String SQLSTATE_UNDEFINED_TABLE = "42P01";
+
+    @Test
+    void unprivileged_login_without_ebw_app_role_cannot_select() throws SQLException {
+        try (Connection conn = connectionAsUnprivilegedLogin()) {
+            try {
+                conn.createStatement().executeQuery(
+                        "SELECT 1 FROM hybrid_wrapped_key_handle LIMIT 1");
+                fail("Expected SQLSTATE 42501 or 42P01 for SELECT "
+                        + "as unprivileged login but no exception was thrown");
+            } catch (SQLException ex) {
+                assertThat(ex.getSQLState())
+                        .as("SELECT on hybrid_wrapped_key_handle must be denied "
+                            + "(42501 insufficient_privilege or 42P01 undefined_table) "
+                            + "for a login without ebw_app_role — REVOKE ALL FROM PUBLIC is effective")
+                        .isIn(SQLSTATE_INSUFFICIENT_PRIVILEGE, SQLSTATE_UNDEFINED_TABLE);
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // EC-01 — after UPDATE last_used_at, crypto columns are unchanged
     // -------------------------------------------------------------------------
 
@@ -290,6 +329,12 @@ class HybridWrappedKeyHandleAclIT {
                     "DO $$ BEGIN GRANT ebw_app_role TO " + EBW_APP_USER + "; "
                     + "EXCEPTION WHEN duplicate_object THEN NULL; END $$");
 
+            // Unprivileged login user — NO role membership, models PUBLIC
+            conn.createStatement().execute(
+                    "DO $$ BEGIN CREATE ROLE " + UNPRIV_USER
+                    + " LOGIN PASSWORD '" + UNPRIV_PASSWORD + "'; "
+                    + "EXCEPTION WHEN duplicate_object THEN NULL; END $$");
+
             conn.createStatement().execute("CREATE SCHEMA IF NOT EXISTS " + testSchema);
 
             conn.createStatement().execute(
@@ -315,6 +360,18 @@ class HybridWrappedKeyHandleAclIT {
         String baseUrl = jdbcUrl.replaceFirst("\\?.*", "");
         Connection conn = DriverManager.getConnection(baseUrl, EBW_APP_USER, EBW_APP_PASSWORD);
         conn.createStatement().execute("SET ROLE ebw_app_role");
+        conn.createStatement().execute("SET search_path TO " + testSchema);
+        return conn;
+    }
+
+    /**
+     * Opens a JDBC connection as the unprivileged login user (no group-role membership).
+     * {@code search_path} is set to the test schema so the table is visible by name.
+     * The REVOKE ALL FROM PUBLIC means even visibility does not grant access.
+     */
+    private Connection connectionAsUnprivilegedLogin() throws SQLException {
+        String baseUrl = jdbcUrl.replaceFirst("\\?.*", "");
+        Connection conn = DriverManager.getConnection(baseUrl, UNPRIV_USER, UNPRIV_PASSWORD);
         conn.createStatement().execute("SET search_path TO " + testSchema);
         return conn;
     }
