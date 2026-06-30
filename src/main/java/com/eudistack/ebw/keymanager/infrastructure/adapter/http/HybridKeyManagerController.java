@@ -1,6 +1,8 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.domain.service.AuditService;
+import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
@@ -20,8 +22,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
+import java.util.Map;
+
 /**
- * REST controller for the hybrid (Passkey PRF) two-step signing handshake.
+ * REST controller for the hybrid (Passkey PRF) two-step signing handshake and audit events.
  *
  * <p>Endpoints:
  * <ul>
@@ -31,9 +35,11 @@ import reactor.core.publisher.Mono;
  *   <li>{@code POST /api/v1/keys/hybrid/sign/submit} — finalises the handshake: the PWA
  *       submits the client-side signed assertion; the server verifies and produces the
  *       key-binding JWT.</li>
+ *   <li>{@code POST /api/v1/keys/hybrid/constraint-accepted} — records the holder's acceptance
+ *       of the multi-device limitation in the audit log (US-06, EUDISTACK-538).</li>
  * </ul>
  *
- * <p>Both endpoints reject with {@code 403} if the tenant's wallet profile is not
+ * <p>All endpoints reject with {@code 403} if the tenant's wallet profile is not
  * {@code (SERVER, HYBRID)}, preventing DB tenants from reaching hybrid routes.</p>
  *
  * <p>The {@code holder_id} is extracted from the DPoP-bound JWT and written to the Reactor
@@ -41,19 +47,23 @@ import reactor.core.publisher.Mono;
  *
  * <p>Spec: EUDISTACK-533 FR-03, AC-03, AC-04, AC-05, ES-01, ES-03;
  * EUDISTACK-536 ES-04; architecture.md §6.1 (runtime flows).</p>
+ * EUDISTACK-538 (US-06) AC-02; architecture.md §6.1 (runtime flows).</p>
  */
 @RestController
-@RequestMapping("/api/v1/keys/hybrid/sign")
+@RequestMapping("/api/v1/keys/hybrid")
 @Validated
 public class HybridKeyManagerController {
 
     private final KeyManagerPort hybridAdapter;
     private final WalletProfileQueryPort walletProfileQueryPort;
+    private final AuditService auditService;
 
     public HybridKeyManagerController(KeyManagerPort hybridAdapter,
-                                       WalletProfileQueryPort walletProfileQueryPort) {
+                                       WalletProfileQueryPort walletProfileQueryPort,
+                                       AuditService auditService) {
         this.hybridAdapter = hybridAdapter;
         this.walletProfileQueryPort = walletProfileQueryPort;
+        this.auditService = auditService;
     }
 
     /**
@@ -68,7 +78,7 @@ public class HybridKeyManagerController {
      * @param auth    the DPoP-bound authenticated holder principal
      * @return 200 with the PRF challenge envelope
      */
-    @PostMapping("/prepare")
+    @PostMapping("/sign/prepare")
     public Mono<ResponseEntity<PrepareSignResponse>> prepare(
             @Valid @RequestBody PrepareSignRequest request,
             JwtAuthenticationToken auth) {
@@ -101,7 +111,7 @@ public class HybridKeyManagerController {
      * @param auth    the DPoP-bound authenticated holder principal
      * @return 200 with the key-binding JWT
      */
-    @PostMapping("/submit")
+    @PostMapping("/sign/submit")
     public Mono<ResponseEntity<SubmitSignedAssertionResponse>> submit(
             @Valid @RequestBody SubmitSignedAssertionRequest request,
             JwtAuthenticationToken auth) {
@@ -120,5 +130,37 @@ public class HybridKeyManagerController {
                 })
                 .map(ResponseEntity::ok)
                 .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, holderId));
+    }
+
+    /**
+     * Records the holder's acceptance of the multi-device constraint in the audit log.
+     *
+     * <p>The PWA calls this endpoint once, immediately after the user taps "accept" on the
+     * hybrid onboarding screen and before any holder key is generated (US-06, AC-02).
+     * The actor identity is taken from the authenticated JWT — no request body is needed.</p>
+     *
+     * @param auth the authenticated holder principal
+     * @return 204 No Content on success
+     */
+    @PostMapping("/constraint-accepted")
+    public Mono<ResponseEntity<Void>> acceptConstraint(JwtAuthenticationToken auth) {
+
+        return walletProfileQueryPort.queryByCurrentTenant()
+                .flatMap(profile -> {
+                    if (profile.walletMode() != WalletMode.SERVER
+                            || profile.keyManager() != KeyManager.HYBRID) {
+                        return Mono.deferContextual(ctx ->
+                                Mono.error(new TenantWalletProfileUnsupportedException(
+                                        ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
+                    }
+                    return auditService.record(
+                            "hybrid_consent",
+                            auth.getUserId(),
+                            "hybrid_constraint_accepted",
+                            auth.getUserId(),
+                            Map.of("key_manager", "hybrid")
+                    );
+                })
+                .thenReturn(ResponseEntity.<Void>noContent().build());
     }
 }
