@@ -32,6 +32,12 @@ public class HybridWrappedKeyHandleR2dbcAdapter implements WrappedKeyHandleRepos
     private static final String COUNT_SQL =
             "SELECT COUNT(*) FROM hybrid_wrapped_key_handle";
 
+    private static final String COUNT_ORPHANED_SQL =
+            "SELECT COUNT(*) FROM hybrid_wrapped_key_handle h "
+            + "LEFT JOIN hybrid_prf_salt s "
+            + "  ON h.holder_id = s.holder_id AND h.credential_id = s.credential_id "
+            + "WHERE s.holder_id IS NULL";
+
     private static final String SELECT_SQL =
             "SELECT holder_id, credential_id, wrapped_blob, iv, tag, "
             + "kdf_algo, kdf_version, cnf_jwk, created_at, last_used_at "
@@ -54,6 +60,13 @@ public class HybridWrappedKeyHandleR2dbcAdapter implements WrappedKeyHandleRepos
     @Override
     public Mono<Long> count() {
         return databaseClient.sql(COUNT_SQL)
+                .map(row -> row.get(0, Long.class))
+                .one();
+    }
+
+    @Override
+    public Mono<Long> countOrphaned() {
+        return databaseClient.sql(COUNT_ORPHANED_SQL)
                 .map(row -> row.get(0, Long.class))
                 .one();
     }

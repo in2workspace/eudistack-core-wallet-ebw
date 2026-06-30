@@ -37,19 +37,12 @@ import reactor.core.publisher.Mono;
  *       no DB query is performed for this indicator.
  *   <li>{@code wrap_handles_total} — count of rows in {@code hybrid_wrapped_key_handle}.
  *       Informational; does not affect the global status.
- *   <li>{@code salt_coherent} — FK integrity between {@code hybrid_wrapped_key_handle} and
- *       {@code hybrid_prf_salt}. BLOCKED until the full coherence query is validated
- *       post-migration; included as an informational detail when blocked.
+ *   <li>{@code salt_coherent} — every {@code hybrid_wrapped_key_handle} row has a matching
+ *       {@code hybrid_prf_salt} row for the same {@code (holder_id, credential_id)}. The
+ *       {@code fk_hwkh_prf_salt} foreign key (V4 tenant migration, US-03/EUDISTACK-535)
+ *       already enforces this for application writes; this indicator is defense-in-depth
+ *       against out-of-band data manipulation. DOWN if any orphaned handle is found.
  * </ol>
- *
- * <p>Global status is the worst of the thresholded indicators: DOWN if
- * {@code prf_gate_pass_rate < 0.75} or if {@code WrappedKeyHandleRepository.count()} fails.
- * {@code salt_coherent} is informational while BLOCKED.
- *
- * <p>The endpoint inherits the VPC-level isolation defined by ADR-007. Spring Security permits
- * all requests to {@code /health/**} as defence-in-depth.
- *
- * <p>Spec: EUDISTACK-541; architecture.md §5.4, §8.2.
  */
 @Component
 @RequiredArgsConstructor
@@ -77,7 +70,7 @@ public class HybridHealthContributor implements ReactiveHealthIndicator {
 
     private Mono<Health> hybridHealth() {
         Mono<Health> prfMono  = Mono.fromSupplier(this::prfGateRateHealth);
-        Mono<Health> saltMono = Mono.fromSupplier(this::saltCoherentHealth);
+        Mono<Health> saltMono = saltCoherentHealth();
         Mono<Health> wrapMono = wrappedKeyHandleRepository.count()
                 .doOnNext(telemetry::updateWrapHandlesTotal)
                 .map(count -> Health.up().withDetail("wrap_handles_total", count).build())
@@ -107,24 +100,23 @@ public class HybridHealthContributor implements ReactiveHealthIndicator {
         return Health.down().withDetail("prf_gate_pass_rate", rate).build();
     }
 
-    private Health saltCoherentHealth() {
-        // TODO(EUDISTACK-537): Replace with a real FK coherence check between
-        // hybrid_wrapped_key_handle and hybrid_prf_salt. The query should be:
-        //
-        //   SELECT COUNT(*) FROM hybrid_wrapped_key_handle h
-        //     LEFT JOIN hybrid_prf_salt s
-        //       ON h.holder_id = s.holder_id AND h.credential_id = s.credential_id
-        //     WHERE s.holder_id IS NULL
-        //
-        // Return Status.UP if the result is 0, Status.DOWN otherwise.
-        return Health.up()
-                .withDetail("salt_coherent", "BLOCKED")
-                .withDetail("salt_coherent_reason", "Blocked on EUDISTACK-537 US-05")
-                .build();
+    private Mono<Health> saltCoherentHealth() {
+        return wrappedKeyHandleRepository.countOrphaned()
+                .map(orphaned -> orphaned == 0L
+                        ? Health.up().withDetail("salt_coherent", true).build()
+                        : Health.down()
+                                .withDetail("salt_coherent", false)
+                                .withDetail("salt_coherent_orphaned_count", orphaned)
+                                .build())
+                .onErrorResume(e -> Mono.just(Health.down()
+                        .withDetail("salt_coherent_error", e.getMessage())
+                        .build()));
     }
 
     private Health combineHealth(Health prf, Health salt, Health wrap) {
-        boolean down = Status.DOWN.equals(prf.getStatus()) || Status.DOWN.equals(wrap.getStatus());
+        boolean down = Status.DOWN.equals(prf.getStatus())
+                || Status.DOWN.equals(wrap.getStatus())
+                || Status.DOWN.equals(salt.getStatus());
         Health.Builder builder = down ? Health.down() : Health.up();
         prf.getDetails().forEach(builder::withDetail);
         wrap.getDetails().forEach(builder::withDetail);

@@ -12,27 +12,6 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * Centralised telemetry helper for the hybrid key-manager adapter (US-09 / EUDISTACK-541).
- *
- * <p>Registers five Micrometer signals (architecture.md §8.2):
- * <ol>
- *   <li>{@code hybrid.prf_gate.attempts.total} — Counter, tag {@code tenant}: every
- *       onboarding {@code init} call, regardless of PRF gate outcome.
- *   <li>{@code hybrid.prf_gate.passes.total} — Counter, tag {@code tenant}: calls where
- *       the PRF salt was successfully generated (gate passed).
- *   <li>{@code hybrid.wrap_handles.total} — Gauge backed by an {@link AtomicLong} updated
- *       each time {@link HybridHealthContributor}
- *       reads {@code WrappedKeyHandleRepository.count()}.
- *   <li>{@code hybrid.sign.latency} — Timer, tag {@code tenant}: full
- *       {@code prepareSign → submitSignedAssertion} handshake latency. Populated by US-04
- *       (EUDISTACK-536) once the signing flow is implemented.
- *   <li>{@code hybrid.sign.errors.total} — Counter, tag {@code tenant}: signing errors.
- *       Populated by US-04 (EUDISTACK-536).
- * </ol>
- *
- * <p>See technical-design.md §3.5 and architecture.md §8.2.
- */
 @Component
 @RequiredArgsConstructor
 public class HybridKeyManagerTelemetry {

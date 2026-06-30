@@ -40,7 +40,9 @@ import static org.mockito.Mockito.when;
  *   <li>prf_gate_pass_rate above threshold → UP</li>
  *   <li>prf_gate_pass_rate below threshold → DOWN</li>
  *   <li>No attempts yet → UP with "no attempts yet" note</li>
- *   <li>salt_coherent BLOCKED detail always present for hybrid tenants</li>
+ *   <li>salt_coherent: no orphaned handles → UP</li>
+ *   <li>salt_coherent: orphaned handles found → DOWN</li>
+ *   <li>countOrphaned() failure → DOWN with error detail</li>
  *   <li>count() R2DBC failure → DOWN with exception in detail</li>
  * </ul>
  */
@@ -102,6 +104,7 @@ class HybridHealthContributorTest {
         meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", "t1").increment(10);
         meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", "t1").increment(8);
         when(repository.count()).thenReturn(Mono.just(5L));
+        when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
         // Act + Assert
         StepVerifier.create(contributor.health())
@@ -109,7 +112,7 @@ class HybridHealthContributorTest {
                     assertThat(health.getStatus()).isEqualTo(Status.UP);
                     assertThat(health.getDetails()).containsKey("prf_gate_pass_rate");
                     assertThat(health.getDetails()).containsKey("wrap_handles_total");
-                    assertThat(health.getDetails()).containsKey("salt_coherent");
+                    assertThat(health.getDetails().get("salt_coherent")).isEqualTo(true);
                     assertThat((Double) health.getDetails().get("prf_gate_pass_rate")).isGreaterThanOrEqualTo(0.75);
                 })
                 .verifyComplete();
@@ -122,6 +125,7 @@ class HybridHealthContributorTest {
         meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", "t1").increment(10);
         meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", "t1").increment(6);
         when(repository.count()).thenReturn(Mono.just(3L));
+        when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
         // Act + Assert
         StepVerifier.create(contributor.health())
@@ -137,6 +141,7 @@ class HybridHealthContributorTest {
         // Arrange — counters at zero (no attempts yet)
         when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
         when(repository.count()).thenReturn(Mono.just(0L));
+        when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
         // Act + Assert
         StepVerifier.create(contributor.health())
@@ -149,21 +154,47 @@ class HybridHealthContributorTest {
                 .verifyComplete();
     }
 
-    @Test
-    void health_saltCoherentBlocked_detailAlwaysPresent() {
-        // Arrange — PRF rate below threshold (0.7 < 0.75) so overall is DOWN,
-        // which also allows verification of the BLOCKED salt_coherent detail
-        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", "t1").increment(10);
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", "t1").increment(7);
-        when(repository.count()).thenReturn(Mono.just(0L));
+    // ------------------------------------------------------------------ salt_coherent
 
-        // Act + Assert
+    @Test
+    void health_noOrphanedHandles_saltCoherentUp() {
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
+        when(repository.count()).thenReturn(Mono.just(5L));
+        when(repository.countOrphaned()).thenReturn(Mono.just(0L));
+
+        StepVerifier.create(contributor.health())
+                .assertNext(health -> {
+                    assertThat(health.getStatus()).isEqualTo(Status.UP);
+                    assertThat(health.getDetails().get("salt_coherent")).isEqualTo(true);
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void health_orphanedHandlesFound_saltCoherentDown() {
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
+        when(repository.count()).thenReturn(Mono.just(5L));
+        when(repository.countOrphaned()).thenReturn(Mono.just(2L));
+
         StepVerifier.create(contributor.health())
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.DOWN);
-                    assertThat(health.getDetails().get("salt_coherent")).isEqualTo("BLOCKED");
-                    assertThat(health.getDetails()).containsKey("salt_coherent_reason");
+                    assertThat(health.getDetails().get("salt_coherent")).isEqualTo(false);
+                    assertThat(health.getDetails().get("salt_coherent_orphaned_count")).isEqualTo(2L);
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void health_countOrphanedFails_returnsDown() {
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
+        when(repository.count()).thenReturn(Mono.just(5L));
+        when(repository.countOrphaned()).thenReturn(Mono.error(new RuntimeException("R2DBC connection refused")));
+
+        StepVerifier.create(contributor.health())
+                .assertNext(health -> {
+                    assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+                    assertThat(health.getDetails()).containsKey("salt_coherent_error");
                 })
                 .verifyComplete();
     }
@@ -174,6 +205,7 @@ class HybridHealthContributorTest {
         when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
         RuntimeException dbError = new RuntimeException("R2DBC connection refused");
         when(repository.count()).thenReturn(Mono.error(dbError));
+        when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
         // Act + Assert
         // count() failure is caught by wrapMono.onErrorResume → wrap is DOWN →
