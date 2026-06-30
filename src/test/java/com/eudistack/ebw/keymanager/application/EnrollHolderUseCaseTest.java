@@ -8,6 +8,7 @@ import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
+import com.eudistack.ebw.keymanager.infrastructure.observability.HybridKeyManagerTelemetry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,12 +56,13 @@ class EnrollHolderUseCaseTest {
 
     @Mock private PrfSaltUseCase prfSaltUseCase;
     @Mock private WrappedKeyHandleRepository repository;
+    @Mock private HybridKeyManagerTelemetry telemetry;
 
     private EnrollHolderUseCase useCase;
 
     @BeforeEach
     void setUp() {
-        useCase = new EnrollHolderUseCase(prfSaltUseCase, repository);
+        useCase = new EnrollHolderUseCase(prfSaltUseCase, repository, telemetry);
     }
 
     // ------------------------------------------------------------------ init
