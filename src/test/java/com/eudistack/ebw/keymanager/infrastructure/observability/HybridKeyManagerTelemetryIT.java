@@ -102,11 +102,32 @@ class HybridKeyManagerTelemetryIT {
 
     @Test
     void updateWrapHandlesTotal_setsGaugeValue() {
-        telemetry.updateWrapHandlesTotal(42L);
+        String isolatedTenant = "wraphandles-" + System.nanoTime();
+
+        telemetry.updateWrapHandlesTotal(isolatedTenant, 42L);
+
         Collection<Gauge> gauges = meterRegistry.find(HybridKeyManagerTelemetry.METRIC_WRAP_HANDLES)
+                .tag(HybridKeyManagerTelemetry.TAG_TENANT, isolatedTenant)
                 .gauges();
-        assertThat(gauges).as("hybrid.wrap_handles.total gauge must be registered").isNotEmpty();
+        assertThat(gauges).as("hybrid.wrap_handles.total gauge must be registered for the tenant").isNotEmpty();
         assertThat(gauges.iterator().next().value()).isEqualTo(42.0);
+    }
+
+    @Test
+    void updateWrapHandlesTotal_twoTenants_doNotOverwriteEachOther() {
+        String tenantA = "wraphandles-a-" + System.nanoTime();
+        String tenantB = "wraphandles-b-" + System.nanoTime();
+
+        telemetry.updateWrapHandlesTotal(tenantA, 5L);
+        telemetry.updateWrapHandlesTotal(tenantB, 9L);
+
+        double valueA = meterRegistry.find(HybridKeyManagerTelemetry.METRIC_WRAP_HANDLES)
+                .tag(HybridKeyManagerTelemetry.TAG_TENANT, tenantA).gauge().value();
+        double valueB = meterRegistry.find(HybridKeyManagerTelemetry.METRIC_WRAP_HANDLES)
+                .tag(HybridKeyManagerTelemetry.TAG_TENANT, tenantB).gauge().value();
+
+        assertThat(valueA).isEqualTo(5.0);
+        assertThat(valueB).isEqualTo(9.0);
     }
 
     @Test

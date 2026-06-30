@@ -36,10 +36,12 @@ import static org.mockito.Mockito.when;
  * <p>Covered criteria:
  * <ul>
  *   <li>Non-hybrid tenant → neutral UP, hybrid checks not run</li>
- *   <li>Tenant cannot be resolved → neutral UP (same as non-hybrid)</li>
+ *   <li>Tenant cannot be resolved ({@code TenantUnknownException}) → neutral UP (same as non-hybrid)</li>
+ *   <li>Tenant resolution fails with any other error → DOWN, not swallowed into neutral UP</li>
  *   <li>prf_gate_pass_rate above threshold → UP</li>
  *   <li>prf_gate_pass_rate below threshold → DOWN</li>
  *   <li>No attempts yet → UP with "no attempts yet" note</li>
+ *   <li>prf_gate_pass_rate is filtered by the resolved tenant, ignoring other tenants' counters</li>
  *   <li>salt_coherent: no orphaned handles → UP</li>
  *   <li>salt_coherent: orphaned handles found → DOWN</li>
  *   <li>countOrphaned() failure → DOWN with error detail</li>
@@ -95,14 +97,26 @@ class HybridHealthContributorTest {
                 .verifyComplete();
     }
 
+    @Test
+    void health_walletProfileQueryFailsUnexpectedly_returnsDown_notNeutralUp() {
+        // A genuine dependency failure (e.g. R2DBC outage) while resolving the tenant must
+        // surface as DOWN, not be swallowed into the same neutral UP used for "not hybrid".
+        when(walletProfileQueryPort.queryByCurrentTenant())
+                .thenReturn(Mono.error(new RuntimeException("R2DBC connection refused")));
+
+        StepVerifier.create(contributor.health())
+                .assertNext(health -> assertThat(health.getStatus()).isEqualTo(Status.DOWN))
+                .verifyComplete();
+    }
+
     // ------------------------------------------------------------------ prf_gate_pass_rate
 
     @Test
     void health_withPrfRateAboveThreshold_returnsUp() {
         // Arrange — 8/10 = 0.80 ≥ 0.75
         when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", "t1").increment(10);
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", "t1").increment(8);
+        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", TENANT).increment(10);
+        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", TENANT).increment(8);
         when(repository.count()).thenReturn(Mono.just(5L));
         when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
@@ -122,8 +136,8 @@ class HybridHealthContributorTest {
     void health_withPrfRateBelowThreshold_returnsDown() {
         // Arrange — 6/10 = 0.60 < 0.75
         when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", "t1").increment(10);
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", "t1").increment(6);
+        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", TENANT).increment(10);
+        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", TENANT).increment(6);
         when(repository.count()).thenReturn(Mono.just(3L));
         when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
@@ -150,6 +164,25 @@ class HybridHealthContributorTest {
                     assertThat(health.getDetails().get("prf_gate_pass_rate")).isEqualTo(1.0);
                     assertThat(health.getDetails().get("prf_gate_pass_rate_note"))
                             .isEqualTo("no attempts yet");
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void health_ignoresOtherTenantsCounters() {
+        // Arrange — cgcom has a healthy 9/10 rate, but a different tenant ("other-tenant")
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
+        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", TENANT).increment(10);
+        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", TENANT).increment(9);
+        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", "other-tenant").increment(10);
+        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", "other-tenant").increment(0);
+        when(repository.count()).thenReturn(Mono.just(5L));
+        when(repository.countOrphaned()).thenReturn(Mono.just(0L));
+
+        StepVerifier.create(contributor.health())
+                .assertNext(health -> {
+                    assertThat(health.getStatus()).isEqualTo(Status.UP);
+                    assertThat((Double) health.getDetails().get("prf_gate_pass_rate")).isEqualTo(0.9);
                 })
                 .verifyComplete();
     }
@@ -208,9 +241,7 @@ class HybridHealthContributorTest {
         when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
         // Act + Assert
-        // count() failure is caught by wrapMono.onErrorResume → wrap is DOWN →
-        // combineHealth marks overall DOWN; salt_coherent detail is still present.
-        StepVerifier.create(contributor.health())
+         StepVerifier.create(contributor.health())
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.DOWN);
                     assertThat(health.getDetails()).containsKey("wrap_handles_error");

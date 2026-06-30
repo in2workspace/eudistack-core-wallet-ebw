@@ -3,13 +3,14 @@ package com.eudistack.ebw.keymanager.infrastructure.observability;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Component
@@ -27,14 +28,7 @@ public class HybridKeyManagerTelemetry {
 
     private final MeterRegistry meterRegistry;
 
-    private final AtomicLong wrapHandlesTotal = new AtomicLong(0);
-
-    @PostConstruct
-    void registerGauge() {
-        Gauge.builder(METRIC_WRAP_HANDLES, wrapHandlesTotal, AtomicLong::get)
-                .description("Total rows in hybrid_wrapped_key_handle (updated on each health check)")
-                .register(meterRegistry);
-    }
+    private final ConcurrentMap<String, AtomicLong> wrapHandlesByTenant = new ConcurrentHashMap<>();
 
     public void recordPrfAttempt(String tenant) {
         meterRegistry.counter(METRIC_PRF_ATTEMPTS, TAG_TENANT, tenant).increment();
@@ -58,7 +52,16 @@ public class HybridKeyManagerTelemetry {
         log.debug("hybrid.sign.error tenant={}", tenant);
     }
 
-    public void updateWrapHandlesTotal(long count) {
-        wrapHandlesTotal.set(count);
+    public void updateWrapHandlesTotal(String tenant, long count) {
+        wrapHandlesByTenant.computeIfAbsent(tenant, this::registerWrapHandlesGauge).set(count);
+    }
+
+    private AtomicLong registerWrapHandlesGauge(String tenant) {
+        AtomicLong holder = new AtomicLong(0);
+        Gauge.builder(METRIC_WRAP_HANDLES, holder, AtomicLong::get)
+                .tag(TAG_TENANT, tenant)
+                .description("Total rows in hybrid_wrapped_key_handle for this tenant (updated on each health check)")
+                .register(meterRegistry);
+        return holder;
     }
 }
