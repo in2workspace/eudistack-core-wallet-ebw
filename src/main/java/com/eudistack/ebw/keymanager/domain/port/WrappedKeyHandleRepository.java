@@ -49,4 +49,16 @@ public interface WrappedKeyHandleRepository {
      *         violation (concurrent duplicate)
      */
     Mono<Void> insert(WrappedKeyHandle handle);
+
+    /**
+     * Returns the total number of wrapped key handles in the current tenant schema.
+     *
+     * <p>Tenant isolation is provided by the PostgreSQL {@code search_path} set on each
+     * connection by {@code TenantAwareConnectionFactoryDecorator} (architecture.md §5.3).
+     * Used by {@code HybridHealthContributor} (US-09) to expose the {@code wrap_handles_total}
+     * operational indicator.</p>
+     *
+     * @return total row count in {@code hybrid_wrapped_key_handle} for the current tenant
+     */
+    Mono<Long> count();
 }

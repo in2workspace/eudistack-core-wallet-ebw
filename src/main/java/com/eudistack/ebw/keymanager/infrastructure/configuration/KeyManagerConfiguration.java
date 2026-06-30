@@ -21,8 +21,8 @@ import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.PrfSaltReposito
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.DbKeyManagerService;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.HybridKeyManagerAdapter;
-import com.eudistack.ebw.keymanager.infrastructure.health.HybridHealthContributor;
 import com.eudistack.ebw.keymanager.infrastructure.health.KeyManagerHealthController;
+import com.eudistack.ebw.keymanager.infrastructure.observability.HybridKeyManagerTelemetry;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactory;
@@ -191,8 +191,10 @@ public class KeyManagerConfiguration {
 
     @Bean
     EnrollHolderUseCase enrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
-                                            WrappedKeyHandleRepository wrappedKeyHandleRepository) {
-        return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository);
+                                            WrappedKeyHandleRepository wrappedKeyHandleRepository,
+                                            HybridKeyManagerTelemetry hybridKeyManagerTelemetry) {
+        return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository,
+                hybridKeyManagerTelemetry);
     }
 
     @Bean
@@ -203,12 +205,7 @@ public class KeyManagerConfiguration {
         return new HybridOnboardingController(enrollHolderUseCase, walletProfileQueryPort, objectMapper);
     }
 
-    // --- EUDISTACK-537 US-05: PRF salt persistence, use case + health indicator ---
-
-    @Bean
-    HybridHealthContributor hybridHealthContributor(DatabaseClient databaseClient) {
-        return new HybridHealthContributor(databaseClient);
-    }
+    // --- EUDISTACK-537 US-05: PRF salt persistence ---
 
     @Bean
     PrfSaltRepository prfSaltRepository(DatabaseClient databaseClient) {
