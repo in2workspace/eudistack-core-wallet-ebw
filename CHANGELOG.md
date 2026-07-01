@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-06-30
+
+### Added - 2026-06-30
+
+- **EUDISTACK-541 US-09 — `HybridHealthContributor`**: per-tenant Actuator health indicator for the hybrid key manager, exposing `prf_gate_pass_rate`, `wrap_handles_total` and `salt_coherent` under `/health`. Resolves hybrid-ness per request via `WalletProfileQueryPort` (no global toggle); non-hybrid tenants get a neutral UP.
+- **EUDISTACK-541 US-09 — `HybridKeyManagerTelemetry`**: Micrometer counters/gauge/timer for the hybrid adapter (PRF gate attempts/passes, per-tenant wrap-handle gauge, sign latency/errors).
+- **EUDISTACK-541 US-09 — `WrappedKeyHandleRepository.count()` / `.countOrphaned()`**: backs `wrap_handles_total` and a real FK-coherence check against `hybrid_prf_salt` (defense-in-depth on top of the `fk_hwkh_prf_salt` constraint from US-03).
+
+### Fixed - 2026-06-30
+
+- **EUDISTACK-541 US-09 — tenant-scoped metrics**: `prf_gate_pass_rate` and the wrap-handles gauge were aggregated globally across all tenants; now filtered/tagged by the resolved tenant.
+- **EUDISTACK-541 US-09 — tenant resolution error handling**: a genuine `WalletProfileQueryPort` failure was swallowed into a neutral UP; now only `TenantUnknownException` is treated as "not applicable", other errors report DOWN.
+
 ## [1.11.0] - 2026-06-29
 
 ### Added - 2026-06-29

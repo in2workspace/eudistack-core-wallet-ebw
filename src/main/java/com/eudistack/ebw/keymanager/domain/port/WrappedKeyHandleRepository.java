@@ -49,4 +49,31 @@ public interface WrappedKeyHandleRepository {
      *         violation (concurrent duplicate)
      */
     Mono<Void> insert(WrappedKeyHandle handle);
+
+    /**
+     * Returns the total number of wrapped key handles in the current tenant schema.
+     *
+     * <p>Tenant isolation is provided by the PostgreSQL {@code search_path} set on each
+     * connection by {@code TenantAwareConnectionFactoryDecorator} (architecture.md §5.3).
+     * Used by {@code HybridHealthContributor} (US-09) to expose the {@code wrap_handles_total}
+     * operational indicator.</p>
+     *
+     * @return total row count in {@code hybrid_wrapped_key_handle} for the current tenant
+     */
+    Mono<Long> count();
+
+    /**
+     * Returns the number of wrapped key handles that have no matching {@code hybrid_prf_salt}
+     * row for the same {@code (holderId, credentialId)} composite.
+     *
+     * <p>This is a defense-in-depth check: the {@code fk_hwkh_prf_salt} foreign key
+     * (V4 Flyway tenant migration, US-03/EUDISTACK-535) already prevents this at the
+     * database level for any insert going through the application, so a non-zero result
+     * here signals a real anomaly (e.g. out-of-band data manipulation), not a normal
+     * application-level race. Used by {@code HybridHealthContributor} (US-09) to expose
+     * the {@code salt_coherent} operational indicator.
+     *
+     * @return count of orphaned wrapped key handles for the current tenant; {@code 0} means coherent
+     */
+    Mono<Long> countOrphaned();
 }

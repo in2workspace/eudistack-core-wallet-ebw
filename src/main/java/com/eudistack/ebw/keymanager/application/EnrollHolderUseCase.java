@@ -8,6 +8,7 @@ import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
+import com.eudistack.ebw.keymanager.infrastructure.observability.HybridKeyManagerTelemetry;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
@@ -57,11 +58,14 @@ public class EnrollHolderUseCase {
 
     private final PrfSaltUseCase prfSaltUseCase;
     private final WrappedKeyHandleRepository wrappedKeyHandleRepository;
+    private final HybridKeyManagerTelemetry telemetry;
 
     public EnrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
-                                WrappedKeyHandleRepository wrappedKeyHandleRepository) {
+                                WrappedKeyHandleRepository wrappedKeyHandleRepository,
+                                HybridKeyManagerTelemetry telemetry) {
         this.prfSaltUseCase = prfSaltUseCase;
         this.wrappedKeyHandleRepository = wrappedKeyHandleRepository;
+        this.telemetry = telemetry;
     }
 
     /**
@@ -78,7 +82,9 @@ public class EnrollHolderUseCase {
      */
     public Mono<EnrollHolderInitResponse> init(String tenantId, String holderId,
                                                 EnrollHolderInitRequest req) {
+        telemetry.recordPrfAttempt(tenantId);
         return prfSaltUseCase.getOrCreatePrfSalt(tenantId, holderId, req.credentialId())
+                .doOnNext(ignored -> telemetry.recordPrfPass(tenantId))
                 .map(saltBytes -> {
                     String prfSaltEncoded = Base64.getUrlEncoder().withoutPadding()
                             .encodeToString(saltBytes);
