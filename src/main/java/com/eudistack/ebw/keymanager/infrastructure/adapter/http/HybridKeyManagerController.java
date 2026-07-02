@@ -30,10 +30,10 @@ import java.util.Map;
  * <ul>
  *   <li>{@code POST /api/v1/keys/hybrid/sign/prepare} — initiates the handshake: the server
  *       returns the PRF salt + wrapped-blob envelope so the PWA can derive the unwrap key
- *       client-side via Passkey PRF (US-01 skeleton; cryptographic logic in US-04).</li>
+ *       client-side via Passkey PRF and sign the payload.</li>
  *   <li>{@code POST /api/v1/keys/hybrid/sign/submit} — finalises the handshake: the PWA
  *       submits the client-side signed assertion; the server verifies and produces the
- *       key-binding JWT (US-01 skeleton; cryptographic logic in US-04).</li>
+ *       key-binding JWT.</li>
  *   <li>{@code POST /api/v1/keys/hybrid/constraint-accepted} — records the holder's acceptance
  *       of the multi-device limitation in the audit log (US-06, EUDISTACK-538).</li>
  * </ul>
@@ -41,7 +41,11 @@ import java.util.Map;
  * <p>All endpoints reject with {@code 403} if the tenant's wallet profile is not
  * {@code (SERVER, HYBRID)}, preventing DB tenants from reaching hybrid routes.</p>
  *
+ * <p>The {@code holder_id} is extracted from the DPoP-bound JWT and written to the Reactor
+ * context so use cases can access it without it ever appearing in the request body (ES-04).</p>
+ *
  * <p>Spec: EUDISTACK-533 FR-03, AC-03, AC-04, AC-05, ES-01, ES-03;
+ * EUDISTACK-536 ES-04; architecture.md §6.1 (runtime flows).</p>
  * EUDISTACK-538 (US-06) AC-02; architecture.md §6.1 (runtime flows).</p>
  */
 @RestController
@@ -64,17 +68,21 @@ public class HybridKeyManagerController {
     /**
      * Initiates the hybrid signing handshake.
      *
-     * <p>Returns the PRF challenge metadata (salt, wrapped blob, IV, tag, KDF params, signing input,
-     * correlation ID). The PWA uses these to derive the unwrap key via Passkey PRF and sign
-     * the payload client-side, then submits back via {@link #submit}.</p>
+     * <p>Returns the PRF challenge metadata (salt, wrapped blob, IV, tag, KDF params, signing
+     * input, correlation ID). The PWA uses these to derive the unwrap key via Passkey PRF,
+     * sign the payload client-side, and submit back via {@link #submit}.</p>
      *
      * @param request the prepare request carrying {@code credential_id}, {@code vp_challenge},
      *                and {@code format}
+     * @param auth    the DPoP-bound authenticated holder principal
      * @return 200 with the PRF challenge envelope
      */
     @PostMapping("/sign/prepare")
     public Mono<ResponseEntity<PrepareSignResponse>> prepare(
-            @Valid @RequestBody PrepareSignRequest request) {
+            @Valid @RequestBody PrepareSignRequest request,
+            JwtAuthenticationToken auth) {
+
+        String holderId = auth.getUserId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
                 .flatMap(profile -> {
@@ -86,23 +94,28 @@ public class HybridKeyManagerController {
                     }
                     return hybridAdapter.prepareSign(request);
                 })
-                .map(ResponseEntity::ok);
+                .map(ResponseEntity::ok)
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, holderId));
     }
 
     /**
      * Finalises the hybrid signing handshake and produces the key-binding JWT.
      *
-     * <p>The PWA echoes the {@code correlation_id} from the prepare response along with
-     * the PRF-derived signature. The EBW verifies the assertion and returns the
-     * {@code kb+jwt} compact serialisation.</p>
+     * <p>The PWA echoes the {@code correlation_id} from the prepare response along with the
+     * PRF-derived signature. The EBW verifies the assertion and returns the {@code kb+jwt}
+     * compact serialisation.</p>
      *
      * @param request the submit request carrying {@code credential_id}, {@code signature},
      *                and {@code correlation_id}
+     * @param auth    the DPoP-bound authenticated holder principal
      * @return 200 with the key-binding JWT
      */
     @PostMapping("/sign/submit")
     public Mono<ResponseEntity<SubmitSignedAssertionResponse>> submit(
-            @Valid @RequestBody SubmitSignedAssertionRequest request) {
+            @Valid @RequestBody SubmitSignedAssertionRequest request,
+            JwtAuthenticationToken auth) {
+
+        String holderId = auth.getUserId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
                 .flatMap(profile -> {
@@ -114,7 +127,8 @@ public class HybridKeyManagerController {
                     }
                     return hybridAdapter.submitSignedAssertion(request);
                 })
-                .map(ResponseEntity::ok);
+                .map(ResponseEntity::ok)
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, holderId));
     }
 
     /**

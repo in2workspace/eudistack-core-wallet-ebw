@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.11.1] - 2026-06-30
+## [1.12.0] - 2026-06-30
 
 ### Added - 2026-06-30
 
@@ -43,6 +43,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added - 2026-06-22
 
 - **EUDISTACK-538 US-06 — `POST /api/v1/keys/hybrid/constraint-accepted`**: records hybrid_constraint_accepted audit event when the holder accepts the multi-device constraint. Returns 204; 403 opaque for non-HYBRID tenants. actorId always from JWT, never from body.
+
+### Added - 2026-06-26
+
+- **EUDISTACK-536 US-04 — `PreparedSignStore` port + `CaffeinePreparedSignStore` adapter**: Caffeine in-process correlation store (TTL 5 min, MAX_SIZE 100 k) tracking `{signingInput, cnfJwk, holderId, credentialId}` per `correlationId`. `putPending` is idempotent (`putIfAbsent`). `markResolved` stores the final `kb_jwt` so `submit` replays are served without re-verifying the signature (EC-03, NFR-S-536-01). Single-instance caveat documented in code — see EUDISTACK-68 for shared-store milestone.
+- **EUDISTACK-536 US-04 — `PrepareSignUseCase`**: resolves PRF salt (`PrfSaltUseCase.getForHolder`) and wrapped-key handle (`WrappedKeyHandleRepository.findBy`) concurrently via `Mono.zip`; builds `kb_jwt` `signing_input = headerB64.payloadB64` with a `kb+jwt`-typed JWSHeader; encodes all material as base64url; generates UUID v4 `correlation_id` and stores `PreparedSign` via `PreparedSignStore.putPending`. Holder ID never read from request body — always from Reactor context (ES-04). 100% non-blocking (NFR-S-536-02).
+- **EUDISTACK-536 US-04 — `SubmitSignedUseCase`**: resolves `PreparedSign` from store by `correlationId`; enforces holder isolation (stored `holderId` vs context `holderId` → 403 on mismatch, AC-08, ES-04); verifies raw ES256 signature against `cnf.jwk` via Nimbus `ECKey` + `ECDSAVerifier`; assembles `kb_jwt = signingInput + "." + base64url(signature)`; calls `store.markResolved` on success. Invalid sig → `SignatureInvalidException` (400 `signature_invalid`, ES-03); unknown/expired `correlationId` → `InvalidSignatureSubmissionException` (400 `invalid_request`, ES-01); idempotent replay → cached `kb_jwt` without re-verification (EC-03).
+- **EUDISTACK-536 US-04 — `InvalidSignatureSubmissionException`**: new domain exception (400 `invalid_request`) for unknown/expired `correlation_id` or malformed JWS encoding, distinct from `SignatureInvalidException` (400 `signature_invalid`) for cryptographic failures. Mapped in `HybridKeyManagerExceptionHandler`.
+- **EUDISTACK-536 US-04 — `HybridSignTelemetry`**: OTEL spans (`hybrid.sign.prepare`, `hybrid.sign.submit`) with `correlation_id` tag; Micrometer counter `hybrid_sign_total` (tags: `operation`, `result`) and timer `hybrid_sign_latency_ms`. Holder ID hashed (SHA-256, 12-char hex prefix) before any log/metric emission (NFR-S-536-04). Error classifier maps exception type to `signature_invalid` / `not_found` / `forbidden` / `error`.
+- **EUDISTACK-536 US-04 — `HybridKeyManagerAdapter` wired**: replaced `prepareSign` and `submitSignedAssertion` stubs with delegation to `PrepareSignUseCase` and `SubmitSignedUseCase` via `Mono.deferContextual` (context-safe telemetry capture). `holderId` threaded from controller Reactor context; telemetry hooks attached as `doOnSuccess`/`doOnError`.
+- **EUDISTACK-536 US-04 — Controller `holderId` wiring**: `HybridKeyManagerController.prepare()` and `submit()` now accept `JwtAuthenticationToken auth`; `holderId = auth.getUserId().toString()` is extracted synchronously and written into the Reactor context via `.contextWrite(ctx → ctx.put(HOLDER_ID, holderId))`. `holderId` is never read from request body (ES-04, spec invariant).
+- **EUDISTACK-536 US-04 — Tests (unit)**: `PrepareSignUseCaseTest` (8 tests — happy path, base64url encoding, signing_input format, store interaction, UUID format, not-found, isolation, DB failure); `SubmitSignedUseCaseTest` (6 tests — real P-256 crypto, valid sig, markResolved, idempotent replay without re-verification, unknown correlationId, holder mismatch, wrong-key forgery); `HybridKeyManagerAdapterTest` updated (7 tests).
+- **EUDISTACK-536 US-04 — Tests (integration)**: `PrepareSignIT` (9 tests — AC-01 full response fields, signing_input format, UUID correlationId, ES-02 db-tenant 403, ES-01 missing field 400, AC-08 isolation 403, not-found 404, NFR-S-536-03 no-leak); `SubmitSignedAssertionIT` (6 tests — AC-02 valid sig 200 + kb_jwt, EC-03 idempotent replay, ES-01 unknown correlationId 400, ES-03 wrong-key 400 `signature_invalid`, ES-04/AC-08 cross-holder 403, NFR-S-536-03 no-leak in error body).
 
 ## [1.10.1] - 2026-06-25
 

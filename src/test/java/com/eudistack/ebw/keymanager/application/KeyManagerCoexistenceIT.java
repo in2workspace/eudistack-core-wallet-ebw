@@ -25,16 +25,13 @@ class KeyManagerCoexistenceIT {
 
     @Test
     void dbTenantAndHybridTenant_resolveToDistinctAdapters_withNoSharedState() {
-        // Wire a resolver with concrete adapter instances (as KeyManagerConfiguration does)
         DbKeyManagerService dbAdapter = mock(DbKeyManagerService.class);
-        HybridKeyManagerAdapter hybridAdapter = new HybridKeyManagerAdapter();
+        HybridKeyManagerAdapter hybridAdapter = mock(HybridKeyManagerAdapter.class);
         KeyManagerResolver resolver = new KeyManagerResolver(dbAdapter, hybridAdapter);
 
-        // Simulate two tenants resolving their adapters
         KeyManagerPort dbTenantAdapter = resolver.resolve(KeyManager.DB);
         KeyManagerPort hybridTenantAdapter = resolver.resolve(KeyManager.HYBRID);
 
-        // Adapters are distinct instances — no shared mutable state
         assertThat(dbTenantAdapter).isSameAs(dbAdapter);
         assertThat(hybridTenantAdapter).isSameAs(hybridAdapter);
         assertThat(dbTenantAdapter).isNotSameAs(hybridTenantAdapter);
@@ -43,12 +40,11 @@ class KeyManagerCoexistenceIT {
     @Test
     void resolverIsDeterministic_repeatedResolutionReturnsSameInstance() {
         DbKeyManagerService dbAdapter = mock(DbKeyManagerService.class);
-        HybridKeyManagerAdapter hybridAdapter = new HybridKeyManagerAdapter();
+        HybridKeyManagerAdapter hybridAdapter = mock(HybridKeyManagerAdapter.class);
         KeyManagerResolver resolver = new KeyManagerResolver(dbAdapter, hybridAdapter);
 
-        // Repeated resolution must be idempotent (no factory per call, no state mutation)
         KeyManagerPort first = resolver.resolve(KeyManager.DB);
-        resolver.resolve(KeyManager.HYBRID); // interleaved resolve
+        resolver.resolve(KeyManager.HYBRID);
         KeyManagerPort second = resolver.resolve(KeyManager.DB);
 
         assertThat(first).isSameAs(second);
@@ -57,10 +53,9 @@ class KeyManagerCoexistenceIT {
     @Test
     void hybridAdapterResolution_doesNotAffectDbAdapterBehaviour() {
         DbKeyManagerService dbAdapter = mock(DbKeyManagerService.class);
-        HybridKeyManagerAdapter hybridAdapter = new HybridKeyManagerAdapter();
+        HybridKeyManagerAdapter hybridAdapter = mock(HybridKeyManagerAdapter.class);
         KeyManagerResolver resolver = new KeyManagerResolver(dbAdapter, hybridAdapter);
 
-        // Resolving HYBRID must not mutate the db adapter slot
         resolver.resolve(KeyManager.HYBRID);
         KeyManagerPort stillDb = resolver.resolve(KeyManager.DB);
 
