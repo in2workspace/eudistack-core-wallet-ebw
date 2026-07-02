@@ -1,6 +1,13 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
-import com.eudistack.ebw.keymanager.domain.exception.*;
+import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException;
+import com.eudistack.ebw.keymanager.domain.exception.InvalidCommitException;
+import com.eudistack.ebw.keymanager.domain.exception.InvalidSignatureSubmissionException;
+import com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException;
+import com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException;
+import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
+import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
+import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
 import com.eudistack.ebw.keymanager.domain.exception.PrfUnsupportedException;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import org.slf4j.Logger;
@@ -71,6 +78,20 @@ public class HybridKeyManagerExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         problem.setType(URI.create(TYPE_BASE + "signature-invalid"));
         problem.setProperty("error", "signature_invalid");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    /**
+     * ES-01 (EUDISTACK-536): submit step is malformed — unknown/expired {@code correlation_id}
+     * or invalid base64url signature encoding. No cryptographic material is leaked in the body
+     * (NFR-S-536-03).
+     */
+    @ExceptionHandler(InvalidSignatureSubmissionException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidSignatureSubmission(InvalidSignatureSubmissionException ex) {
+        log.debug("keymanager.hybrid.invalid_signature_submission");
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        problem.setType(URI.create(TYPE_BASE + "invalid-request"));
+        problem.setProperty("error", "invalid_request");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 

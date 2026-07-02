@@ -10,7 +10,11 @@ import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditCloudWatchAdapter;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.cache.CaffeinePreparedSignStore;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerController;
+import com.eudistack.ebw.keymanager.infrastructure.observability.HybridSignTelemetry;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.tracing.Tracer;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridOnboardingController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerController;
@@ -141,9 +145,36 @@ public class KeyManagerConfiguration {
 
     // --- EUDISTACK-533 US-01: Hybrid adapter + per-tenant resolver ---
 
+    // --- EUDISTACK-536 US-04: Hybrid sign handshake beans ---
+
     @Bean
-    HybridKeyManagerAdapter hybridKeyManagerAdapter() {
-        return new HybridKeyManagerAdapter();
+    PreparedSignStore preparedSignStore() {
+        return new CaffeinePreparedSignStore();
+    }
+
+    @Bean
+    PrepareSignUseCase prepareSignUseCase(PrfSaltUseCase prfSaltUseCase,
+                                          WrappedKeyHandleRepository wrappedKeyHandleRepository,
+                                          PreparedSignStore preparedSignStore,
+                                          ObjectMapper objectMapper) {
+        return new PrepareSignUseCase(prfSaltUseCase, wrappedKeyHandleRepository, preparedSignStore, objectMapper);
+    }
+
+    @Bean
+    SubmitSignedUseCase submitSignedUseCase(PreparedSignStore preparedSignStore, KeyAuditPort auditPort) {
+        return new SubmitSignedUseCase(preparedSignStore, auditPort);
+    }
+
+    @Bean
+    HybridSignTelemetry hybridSignTelemetry(Tracer tracer, MeterRegistry meterRegistry) {
+        return new HybridSignTelemetry(tracer, meterRegistry);
+    }
+
+    @Bean
+    HybridKeyManagerAdapter hybridKeyManagerAdapter(PrepareSignUseCase prepareSignUseCase,
+                                                    SubmitSignedUseCase submitSignedUseCase,
+                                                    HybridSignTelemetry hybridSignTelemetry) {
+        return new HybridKeyManagerAdapter(prepareSignUseCase, submitSignedUseCase, hybridSignTelemetry);
     }
 
     @Bean
