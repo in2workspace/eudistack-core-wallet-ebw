@@ -6,18 +6,14 @@ import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitResponse;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
-import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
-import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.eudistack.ebw.keymanager.infrastructure.observability.HybridKeyManagerTelemetry;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.UUID;
 
 /**
  * Application use case for hybrid-mode holder key enrolment.
@@ -56,22 +52,20 @@ import java.util.UUID;
  */
 public class EnrollHolderUseCase {
 
-    private static final Logger log = LoggerFactory.getLogger(EnrollHolderUseCase.class);
-
     private static final String KDF_PARAMS =
             "{\"algo\":\"HKDF-SHA-256\",\"info\":\"hybrid-wrap-v1\"}";
     private static final String SIGNING_PUBKEY_ENVELOPE_FORMAT = "SD-JWT";
 
     private final PrfSaltUseCase prfSaltUseCase;
     private final WrappedKeyHandleRepository wrappedKeyHandleRepository;
-    private final KeyAuditPort auditPort;
+    private final HybridKeyManagerTelemetry telemetry;
 
     public EnrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
                                 WrappedKeyHandleRepository wrappedKeyHandleRepository,
-                                KeyAuditPort auditPort) {
+                                HybridKeyManagerTelemetry telemetry) {
         this.prfSaltUseCase = prfSaltUseCase;
         this.wrappedKeyHandleRepository = wrappedKeyHandleRepository;
-        this.auditPort = auditPort;
+        this.telemetry = telemetry;
     }
 
     /**
@@ -88,7 +82,9 @@ public class EnrollHolderUseCase {
      */
     public Mono<EnrollHolderInitResponse> init(String tenantId, String holderId,
                                                 EnrollHolderInitRequest req) {
+        telemetry.recordPrfAttempt(tenantId);
         return prfSaltUseCase.getOrCreatePrfSalt(tenantId, holderId, req.credentialId())
+                .doOnNext(ignored -> telemetry.recordPrfPass(tenantId))
                 .map(saltBytes -> {
                     String prfSaltEncoded = Base64.getUrlEncoder().withoutPadding()
                             .encodeToString(saltBytes);
@@ -112,7 +108,7 @@ public class EnrollHolderUseCase {
      * @throws OnboardingStateException if a different blob already exists (409) or a
      *                                  concurrent insert races to the same composite PK
      */
-    public Mono<EnrollHolderCommitResponse> commit(String tenantId, String holderId,
+    public Mono<EnrollHolderCommitResponse> commit(String holderId,
                                                     EnrollHolderCommitRequest req) {
         return Mono.defer(() -> {
             // Step 1 — decode and validate byte lengths
@@ -171,21 +167,8 @@ public class EnrollHolderUseCase {
                                 req.cnfJwk(), Instant.now(), null);
 
                         return wrappedKeyHandleRepository.insert(handle)
-                                .then(emitWrapAudit(tenantId, holderId, req.credentialId()))
                                 .thenReturn(new EnrollHolderCommitResponse(req.credentialId(), false));
                     });
-        });
-    }
-
-    private Mono<Void> emitWrapAudit(String tenantId, String holderId, String credentialId) {
-        return Mono.defer(() -> {
-            KeyAuditEvent event = KeyAuditEvent.forWrap(
-                    tenantId, holderId, credentialId,
-                    Instant.now(), UUID.randomUUID().toString());
-            return auditPort.emit(event);
-        }).onErrorResume(e -> {
-            log.error("keymanager.audit.emit_failed type=WRAP_COMPLETED tenant={}: {}", tenantId, e.getMessage());
-            return Mono.empty();
         });
     }
 }

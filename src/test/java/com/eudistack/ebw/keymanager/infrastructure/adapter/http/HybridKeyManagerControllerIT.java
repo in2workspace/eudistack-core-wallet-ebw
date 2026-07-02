@@ -100,7 +100,10 @@ class HybridKeyManagerControllerIT {
         when(hybridAdapter.prepareSign(any()))
                 .thenReturn(Mono.error(new UnsupportedCredentialFormatException("mso_mdoc")));
 
-        webTestClient.post().uri(PREPARE_URL)
+        webTestClient
+                .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
+                        new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", List.of())))
+                .post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
                         {"credential_id":"cred-1","vp_challenge":"ch","format":"mso_mdoc"}
@@ -136,7 +139,10 @@ class HybridKeyManagerControllerIT {
     void prepare_givenDbTenant_returns403Opaque() {
         stubDbProfile();
 
-        webTestClient.post().uri(PREPARE_URL)
+        webTestClient
+                .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
+                        new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", List.of())))
+                .post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
                         {"credential_id":"cred-1","vp_challenge":"ch","format":"vc+sd-jwt"}
@@ -154,7 +160,10 @@ class HybridKeyManagerControllerIT {
         when(hybridAdapter.submitSignedAssertion(any()))
                 .thenReturn(Mono.error(new SignatureInvalidException()));
 
-        webTestClient.post().uri(SUBMIT_URL)
+        webTestClient
+                .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
+                        new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", List.of())))
+                .post().uri(SUBMIT_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
                         {"credential_id":"cred-1","signature":"sig-abc","correlation_id":"corr-1"}

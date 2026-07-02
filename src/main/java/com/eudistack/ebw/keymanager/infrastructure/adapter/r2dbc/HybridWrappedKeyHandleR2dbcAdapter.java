@@ -11,6 +11,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * R2DBC adapter for the {@code hybrid_wrapped_key_handle} table.
@@ -20,12 +21,22 @@ import java.util.Optional;
  * natively (technical-design.md §3.2 AD-4). Tenant isolation is via PostgreSQL
  * {@code search_path} set by {@code TenantAwareConnectionFactoryDecorator} (architecture.md §5.3).</p>
  *
- * <p>The DDL for {@code hybrid_wrapped_key_handle} is provided by US-03 (EUDISTACK-535)
- * via a Flyway tenant migration. Tests use a temporary DDL stub until that migration lands.</p>
+ * <p>The DDL for {@code hybrid_wrapped_key_handle} is provided by the V4 Flyway tenant
+ * migration (US-03, EUDISTACK-535). The {@code holder_id} column is {@code UUID} — all
+ * R2DBC bindings use {@link java.util.UUID} to match the column type.</p>
  *
  * <p>Spec: EUDISTACK-534 AC-04, AC-05; architecture.md §5.3.</p>
  */
 public class HybridWrappedKeyHandleR2dbcAdapter implements WrappedKeyHandleRepository {
+
+    private static final String COUNT_SQL =
+            "SELECT COUNT(*) FROM hybrid_wrapped_key_handle";
+
+    private static final String COUNT_ORPHANED_SQL =
+            "SELECT COUNT(*) FROM hybrid_wrapped_key_handle h "
+            + "LEFT JOIN hybrid_prf_salt s "
+            + "  ON h.holder_id = s.holder_id AND h.credential_id = s.credential_id "
+            + "WHERE s.holder_id IS NULL";
 
     private static final String SELECT_SQL =
             "SELECT holder_id, credential_id, wrapped_blob, iv, tag, "
@@ -47,9 +58,23 @@ public class HybridWrappedKeyHandleR2dbcAdapter implements WrappedKeyHandleRepos
     }
 
     @Override
+    public Mono<Long> count() {
+        return databaseClient.sql(COUNT_SQL)
+                .map(row -> row.get(0, Long.class))
+                .one();
+    }
+
+    @Override
+    public Mono<Long> countOrphaned() {
+        return databaseClient.sql(COUNT_ORPHANED_SQL)
+                .map(row -> row.get(0, Long.class))
+                .one();
+    }
+
+    @Override
     public Mono<Optional<WrappedKeyHandle>> findBy(String holderId, String credentialId) {
         return databaseClient.sql(SELECT_SQL)
-                .bind("holderId", holderId)
+                .bind("holderId", UUID.fromString(holderId))
                 .bind("credentialId", credentialId)
                 .map(this::rowToHandle)
                 .one()
@@ -60,7 +85,7 @@ public class HybridWrappedKeyHandleR2dbcAdapter implements WrappedKeyHandleRepos
     @Override
     public Mono<Void> insert(WrappedKeyHandle handle) {
         return databaseClient.sql(INSERT_SQL)
-                .bind("holderId",     handle.holderId())
+                .bind("holderId",     UUID.fromString(handle.holderId()))
                 .bind("credentialId", handle.credentialId())
                 .bind("wrappedBlob",  handle.wrappedBlob())
                 .bind("iv",           handle.iv())
@@ -78,7 +103,7 @@ public class HybridWrappedKeyHandleR2dbcAdapter implements WrappedKeyHandleRepos
 
     private WrappedKeyHandle rowToHandle(Row row, RowMetadata metadata) {
         return new WrappedKeyHandle(
-                row.get("holder_id",     String.class),
+                row.get("holder_id",     UUID.class).toString(),
                 row.get("credential_id", String.class),
                 row.get("wrapped_blob",  byte[].class),
                 row.get("iv",            byte[].class),
