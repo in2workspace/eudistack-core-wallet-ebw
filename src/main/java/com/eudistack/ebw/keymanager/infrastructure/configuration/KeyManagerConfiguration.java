@@ -10,7 +10,11 @@ import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditCloudWatchAdapter;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.cache.CaffeinePreparedSignStore;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerController;
+import com.eudistack.ebw.keymanager.infrastructure.observability.HybridSignTelemetry;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.tracing.Tracer;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridOnboardingController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerController;
@@ -21,8 +25,8 @@ import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.PrfSaltReposito
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.DbKeyManagerService;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.HybridKeyManagerAdapter;
-import com.eudistack.ebw.keymanager.infrastructure.health.HybridHealthContributor;
 import com.eudistack.ebw.keymanager.infrastructure.health.KeyManagerHealthController;
+import com.eudistack.ebw.keymanager.infrastructure.observability.HybridKeyManagerTelemetry;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactory;
@@ -141,9 +145,36 @@ public class KeyManagerConfiguration {
 
     // --- EUDISTACK-533 US-01: Hybrid adapter + per-tenant resolver ---
 
+    // --- EUDISTACK-536 US-04: Hybrid sign handshake beans ---
+
     @Bean
-    HybridKeyManagerAdapter hybridKeyManagerAdapter() {
-        return new HybridKeyManagerAdapter();
+    PreparedSignStore preparedSignStore() {
+        return new CaffeinePreparedSignStore();
+    }
+
+    @Bean
+    PrepareSignUseCase prepareSignUseCase(PrfSaltUseCase prfSaltUseCase,
+                                          WrappedKeyHandleRepository wrappedKeyHandleRepository,
+                                          PreparedSignStore preparedSignStore,
+                                          ObjectMapper objectMapper) {
+        return new PrepareSignUseCase(prfSaltUseCase, wrappedKeyHandleRepository, preparedSignStore, objectMapper);
+    }
+
+    @Bean
+    SubmitSignedUseCase submitSignedUseCase(PreparedSignStore preparedSignStore, KeyAuditPort auditPort) {
+        return new SubmitSignedUseCase(preparedSignStore, auditPort);
+    }
+
+    @Bean
+    HybridSignTelemetry hybridSignTelemetry(Tracer tracer, MeterRegistry meterRegistry) {
+        return new HybridSignTelemetry(tracer, meterRegistry);
+    }
+
+    @Bean
+    HybridKeyManagerAdapter hybridKeyManagerAdapter(PrepareSignUseCase prepareSignUseCase,
+                                                    SubmitSignedUseCase submitSignedUseCase,
+                                                    HybridSignTelemetry hybridSignTelemetry) {
+        return new HybridKeyManagerAdapter(prepareSignUseCase, submitSignedUseCase, hybridSignTelemetry);
     }
 
     @Bean
@@ -191,8 +222,10 @@ public class KeyManagerConfiguration {
 
     @Bean
     EnrollHolderUseCase enrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
-                                            WrappedKeyHandleRepository wrappedKeyHandleRepository) {
-        return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository);
+                                            WrappedKeyHandleRepository wrappedKeyHandleRepository,
+                                            HybridKeyManagerTelemetry hybridKeyManagerTelemetry) {
+        return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository,
+                hybridKeyManagerTelemetry);
     }
 
     @Bean
@@ -203,12 +236,7 @@ public class KeyManagerConfiguration {
         return new HybridOnboardingController(enrollHolderUseCase, walletProfileQueryPort, objectMapper);
     }
 
-    // --- EUDISTACK-537 US-05: PRF salt persistence, use case + health indicator ---
-
-    @Bean
-    HybridHealthContributor hybridHealthContributor(DatabaseClient databaseClient) {
-        return new HybridHealthContributor(databaseClient);
-    }
+    // --- EUDISTACK-537 US-05: PRF salt persistence ---
 
     @Bean
     PrfSaltRepository prfSaltRepository(DatabaseClient databaseClient) {
