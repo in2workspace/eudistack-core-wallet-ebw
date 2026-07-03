@@ -22,7 +22,7 @@ public class ListPasskeysWorkflow {
 
     public Flux<PasskeyWithSessions> listPasskeys(UUID userId) {
         return passkeyRepository.findByUserId(userId)
-                .flatMap(passkey -> refreshTokenRepository.countActiveByPasskeyId(passkey.getId())
+                .concatMap(passkey -> refreshTokenRepository.countActiveByPasskeyId(passkey.getId())
                         .defaultIfEmpty(0L)
                         .map(count -> new PasskeyWithSessions(passkey, count)));
     }
