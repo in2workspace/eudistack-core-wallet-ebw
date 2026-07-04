@@ -2,8 +2,7 @@ package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.spi.TokenSigner;
-import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
-import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
+import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
 import com.eudistack.ebw.infrastructure.adapter.properties.RateLimitProperties;
 import com.eudistack.ebw.infrastructure.adapter.properties.SecurityProperties;
 import com.eudistack.ebw.wallet.profile.infrastructure.observability.WalletProfileQueryTelemetry;
@@ -39,7 +38,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -81,7 +79,7 @@ class HybridKeyManagerControllerIT {
     WalletProfileQueryPort walletProfileQueryPort;
 
     @MockitoBean
-    KeyAuditPort keyAuditPort;
+    EnrollHolderUseCase enrollHolderUseCase;
 
     @MockitoBean
     TokenSigner tokenSigner;
@@ -96,10 +94,12 @@ class HybridKeyManagerControllerIT {
 
     @Test
     void prepare_givenHybridTenantAndUnsupportedFormat_returns400WithUnsupportedFormat() {
+        // Arrange
         stubHybridProfile();
         when(hybridAdapter.prepareSign(any()))
                 .thenReturn(Mono.error(new UnsupportedCredentialFormatException("mso_mdoc")));
 
+        // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", List.of())))
@@ -118,12 +118,13 @@ class HybridKeyManagerControllerIT {
 
     @Test
     void prepare_givenHybridTenantAndSupportedFormat_delegatesToAdapter() {
+        // Arrange
         stubHybridProfile();
         when(hybridAdapter.prepareSign(any()))
                 .thenReturn(Mono.error(new UnsupportedOperationException("skeleton")));
 
-        // The stub throws UnsupportedOperationException (US-04 TODO) — caught by the catch-all → 500.
-        // This confirms the request passed format guard and reached the adapter.
+        // Act & Assert — stub throws UnsupportedOperationException (US-04 TODO) caught by catch-all → 500.
+        // Confirms the request passed the format guard and reached the adapter.
         webTestClient.post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
@@ -137,8 +138,10 @@ class HybridKeyManagerControllerIT {
 
     @Test
     void prepare_givenDbTenant_returns403Opaque() {
+        // Arrange
         stubDbProfile();
 
+        // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", List.of())))
@@ -156,10 +159,12 @@ class HybridKeyManagerControllerIT {
 
     @Test
     void submit_givenSignatureInvalidException_returns400WithSignatureInvalid() {
+        // Arrange
         stubHybridProfile();
         when(hybridAdapter.submitSignedAssertion(any()))
                 .thenReturn(Mono.error(new SignatureInvalidException()));
 
+        // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", List.of())))
@@ -178,8 +183,10 @@ class HybridKeyManagerControllerIT {
 
     @Test
     void prepare_givenMissingCredentialId_returns400() {
+        // Arrange
         stubHybridProfile();
 
+        // Act & Assert
         webTestClient.post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
@@ -193,10 +200,12 @@ class HybridKeyManagerControllerIT {
 
     @Test
     void acceptConstraint_givenHybridTenant_recordsAuditAndReturns204() {
+        // Arrange
         UUID actorId = UUID.randomUUID();
         stubHybridProfile();
-        when(keyAuditPort.emit(any(KeyAuditEvent.class))).thenReturn(Mono.empty());
+        when(enrollHolderUseCase.recordConsent(any(), any())).thenReturn(Mono.empty());
 
+        // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
@@ -205,18 +214,17 @@ class HybridKeyManagerControllerIT {
                 .expectStatus().isNoContent()
                 .expectBody().isEmpty();
 
-        verify(keyAuditPort).emit(argThat(event ->
-                event.type() == KeyAuditEvent.KeyAuditEventType.CONSTRAINT_ACCEPTED
-                && event.holderId().equals(actorId.toString())
-                && event.credentialId() == null
-        ));
+        // Assert
+        verify(enrollHolderUseCase).recordConsent(eq("test-tenant"), eq(actorId.toString()));
     }
 
     @Test
     void acceptConstraint_givenDbTenant_returns403Opaque() {
+        // Arrange
         UUID actorId = UUID.randomUUID();
         stubDbProfile();
 
+        // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
@@ -228,11 +236,13 @@ class HybridKeyManagerControllerIT {
 
     @Test
     void acceptConstraint_givenAuditFailure_returns500() {
+        // Arrange
         UUID actorId = UUID.randomUUID();
         stubHybridProfile();
-        when(keyAuditPort.emit(any(KeyAuditEvent.class)))
+        when(enrollHolderUseCase.recordConsent(any(), any()))
                 .thenReturn(Mono.error(new RuntimeException("audit unavailable")));
 
+        // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(actorId, "user@test.com", List.of())))

@@ -5,6 +5,8 @@ import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationExc
 import com.eudistack.ebw.keymanager.domain.exception.InvalidSignatureSubmissionException;
 import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
 import com.eudistack.ebw.keymanager.domain.model.CredentialFormat;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEventAssertions;
 import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.nimbusds.jose.JOSEObjectType;
@@ -18,8 +20,11 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
@@ -65,7 +70,7 @@ class SubmitSignedUseCaseTest {
     @Mock private PreparedSignStore store;
     @Mock private KeyAuditPort auditPort;
 
-    private SubmitSignedUseCase useCase;
+    @InjectMocks private SubmitSignedUseCase useCase;
 
     @BeforeAll
     static void generateKeyAndSignature() throws Exception {
@@ -87,7 +92,6 @@ class SubmitSignedUseCaseTest {
 
     @BeforeEach
     void setUp() {
-        useCase = new SubmitSignedUseCase(store, auditPort);
         lenient().when(auditPort.emit(any())).thenReturn(Mono.empty());
     }
 
@@ -186,15 +190,75 @@ class SubmitSignedUseCaseTest {
     // ------------------------------------------------------------------ audit (F2 — NIS2 non-repudiation)
 
     @Test
-    void execute_validSignature_emitsKeySignedAuditEventOnceAndNotOnReplay() {
+    void execute_validSignature_emitsUnwrapSignCompletedAuditEventOnce() throws Exception {
         when(store.getIfPresent(CRED_ID)).thenReturn(Mono.just(Optional.of(pendingSession())));
         when(store.markResolved(eq(CRED_ID), any())).thenReturn(Mono.empty());
         when(auditPort.emit(any())).thenReturn(Mono.empty());
 
+        // Act
         StepVerifier.create(useCase.execute(submitRequest(CRED_ID, validSig)).contextWrite(holderCtx()))
                 .assertNext(r -> assertThat(r.kbJwt()).isNotBlank())
                 .verifyComplete();
 
+        // Assert — capture emitted event and verify all required fields (GAP-3)
+        ArgumentCaptor<KeyAuditEvent> captor = ArgumentCaptor.forClass(KeyAuditEvent.class);
+        verify(auditPort).emit(captor.capture());
+        KeyAuditEvent emitted = captor.getValue();
+
+        assertThat(emitted.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.UNWRAP_SIGN_COMPLETED);
+        assertThat(emitted.tenantId()).isEqualTo(TENANT);
+        assertThat(emitted.holderId()).isNotBlank().isEqualTo(HOLDER);
+        assertThat(emitted.credentialId()).isNotBlank().isEqualTo(CRED_ID);
+        assertThat(emitted.correlationId()).isNotBlank().isEqualTo(CRED_ID);
+        assertThat(emitted.timestamp()).isNotNull();
+        KeyAuditEventAssertions.assertNoSensitiveData(emitted);
+    }
+
+    @Test
+    void execute_signatureFromDifferentKey_emitsUnwrapFailedAuditEvent() throws Exception {
+        ECKey attackerKey = new ECKeyGenerator(Curve.P_256).generate();
+        JWSObject forged = new JWSObject(
+                new JWSHeader.Builder(JWSAlgorithm.ES256).type(new JOSEObjectType("kb+jwt")).build(),
+                new Payload("{\"nonce\":\"test-challenge\",\"iat\":1234567890}"));
+        forged.sign(new ECDSASigner(attackerKey));
+        String forgery = forged.serialize().split("\\.")[2];
+
+        when(store.getIfPresent(CRED_ID)).thenReturn(Mono.just(Optional.of(pendingSession())));
+        when(auditPort.emit(any())).thenReturn(Mono.empty());
+
+        // Act
+        StepVerifier.create(useCase.execute(submitRequest(CRED_ID, forgery)).contextWrite(holderCtx()))
+                .expectError(SignatureInvalidException.class)
+                .verify();
+
+        // Assert — capture emitted event and verify all required fields (GAP-3)
+        ArgumentCaptor<KeyAuditEvent> captor = ArgumentCaptor.forClass(KeyAuditEvent.class);
+        verify(auditPort).emit(captor.capture());
+        KeyAuditEvent emitted = captor.getValue();
+
+        assertThat(emitted.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.UNWRAP_FAILED);
+        assertThat(emitted.tenantId()).isEqualTo(TENANT);
+        assertThat(emitted.holderId()).isNotBlank().isEqualTo(HOLDER);
+        assertThat(emitted.credentialId()).isNotBlank().isEqualTo(CRED_ID);
+        assertThat(emitted.reason()).isNotNull();
+        assertThat(emitted.correlationId()).isNotBlank().isEqualTo(CRED_ID);
+        KeyAuditEventAssertions.assertNoSensitiveData(emitted);
+    }
+
+    @Test
+    @DisplayName("Audit emit failure does not interrupt the main signing flow")
+    void execute_auditEmitFails_doesNotPropagateErrorToMainFlow() {
+        // Arrange
+        when(store.getIfPresent(CRED_ID)).thenReturn(Mono.just(Optional.of(pendingSession())));
+        when(store.markResolved(eq(CRED_ID), any())).thenReturn(Mono.empty());
+        when(auditPort.emit(any())).thenReturn(Mono.error(new RuntimeException("CloudWatch down")));
+
+        // Act & Assert
+        StepVerifier.create(useCase.execute(submitRequest(CRED_ID, validSig)).contextWrite(holderCtx()))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        // Assert
         verify(auditPort).emit(any());
     }
 

@@ -7,9 +7,6 @@ import com.eudistack.ebw.infrastructure.adapter.properties.SecurityProperties;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitResponse;
-import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
-import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent.KeyAuditEventType;
-import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.TenantWalletProfile;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
@@ -39,7 +36,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -75,7 +72,6 @@ class HybridOnboardingControllerIT {
 
     @MockitoBean EnrollHolderUseCase enrollHolderUseCase;
     @MockitoBean WalletProfileQueryPort walletProfileQueryPort;
-    @MockitoBean KeyAuditPort keyAuditPort;
     @MockitoBean TokenSigner tokenSigner;
     @MockitoBean WalletProfileQueryTelemetry walletProfileQueryTelemetry;
 
@@ -85,10 +81,12 @@ class HybridOnboardingControllerIT {
 
     @Test
     void prfUnsupported_givenHybridTenant_emitsAuditAndReturns204() {
+        // Arrange
         UUID actorId = UUID.randomUUID();
         stubHybridProfile();
-        when(keyAuditPort.emit(any(KeyAuditEvent.class))).thenReturn(Mono.empty());
+        when(enrollHolderUseCase.recordPrfUnsupported(any(), any())).thenReturn(Mono.empty());
 
+        // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
@@ -97,17 +95,17 @@ class HybridOnboardingControllerIT {
                 .expectStatus().isNoContent()
                 .expectBody().isEmpty();
 
-        verify(keyAuditPort).emit(argThat(event ->
-                event.type() == KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED
-                && event.holderId().equals(actorId.toString())
-                && event.credentialId() == null));
+        // Assert
+        verify(enrollHolderUseCase).recordPrfUnsupported(eq("test-tenant"), eq(actorId.toString()));
     }
 
     @Test
     void prfUnsupported_givenDbTenant_returns403Opaque() {
+        // Arrange
         UUID actorId = UUID.randomUUID();
         stubDbProfile();
 
+        // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
@@ -119,11 +117,13 @@ class HybridOnboardingControllerIT {
 
     @Test
     void prfUnsupported_givenAuditFailure_returns500() {
+        // Arrange
         UUID actorId = UUID.randomUUID();
         stubHybridProfile();
-        when(keyAuditPort.emit(any(KeyAuditEvent.class)))
+        when(enrollHolderUseCase.recordPrfUnsupported(any(), any()))
                 .thenReturn(Mono.error(new RuntimeException("cloudwatch unavailable")));
 
+        // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
@@ -136,11 +136,13 @@ class HybridOnboardingControllerIT {
 
     @Test
     void commit_givenHybridTenantAndValidRequest_returns201() {
+        // Arrange
         UUID actorId = UUID.randomUUID();
         stubHybridProfile();
         when(enrollHolderUseCase.commit(any(), any(), any()))
                 .thenReturn(Mono.just(new EnrollHolderCommitResponse("cred-1", false)));
 
+        // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
