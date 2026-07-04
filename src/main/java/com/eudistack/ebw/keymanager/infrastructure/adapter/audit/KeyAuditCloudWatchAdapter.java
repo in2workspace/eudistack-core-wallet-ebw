@@ -12,9 +12,12 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import software.amazon.awssdk.services.cloudwatchlogs.CloudWatchLogsAsyncClient;
+import software.amazon.awssdk.services.cloudwatchlogs.model.CloudWatchLogsException;
 import software.amazon.awssdk.services.cloudwatchlogs.model.CreateLogStreamRequest;
 import software.amazon.awssdk.services.cloudwatchlogs.model.InputLogEvent;
 import software.amazon.awssdk.services.cloudwatchlogs.model.PutLogEventsRequest;
+import software.amazon.awssdk.services.cloudwatchlogs.model.PutRetentionPolicyRequest;
+import software.amazon.awssdk.services.cloudwatchlogs.model.ResourceAlreadyExistsException;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -27,7 +30,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -140,14 +148,38 @@ public class KeyAuditCloudWatchAdapter implements KeyAuditPort, DisposableBean {
 
     private void ensureLogStream() {
         try {
-            logsClient.createLogStream(CreateLogStreamRequest.builder()
+            joinAndRethrowSdkException(logsClient.createLogStream(CreateLogStreamRequest.builder()
                     .logGroupName(logGroupName)
                     .logStreamName(logStreamName)
-                    .build()).join();
+                    .build()));
             log.info("keymanager.audit.stream_created group={} stream={}", logGroupName, logStreamName);
-        } catch (Exception e) {
+        } catch (ResourceAlreadyExistsException e) {
+            log.debug("Log stream already exists, applying retention policy");
+        } catch (CloudWatchLogsException e) {
             log.error("keymanager.audit.stream_create_failed group={} stream={}: {}",
                     logGroupName, logStreamName, e.getMessage());
+        }
+        // CA-2 compliance: ensure ≥ 7-year retention on the log group (idempotent call)
+        try {
+            joinAndRethrowSdkException(logsClient.putRetentionPolicy(PutRetentionPolicyRequest.builder()
+                    .logGroupName(logGroupName)
+                    .retentionInDays(2555)
+                    .build()));
+            log.info("keymanager.audit.retention_set group={} days=2555", logGroupName);
+        } catch (CloudWatchLogsException e) {
+            log.error("keymanager.audit.retention_set_failed group={}: {}", logGroupName, e.getMessage());
+        }
+    }
+
+    // CompletableFuture.join() wraps SDK exceptions in CompletionException; this helper unwraps
+    // RuntimeExceptions so callers can catch CloudWatchLogsException / ResourceAlreadyExistsException directly.
+    private static void joinAndRethrowSdkException(CompletableFuture<?> future) {
+        try {
+            future.join();
+        } catch (CompletionException ex) {
+            Throwable cause = ex.getCause();
+            if (cause instanceof RuntimeException re) throw re;
+            throw ex;
         }
     }
 
@@ -267,10 +299,16 @@ public class KeyAuditCloudWatchAdapter implements KeyAuditPort, DisposableBean {
         log.info("keymanager.audit.shutdown_flush events={}", remaining.size());
         try {
             BatchPayload batch = buildBatch(remaining);
-            publishBatch(batch).block(Duration.ofSeconds(10));
-        } catch (Exception e) {
+            // DisposableBean#destroy() is inherently synchronous; bridge via CompletableFuture
+            // rather than Mono#block() to keep the reactive chain itself non-blocking.
+            publishBatch(batch).toFuture().get(10, TimeUnit.SECONDS);
+        } catch (CloudWatchLogsException | JsonProcessingException | NoSuchAlgorithmException
+                | ExecutionException | TimeoutException e) {
             log.error("keymanager.audit.shutdown_flush_failed events={}: {}",
                     remaining.size(), e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("keymanager.audit.shutdown_flush_interrupted events={}", remaining.size());
         }
     }
 

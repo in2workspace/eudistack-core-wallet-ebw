@@ -9,9 +9,12 @@ import com.eudistack.ebw.keymanager.domain.model.KeyAlgorithm;
 import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
 import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionResponse;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
+import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSObject;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.jwk.ECKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 import java.text.ParseException;
@@ -47,6 +50,8 @@ import java.time.Instant;
  * NFR-S-536-02, NFR-S-536-03; architecture.md §6.2, §8.3.</p>
  */
 public class SubmitSignedUseCase {
+
+    private static final Logger log = LoggerFactory.getLogger(SubmitSignedUseCase.class);
 
     private final PreparedSignStore preparedSignStore;
     private final KeyAuditPort auditPort;
@@ -105,7 +110,7 @@ public class SubmitSignedUseCase {
             boolean valid;
             try {
                 valid = jwsObject.verify(new ECDSAVerifier(ecKey.toPublicJWK()));
-            } catch (Exception e) {
+            } catch (JOSEException e) {
                 throw new SignatureInvalidException("Signature verification error");
             }
 
@@ -117,8 +122,7 @@ public class SubmitSignedUseCase {
             String jkt = ecKey.computeThumbprint().toString();
             return new VerifiedResult(kbJwt, jkt);
         }).flatMap(result -> {
-            KeyAuditEvent event = KeyAuditEvent.forSigning(
-                    KeyAuditEvent.KeyAuditEventType.KEY_SIGNED,
+            KeyAuditEvent event = KeyAuditEvent.forUnwrapSignCompleted(
                     prepared.tenantId(),
                     prepared.holderId(),
                     prepared.credentialId(),
@@ -126,12 +130,31 @@ public class SubmitSignedUseCase {
                     KeyAlgorithm.ES256,
                     result.jkt(),
                     Instant.now(),
-                    request.correlationId(),
-                    null, null, null, null, null);
+                    request.correlationId());
             return preparedSignStore
                     .markResolved(request.correlationId(), result.kbJwt())
-                    .then(auditPort.emit(event).onErrorResume(e -> Mono.empty()))
-                    .thenReturn(new SubmitSignedAssertionResponse(result.kbJwt()));
+                    .thenReturn(new SubmitSignedAssertionResponse(result.kbJwt()))
+                    .doOnSuccess(response -> auditPort.emit(event)
+                            .doOnError(e -> log.warn("keymanager.hybrid.unwrap_sign_audit_failed: {}", e.getMessage()))
+                            .subscribe());
+        }).onErrorResume(e -> {
+            if (e instanceof SignatureInvalidException || e instanceof InvalidSignatureSubmissionException) {
+                KeyAuditEvent failEvent = KeyAuditEvent.forUnwrapFailed(
+                        prepared.tenantId(),
+                        prepared.holderId(),
+                        prepared.credentialId(),
+                        prepared.format(),
+                        KeyAlgorithm.ES256,
+                        null,
+                        Instant.now(),
+                        request.correlationId(),
+                        e.getMessage());
+                auditPort.emit(failEvent)
+                        .doOnError(ex -> log.warn("keymanager.hybrid.unwrap_fail_audit_failed: {}", ex.getMessage()))
+                        .subscribe();
+                return Mono.error(e);
+            }
+            return Mono.error(e);
         });
     }
 

@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.observability;
 
+import com.eudistack.ebw.keymanager.domain.port.HybridKeyManagerTelemetryPort;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -15,7 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 @RequiredArgsConstructor
-public class HybridKeyManagerTelemetry {
+public class HybridKeyManagerTelemetry implements HybridKeyManagerTelemetryPort {
 
     private static final Logger log = LoggerFactory.getLogger(HybridKeyManagerTelemetry.class);
 

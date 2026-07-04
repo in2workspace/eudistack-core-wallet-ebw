@@ -1,11 +1,11 @@
 package com.eudistack.ebw.keymanager.infrastructure.configuration;
 
-import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.keymanager.application.*;
 import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
 import com.eudistack.ebw.keymanager.domain.model.SigningType;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyReadPort;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
+import com.eudistack.ebw.keymanager.domain.port.HybridKeyManagerTelemetryPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditCloudWatchAdapter;
@@ -26,7 +26,6 @@ import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHo
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.DbKeyManagerService;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.HybridKeyManagerAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.health.KeyManagerHealthController;
-import com.eudistack.ebw.keymanager.infrastructure.observability.HybridKeyManagerTelemetry;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactory;
@@ -193,8 +192,8 @@ public class KeyManagerConfiguration {
     HybridKeyManagerController hybridKeyManagerController(
             HybridKeyManagerAdapter hybridKeyManagerAdapter,
             WalletProfileQueryPort walletProfileQueryPort,
-            AuditService auditService) {
-        return new HybridKeyManagerController(hybridKeyManagerAdapter, walletProfileQueryPort, auditService);
+            EnrollHolderUseCase enrollHolderUseCase) {
+        return new HybridKeyManagerController(hybridKeyManagerAdapter, walletProfileQueryPort, enrollHolderUseCase);
     }
 
     @Bean
@@ -223,9 +222,11 @@ public class KeyManagerConfiguration {
     @Bean
     EnrollHolderUseCase enrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
                                             WrappedKeyHandleRepository wrappedKeyHandleRepository,
-                                            HybridKeyManagerTelemetry hybridKeyManagerTelemetry) {
+                                            HybridKeyManagerTelemetryPort hybridKeyManagerTelemetryPort,
+                                            KeyAuditPort keyAuditPort,
+                                            Tracer tracer) {
         return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository,
-                hybridKeyManagerTelemetry);
+                hybridKeyManagerTelemetryPort, keyAuditPort, tracer);
     }
 
     @Bean
