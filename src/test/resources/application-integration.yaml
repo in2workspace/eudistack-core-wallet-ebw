@@ -20,6 +20,7 @@ ebw:
     verify-per-ip: 1000
     refresh-per-ip: 1000
     logout-per-ip: 1000
+    hybrid-sign-per-ip: 1000
     window: 1h
   cors:
     allowed-origins: http://localhost:4200

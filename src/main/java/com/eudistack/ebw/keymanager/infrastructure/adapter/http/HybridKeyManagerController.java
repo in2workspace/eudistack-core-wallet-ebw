@@ -72,8 +72,8 @@ public class HybridKeyManagerController {
      * input, correlation ID). The PWA uses these to derive the unwrap key via Passkey PRF,
      * sign the payload client-side, and submit back via {@link #submit}.</p>
      *
-     * @param request the prepare request carrying {@code credential_id}, {@code vp_challenge},
-     *                and {@code format}
+     * @param request the prepare request carrying {@code credential_id}, the opaque
+     *                {@code payload} assembled by the OID4VP engine, and {@code format}
      * @param auth    the DPoP-bound authenticated holder principal
      * @return 200 with the PRF challenge envelope
      */

@@ -12,9 +12,9 @@ import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.Payload;
+import com.nimbusds.jose.jwk.JWK;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -46,8 +46,10 @@ import java.util.Map;
 public class PrepareSignUseCase {
 
     private static final Base64.Encoder BASE64URL = Base64.getUrlEncoder().withoutPadding();
+    private static final JOSEObjectType KB_JWT_TYPE = new JOSEObjectType("kb+jwt");
+    private static final JOSEObjectType VP_JWT_TYPE = new JOSEObjectType("vp+jwt");
     private static final JWSHeader KB_JWT_HEADER = new JWSHeader.Builder(JWSAlgorithm.ES256)
-            .type(new JOSEObjectType("kb+jwt"))
+            .type(KB_JWT_TYPE)
             .build();
 
     private final PrfSaltUseCase prfSaltUseCase;
@@ -102,12 +104,13 @@ public class PrepareSignUseCase {
                                                      byte[] prfSalt,
                                                      WrappedKeyHandle handle) {
         return Mono.fromCallable(() -> {
-            String signingInput = buildSigningInput(request.vpChallenge());
+            CredentialFormat format = formatFrom(request.format());
+            String signingInput = buildSigningInput(request.payload(), format, handle.cnfJwk());
             String kdfParams = buildKdfParams(handle);
 
             PreparedSign prepared = new PreparedSign(
                     signingInput, handle.cnfJwk(), holderId, tenantId,
-                    request.credentialId(), formatFrom(request.format()), null);
+                    request.credentialId(), format, null);
             PrepareSignResponse response = new PrepareSignResponse(
                     BASE64URL.encodeToString(prfSalt),
                     BASE64URL.encodeToString(handle.wrappedBlob()),
@@ -131,15 +134,46 @@ public class PrepareSignUseCase {
         };
     }
 
-    private String buildSigningInput(String vpChallenge) {
+    /**
+     * Builds {@code signing_input = base64url(header) + "." + base64url(payload)}.
+     *
+     * <p>The header is canonical per {@code format} and built entirely server-side (the client
+     * never dictates {@code alg}/{@code typ} — defense against alg-confusion). {@code payload}
+     * is treated as opaque: the EBW does not parse or validate its semantic content (EC-03) —
+     * the OID4VP engine on the Wallet PWA is responsible for assembling a valid KB-JWT payload
+     * ({@code sd_hash}, {@code nonce}, {@code aud}, {@code iat}) or VP envelope claims, mirroring
+     * {@code KbJwtSigner}/{@code VpEnvelopeSigner} (modo {@code db}, EUDISTACK-8). Design
+     * correction 2026-07-03 — see architecture.md §6.2.</p>
+     */
+    private String buildSigningInput(Map<String, Object> payload, CredentialFormat format, String cnfJwk) {
         try {
-            Map<String, Object> payloadMap = new LinkedHashMap<>();
-            payloadMap.put("nonce", vpChallenge);
-            payloadMap.put("iat", Instant.now().getEpochSecond());
-            String payloadJson = objectMapper.writeValueAsString(payloadMap);
-            return KB_JWT_HEADER.toBase64URL() + "." + new Payload(payloadJson).toBase64URL();
+            JWSHeader header = buildHeader(format, cnfJwk);
+            String payloadJson = objectMapper.writeValueAsString(payload);
+            return header.toBase64URL() + "." + new Payload(payloadJson).toBase64URL();
         } catch (Exception e) {
             throw new IllegalStateException("Failed to build signing_input", e);
+        }
+    }
+
+    private JWSHeader buildHeader(CredentialFormat format, String cnfJwk) {
+        return switch (format) {
+            case SD_JWT_VC -> KB_JWT_HEADER;
+            case VC_JWT -> buildVpEnvelopeHeader(cnfJwk);
+        };
+    }
+
+    /** Mirrors {@code VpEnvelopeSigner}'s header: {@code cty:"vp"} + embedded {@code jwk}/{@code kid}. */
+    private JWSHeader buildVpEnvelopeHeader(String cnfJwk) {
+        try {
+            JWK jwk = JWK.parse(cnfJwk).toPublicJWK();
+            return new JWSHeader.Builder(JWSAlgorithm.ES256)
+                    .type(VP_JWT_TYPE)
+                    .contentType("vp")
+                    .jwk(jwk)
+                    .keyID(jwk.computeThumbprint().toString())
+                    .build();
+        } catch (Exception e) {
+            throw new IllegalStateException("Stored cnf.jwk is malformed", e);
         }
     }
 

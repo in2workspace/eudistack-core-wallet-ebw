@@ -9,6 +9,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
@@ -41,7 +43,7 @@ class DbKeyManagerServiceNoRegressionTest {
 
     @Test
     void prepareSign_inheritsDefaultMethodAndReturnsUnsupportedOperationException() {
-        PrepareSignRequest request = new PrepareSignRequest("cred-1", "challenge", "vc+sd-jwt");
+        PrepareSignRequest request = new PrepareSignRequest("cred-1", Map.of("nonce", "challenge"), "vc+sd-jwt");
 
         StepVerifier.create(service.prepareSign(request))
                 .expectErrorMatches(ex -> ex instanceof UnsupportedOperationException

@@ -75,6 +75,18 @@ public class SubmitSignedUseCase {
                             throw new HolderIsolationViolationException(request.credentialId());
                         }
 
+                        // Defense-in-depth: the pinned session is authoritative regardless (the
+                        // signature is verified against prepared.signingInput(), never against
+                        // request.credentialId()), but a mismatch here means the client echoed
+                        // the wrong credential_id for this correlation_id — reject rather than
+                        // silently proceed against the pinned one, so a confused client fails
+                        // loudly instead of getting a kb_jwt for a different credential than it
+                        // thinks it requested.
+                        if (!prepared.credentialId().equals(request.credentialId())) {
+                            throw new InvalidSignatureSubmissionException(
+                                    "credential_id does not match the prepared session");
+                        }
+
                         if (!prepared.isPending()) {
                             return Mono.just(new SubmitSignedAssertionResponse(prepared.resolvedKbJwt()));
                         }

@@ -52,6 +52,14 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
                     .then(chain.filter(exchange));
             case "/api/v1/auth/logout" -> checkRateLimit("logout:ip:" + ip, properties.logoutPerIp())
                     .then(chain.filter(exchange));
+            // Coarse per-IP backstop for the hybrid PRF handshake (each POST triggers a WebAuthn
+            // ceremony and/or an ECDSA verify server-side) — true per-holder limiting would need
+            // the DPoP JWT already parsed, which happens downstream of this filter (F5).
+            case "/api/v1/keys/hybrid/onboarding/init",
+                 "/api/v1/keys/hybrid/onboarding/commit",
+                 "/api/v1/keys/hybrid/sign/prepare",
+                 "/api/v1/keys/hybrid/sign/submit" -> checkRateLimit("hybrid:ip:" + ip, properties.hybridSignPerIp())
+                    .then(chain.filter(exchange));
             default -> chain.filter(exchange);
         };
     }
@@ -66,9 +74,10 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
     }
 
     private String resolveIp(ServerWebExchange exchange) {
+        // SECURITY: never log the full header map here — it includes Authorization/DPoP
+        // bearer tokens for every POST request in the app (this filter runs on all of
+        // them). Log only the single resolved value needed for rate-limit keying.
         var forwarded = exchange.getRequest().getHeaders().getFirst("X-Forwarded-For");
-        System.out.println("headers: " + exchange.getRequest().getHeaders());
-        System.out.println("X-Forwarded-For: " + forwarded);
         if (forwarded != null && !forwarded.isBlank()) {
             return forwarded.split(",")[0].trim();
         }

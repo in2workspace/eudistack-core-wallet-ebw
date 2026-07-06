@@ -16,8 +16,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,14 +46,22 @@ class PrepareSignUseCaseTest {
     private static final String TENANT  = "sandbox";
     private static final String HOLDER  = "holder-uuid-1";
     private static final String CRED_ID = "cred-id-1";
-    private static final String CHALLENGE = "test-vp-challenge-abc";
     private static final String FORMAT  = "vc+sd-jwt";
+    private static final Map<String, Object> PAYLOAD = new LinkedHashMap<>(Map.of(
+            "nonce", "test-vp-challenge-abc",
+            "iat", 1_700_000_000,
+            "aud", "https://verifier.example",
+            "sd_hash", "test-sd-hash-value"));
 
     private static final byte[] PRF_SALT    = new byte[32];
     private static final byte[] BLOB_BYTES  = new byte[48];
     private static final byte[] IV_BYTES    = new byte[12];
     private static final byte[] TAG_BYTES   = new byte[16];
-    private static final String CNF_JWK = "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"abc\",\"y\":\"def\"}";
+    // RFC 7515 Appendix A.3 example ES256 public key — genuinely valid P-256 coordinates,
+    // required by buildVpEnvelopeHeader's JWK.parse(...).toPublicJWK() (VC_JWT format).
+    private static final String CNF_JWK = "{\"kty\":\"EC\",\"crv\":\"P-256\","
+            + "\"x\":\"f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU\","
+            + "\"y\":\"x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0\"}";
 
     @Mock private PrfSaltUseCase prfSaltUseCase;
     @Mock private WrappedKeyHandleRepository wrappedKeyHandleRepository;
@@ -113,6 +124,52 @@ class PrepareSignUseCaseTest {
                     // Both parts must be non-empty base64url
                     assertThat(parts[0]).isNotBlank();
                     assertThat(parts[1]).isNotBlank();
+
+                    String header = new String(Base64.getUrlDecoder().decode(parts[0]), StandardCharsets.UTF_8);
+                    assertThat(header).contains("\"typ\":\"kb+jwt\"");
+                })
+                .verifyComplete();
+    }
+
+    /**
+     * Design correction (2026-07-03, architecture.md §6.2): signing_input's payload MUST be
+     * exactly the client-assembled payload (aud, sd_hash included) — the EBW must NOT
+     * reconstruct it from a challenge string alone. A KB-JWT missing sd_hash/aud is invalid
+     * per RFC 9901 §4.1.2.
+     */
+    @Test
+    void execute_happyPath_signingInputPayloadIsClientAssembledOpaquePayload() {
+        givenMaterialResolvesSuccessfully();
+        when(preparedSignStore.putPending(any(), any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(useCase.execute(request(), "test-corr-id").contextWrite(holderContext()))
+                .assertNext(r -> {
+                    String[] parts = r.signingInput().split("\\.");
+                    String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+
+                    assertThat(payloadJson).contains("\"nonce\":\"test-vp-challenge-abc\"");
+                    assertThat(payloadJson).contains("\"aud\":\"https://verifier.example\"");
+                    assertThat(payloadJson).contains("\"sd_hash\":\"test-sd-hash-value\"");
+                    assertThat(payloadJson).contains("\"iat\":1700000000");
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void execute_vcJwtFormat_buildsVpEnvelopeHeaderWithJwk() {
+        when(prfSaltUseCase.getForHolder(TENANT, HOLDER, CRED_ID)).thenReturn(Mono.just(PRF_SALT));
+        when(wrappedKeyHandleRepository.findBy(HOLDER, CRED_ID))
+                .thenReturn(Mono.just(Optional.of(validHandle())));
+        when(preparedSignStore.putPending(any(), any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(useCase.execute(requestWithFormat("jwt_vc_json"), "test-corr-id")
+                        .contextWrite(holderContext()))
+                .assertNext(r -> {
+                    String header = new String(
+                            Base64.getUrlDecoder().decode(r.signingInput().split("\\.")[0]), StandardCharsets.UTF_8);
+                    assertThat(header).contains("\"typ\":\"vp+jwt\"");
+                    assertThat(header).contains("\"cty\":\"vp\"");
+                    assertThat(header).contains("\"jwk\"");
                 })
                 .verifyComplete();
     }
@@ -169,6 +226,29 @@ class PrepareSignUseCaseTest {
         verify(preparedSignStore, never()).putPending(any(), any());
     }
 
+    // ------------------------------------------------------------------ malformed stored cnf.jwk (W2, code review 2026-07-06)
+
+    /**
+     * {@code buildVpEnvelopeHeader} is new logic introduced by this fix (parses the stored
+     * {@code cnf.jwk} for VC_JWT format). A corrupted/malformed value must fail loudly
+     * ({@link IllegalStateException}, mapped to a generic 500 by
+     * {@code HybridKeyManagerExceptionHandler#handleGeneral} — class name only, no detail
+     * leaked) rather than silently produce an invalid header.
+     */
+    @Test
+    void execute_vcJwtFormatWithMalformedCnfJwk_propagatesIllegalStateException() {
+        when(prfSaltUseCase.getForHolder(TENANT, HOLDER, CRED_ID)).thenReturn(Mono.just(PRF_SALT));
+        when(wrappedKeyHandleRepository.findBy(HOLDER, CRED_ID))
+                .thenReturn(Mono.just(Optional.of(handleWithCnfJwk("not-a-valid-jwk"))));
+
+        StepVerifier.create(useCase.execute(requestWithFormat("jwt_vc_json"), "test-corr-id")
+                        .contextWrite(holderContext()))
+                .expectError(IllegalStateException.class)
+                .verify();
+
+        verify(preparedSignStore, never()).putPending(any(), any());
+    }
+
     // ------------------------------------------------------------------ DB failure
 
     @Test
@@ -186,7 +266,11 @@ class PrepareSignUseCaseTest {
     // ------------------------------------------------------------------ helpers
 
     private PrepareSignRequest request() {
-        return new PrepareSignRequest(CRED_ID, CHALLENGE, FORMAT);
+        return new PrepareSignRequest(CRED_ID, PAYLOAD, FORMAT);
+    }
+
+    private PrepareSignRequest requestWithFormat(String format) {
+        return new PrepareSignRequest(CRED_ID, PAYLOAD, format);
     }
 
     private reactor.util.context.Context holderContext() {
@@ -202,8 +286,12 @@ class PrepareSignUseCaseTest {
     }
 
     private WrappedKeyHandle validHandle() {
+        return handleWithCnfJwk(CNF_JWK);
+    }
+
+    private WrappedKeyHandle handleWithCnfJwk(String cnfJwk) {
         return new WrappedKeyHandle(
                 HOLDER, CRED_ID, BLOB_BYTES, IV_BYTES, TAG_BYTES,
-                "HKDF-SHA-256", 1, CNF_JWK, Instant.now(), null);
+                "HKDF-SHA-256", 1, cnfJwk, Instant.now(), null);
     }
 }
