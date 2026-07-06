@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-07-03
+
+### Added - 2026-07-01
+
+- **EUD-143 — `PasskeyControllerIT`**: integration tests for the `GET /api/v1/auth/passkeys` contract — 200 with the full passkey list (AC-01); each entry exposes `displayName`/`createdAt`/`lastUsedAt` (AC-02); `lastUsedAt` null is returned explicitly instead of erroring (EC-02); stable result order `last_used_at DESC NULLS LAST, created_at DESC` (EC-04); 401 with no Authorization header or an invalid token, with no passkey data leaked (ES-01).
+- **EUD-143 — `PasskeyIsolationIT`**: integration tests proving account- and tenant-level isolation — a holder never receives another account's devices, whether that account is in the same tenant or a different one (AC-04); the list is resolved solely from the token identity, request parameters cannot influence the target account, and no existence/count of another account's devices is leaked (ES-05).
+
+### Fixed - 2026-07-01
+
+- **EUD-143 — `UserPasskeyR2dbcRepository` non-deterministic list order**: added explicit `ORDER BY last_used_at DESC NULLS LAST, created_at DESC` to `SpringUserPasskeyRepository.findByUserId`, replacing the Spring Data derived query which carried no ordering guarantee (EC-04).
+- **EUD-143 — `ListPasskeysWorkflow` order lost via `flatMap`**: switched `Flux.flatMap` to `Flux.concatMap` when enriching each passkey with its active-session count. `flatMap` does not preserve source ordering under concurrent completion, silently undoing the repository-level `ORDER BY` (EC-04).
+
+## [1.12.1] - 2026-07-03
+
+### Added - 2026-07-01
+
+- **EUD-143 — `PasskeyControllerIT`**: integration tests for the `GET /api/v1/auth/passkeys` contract — 200 with the full passkey list (AC-01); each entry exposes `displayName`/`createdAt`/`lastUsedAt` (AC-02); `lastUsedAt` null is returned explicitly instead of erroring (EC-02); stable result order `last_used_at DESC NULLS LAST, created_at DESC` (EC-04); 401 with no Authorization header or an invalid token, with no passkey data leaked (ES-01).
+- **EUD-143 — `PasskeyIsolationIT`**: integration tests proving account- and tenant-level isolation — a holder never receives another account's devices, whether that account is in the same tenant or a different one (AC-04); the list is resolved solely from the token identity, request parameters cannot influence the target account, and no existence/count of another account's devices is leaked (ES-05).
+
+### Fixed - 2026-07-01
+
+- **EUD-143 — `UserPasskeyR2dbcRepository` non-deterministic list order**: added explicit `ORDER BY last_used_at DESC NULLS LAST, created_at DESC` to `SpringUserPasskeyRepository.findByUserId`, replacing the Spring Data derived query which carried no ordering guarantee (EC-04).
+- **EUD-143 — `ListPasskeysWorkflow` order lost via `flatMap`**: switched `Flux.flatMap` to `Flux.concatMap` when enriching each passkey with its active-session count. `flatMap` does not preserve source ordering under concurrent completion, silently undoing the repository-level `ORDER BY` (EC-04).
+
 ### Added - 2026-06-25
 - **EUDISTACK-359 US-07:**
   - Added hybrid onboarding block endpoint.
