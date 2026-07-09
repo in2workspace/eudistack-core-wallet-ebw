@@ -1,6 +1,7 @@
 package com.eudistack.ebw.integration;
 
 import com.eudistack.ebw.domain.model.CredentialStatus;
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.model.WalletCredential;
 import com.eudistack.ebw.domain.repository.WalletCredentialRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.r2dbc.core.DatabaseClient;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
@@ -64,11 +66,11 @@ class CredentialRepositoryInsertUpdateIntegrationTest extends IntegrationTestBas
 
         // Reload the domain object through the repository port so we have a WalletCredential
         // matching the persisted row.
-        var domain = credentialRepository.findByIdAndUserId(id, userId).block();
+        var domain = findByIdAndUserId(id, userId);
         assertThat(domain).isNotNull();
 
         // Second insert with the same id MUST fail rather than silently become an UPDATE.
-        StepVerifier.create(credentialRepository.insert(domain))
+        StepVerifier.create(withTenantContext(credentialRepository.insert(domain)))
                 .expectErrorSatisfies(err -> assertThat(err)
                         .as("duplicate-PK insert must surface a DataIntegrityViolationException")
                         .isInstanceOf(DataIntegrityViolationException.class))
@@ -86,18 +88,18 @@ class CredentialRepositoryInsertUpdateIntegrationTest extends IntegrationTestBas
         var id = UUID.fromString((String) stored.get("id"));
         var userId = resolveUserId(email);
 
-        var loaded = credentialRepository.findByIdAndUserId(id, userId).block();
+        var loaded = findByIdAndUserId(id, userId);
         assertThat(loaded).isNotNull();
         assertThat(loaded.getStatus()).isEqualTo(CredentialStatus.VALID);
 
         loaded.setStatus(CredentialStatus.SUSPENDED);
         loaded.setUpdatedAt(Instant.now());
 
-        StepVerifier.create(credentialRepository.update(loaded))
+        StepVerifier.create(withTenantContext(credentialRepository.update(loaded)))
                 .assertNext(saved -> assertThat(saved.getStatus()).isEqualTo(CredentialStatus.SUSPENDED))
                 .verifyComplete();
 
-        var reloaded = credentialRepository.findByIdAndUserId(id, userId).block();
+        var reloaded = findByIdAndUserId(id, userId);
         assertThat(reloaded).isNotNull();
         assertThat(reloaded.getStatus()).isEqualTo(CredentialStatus.SUSPENDED);
     }
@@ -123,12 +125,31 @@ class CredentialRepositoryInsertUpdateIntegrationTest extends IntegrationTestBas
     }
 
     private UUID resolveUserId(String email) {
-        var row = databaseClient.sql("SELECT id FROM ebw.wallet_user WHERE email = :email")
+        // Unqualified table name — resolved against the tenant schema via
+        // TenantAwareConnectionFactory's search_path (needs the tenant supplied
+        // explicitly below since this direct DatabaseClient call bypasses the
+        // HTTP request pipeline that would otherwise resolve it from X-Tenant).
+        var row = databaseClient.sql("SELECT id FROM wallet_user WHERE email = :email")
                 .bind("email", email)
                 .fetch()
                 .one()
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TEST_TENANT))
                 .block();
         assertThat(row).as("wallet_user row must exist for test email").isNotNull();
         return (UUID) row.get("id");
+    }
+
+    /**
+     * Direct {@link WalletCredentialRepository} calls (unlike the {@code webClient}
+     * calls above) bypass {@code TenantDomainWebFilter}, so the tenant must be
+     * supplied explicitly for {@code TenantAwareConnectionFactory} to route to the
+     * right schema.
+     */
+    private WalletCredential findByIdAndUserId(UUID id, UUID userId) {
+        return withTenantContext(credentialRepository.findByIdAndUserId(id, userId)).block();
+    }
+
+    private <T> Mono<T> withTenantContext(Mono<T> mono) {
+        return mono.contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TEST_TENANT));
     }
 }

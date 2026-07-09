@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - 2026-07-09
+
+- **`integration/` test package broken since the schema-per-tenant migration (EUDISTACK-480/412)**: `IntegrationTestBase` and its six subclasses (`AuthFlowIntegrationTest`, `PasskeyFlowIntegrationTest`, `CredentialCrudIntegrationTest`, `CredentialFilterSecurityIntegrationTest`, `CredentialAuditIntegrationTest`, `CredentialRepositoryInsertUpdateIntegrationTest`) predated the move to schema-per-tenant and could not even start their Spring context. Root causes and fixes:
+  - `src/test/resources/application.yml` excludes `R2dbcAutoConfiguration`/`R2dbcRepositoriesAutoConfiguration`/`spring.flyway.enabled` for the no-DB `ApplicationTests.contextLoads()` smoke test only, but the exclusion leaked into every `@ActiveProfiles("integration")` test since nothing overrode it. `application-integration.yaml` now re-enables both.
+  - `IntegrationTestBase` never provisioned a tenant schema or resolved a tenant on its requests, so every query fell back to the tenant-less default where `wallet_user`/`wallet_credential`/etc. no longer exist. It now provisions a fixed `integrationtest_business_wallet` schema (Flyway `db/tenant` migrations) at static init and sends an `X-Tenant` header on every request (`ebw.security.trust-forwarded-host: true` added to the integration profile so the header is honoured).
+  - `CredentialAuditIntegrationTest` and `CredentialRepositoryInsertUpdateIntegrationTest` issued raw SQL/repository calls hardcoded to the legacy single-schema `ebw.` prefix, bypassing the tenant-resolution web filter entirely; both now target the unqualified table name and supply the tenant explicitly via `contextWrite`.
+  - `CredentialFilterSecurityIntegrationTest#filter_doesNotLeakOtherUsersCredentials`: fixed a typo (`/api/credentials` → `/api/v1/credentials`) that made 5 of its assertions fail on 404 instead of exercising the intended cross-user leak check.
+  - `CredentialController#store`: the `Location` header on `POST /api/v1/credentials` pointed to `/api/credentials/{id}` (missing `/v1`), inconsistent with the actually mapped route.
+  - Removed `AuthFlowIntegrationTest#register_disallowedDomain_returns400_andNoOtpSent` and the orphaned `ebw.registration.allowed-email-domains` test property: the `@AllowedEmailDomain` validator they exercised was intentionally deleted in commit `9d8d209` (tenant-config migration) and never reimplemented — this was stale test coverage for a removed feature, not a regression.
+
 ## [1.12.1] - 2026-07-03
 
 ### Added - 2026-07-01
