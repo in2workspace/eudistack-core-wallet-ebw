@@ -75,6 +75,8 @@ public class SubmitSignedUseCase {
                             throw new HolderIsolationViolationException(request.credentialId());
                         }
 
+                        requireMatchingCredentialId(prepared, request);
+
                         if (!prepared.isPending()) {
                             return Mono.just(new SubmitSignedAssertionResponse(prepared.resolvedKbJwt()));
                         }
@@ -82,6 +84,13 @@ public class SubmitSignedUseCase {
                         return verifyAndAssemble(prepared, request);
                     });
         });
+    }
+
+    private void requireMatchingCredentialId(PreparedSign prepared, SubmitSignedAssertionRequest request) {
+        if (!prepared.credentialId().equals(request.credentialId())) {
+            throw new InvalidSignatureSubmissionException(
+                    "credential_id does not match the prepared session");
+        }
     }
 
     private Mono<SubmitSignedAssertionResponse> verifyAndAssemble(PreparedSign prepared,
