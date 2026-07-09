@@ -128,11 +128,11 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
                 .expectStatus().isCreated();
 
         // User A has NO credentials with those attributes — each filter query must return empty.
-        assertFilteredListEmpty("/api/credentials?status=VALID");
-        assertFilteredListEmpty("/api/credentials?issuer=" + sharedIssuer);
-        assertFilteredListEmpty("/api/credentials?credential_configuration_id=" + sharedConfigId);
-        assertFilteredListEmpty("/api/credentials?status=VALID&issuer=" + sharedIssuer);
-        assertFilteredListEmpty("/api/credentials?status=VALID&issuer=" + sharedIssuer
+        assertFilteredListEmpty("/api/v1/credentials?status=VALID");
+        assertFilteredListEmpty("/api/v1/credentials?issuer=" + sharedIssuer);
+        assertFilteredListEmpty("/api/v1/credentials?credential_configuration_id=" + sharedConfigId);
+        assertFilteredListEmpty("/api/v1/credentials?status=VALID&issuer=" + sharedIssuer);
+        assertFilteredListEmpty("/api/v1/credentials?status=VALID&issuer=" + sharedIssuer
                 + "&credential_configuration_id=" + sharedConfigId);
 
         // Now user A seeds one credential and re-runs a filtered query: the projection must
