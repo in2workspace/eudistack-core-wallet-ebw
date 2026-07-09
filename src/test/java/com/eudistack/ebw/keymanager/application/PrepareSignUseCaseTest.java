@@ -57,8 +57,6 @@ class PrepareSignUseCaseTest {
     private static final byte[] BLOB_BYTES  = new byte[48];
     private static final byte[] IV_BYTES    = new byte[12];
     private static final byte[] TAG_BYTES   = new byte[16];
-    // RFC 7515 Appendix A.3 example ES256 public key — genuinely valid P-256 coordinates,
-    // required by buildVpEnvelopeHeader's JWK.parse(...).toPublicJWK() (VC_JWT format).
     private static final String CNF_JWK = "{\"kty\":\"EC\",\"crv\":\"P-256\","
             + "\"x\":\"f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU\","
             + "\"y\":\"x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0\"}";
@@ -131,12 +129,6 @@ class PrepareSignUseCaseTest {
                 .verifyComplete();
     }
 
-    /**
-     * Design correction (2026-07-03, architecture.md §6.2): signing_input's payload MUST be
-     * exactly the client-assembled payload (aud, sd_hash included) — the EBW must NOT
-     * reconstruct it from a challenge string alone. A KB-JWT missing sd_hash/aud is invalid
-     * per RFC 9901 §4.1.2.
-     */
     @Test
     void execute_happyPath_signingInputPayloadIsClientAssembledOpaquePayload() {
         givenMaterialResolvesSuccessfully();
@@ -228,13 +220,6 @@ class PrepareSignUseCaseTest {
 
     // ------------------------------------------------------------------ malformed stored cnf.jwk (W2, code review 2026-07-06)
 
-    /**
-     * {@code buildVpEnvelopeHeader} is new logic introduced by this fix (parses the stored
-     * {@code cnf.jwk} for VC_JWT format). A corrupted/malformed value must fail loudly
-     * ({@link IllegalStateException}, mapped to a generic 500 by
-     * {@code HybridKeyManagerExceptionHandler#handleGeneral} — class name only, no detail
-     * leaked) rather than silently produce an invalid header.
-     */
     @Test
     void execute_vcJwtFormatWithMalformedCnfJwk_propagatesIllegalStateException() {
         when(prfSaltUseCase.getForHolder(TENANT, HOLDER, CRED_ID)).thenReturn(Mono.just(PRF_SALT));

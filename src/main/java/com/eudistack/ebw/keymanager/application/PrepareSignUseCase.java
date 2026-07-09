@@ -134,17 +134,6 @@ public class PrepareSignUseCase {
         };
     }
 
-    /**
-     * Builds {@code signing_input = base64url(header) + "." + base64url(payload)}.
-     *
-     * <p>The header is canonical per {@code format} and built entirely server-side (the client
-     * never dictates {@code alg}/{@code typ} — defense against alg-confusion). {@code payload}
-     * is treated as opaque: the EBW does not parse or validate its semantic content (EC-03) —
-     * the OID4VP engine on the Wallet PWA is responsible for assembling a valid KB-JWT payload
-     * ({@code sd_hash}, {@code nonce}, {@code aud}, {@code iat}) or VP envelope claims, mirroring
-     * {@code KbJwtSigner}/{@code VpEnvelopeSigner} (modo {@code db}, EUDISTACK-8). Design
-     * correction 2026-07-03 — see architecture.md §6.2.</p>
-     */
     private String buildSigningInput(Map<String, Object> payload, CredentialFormat format, String cnfJwk) {
         try {
             JWSHeader header = buildHeader(format, cnfJwk);
@@ -162,7 +151,6 @@ public class PrepareSignUseCase {
         };
     }
 
-    /** Mirrors {@code VpEnvelopeSigner}'s header: {@code cty:"vp"} + embedded {@code jwk}/{@code kid}. */
     private JWSHeader buildVpEnvelopeHeader(String cnfJwk) {
         try {
             JWK jwk = JWK.parse(cnfJwk).toPublicJWK();

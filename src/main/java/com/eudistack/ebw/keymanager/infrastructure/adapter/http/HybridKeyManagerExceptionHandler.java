@@ -137,14 +137,11 @@ public class HybridKeyManagerExceptionHandler {
     }
 
     @ExceptionHandler(PrfUnsupportedException.class)
-    public ResponseEntity<ProblemDetail> handlePrfUnsupported(
-            PrfUnsupportedException ex) {
+    public ProblemDetail handlePrfUnsupported(PrfUnsupportedException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
         problem.setType(URI.create(TYPE_BASE + "prf-unsupported"));
         problem.setProperty("error", "prf_unsupported");
-        return ResponseEntity
-                .status(HttpStatus.UNPROCESSABLE_ENTITY)
-                .body(problem);
+        return problem;
     }
 
     /**
@@ -167,18 +164,6 @@ public class HybridKeyManagerExceptionHandler {
      * (architecture.md §8.3).
      * No {@code prf_salt} value or owning {@code holder_id} is included in the response
      * body (AC-06, NFR-S-537-01, NFR-S-537-02).
-     *
-     * <p><b>Known finding, not fixed here (2026-07-06 security audit):</b> because
-     * {@code credential_id} is identical across holders for the same credential type
-     * (`issuer:credentialConfigurationId`), returning 403 here vs 404 from
-     * {@link #handlePrfSaltNotFound} lets an authenticated holder enumerate which credential
-     * types other holders in the tenant have enrolled, by probing candidate ids. Left as 403
-     * because this exception/handler is shared with the onboarding flow
-     * ({@code /onboarding/init}), where the 403-vs-404 distinction is an existing, deliberately
-     * tested contract ({@code PrfSaltIsolationIT}, NFR-S-537-01/02) — unifying it here would
-     * silently change that Story's shipped behavior. Needs a `software-architect` decision on
-     * whether/how to scope a fix to only the sign prepare/submit call sites (e.g. a distinct
-     * exception type) before changing this mapping.</p>
      */
     @ExceptionHandler(HolderIsolationViolationException.class)
     public ResponseEntity<ProblemDetail> handleHolderIsolation(HolderIsolationViolationException ex) {

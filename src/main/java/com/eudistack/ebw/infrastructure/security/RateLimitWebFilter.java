@@ -17,6 +17,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component
 public class RateLimitWebFilter implements WebFilter, Ordered {
 
+    private static final String HYBRID_ONBOARDING_INIT = "/api/v1/keys/hybrid/onboarding/init";
+    private static final String HYBRID_ONBOARDING_COMMIT = "/api/v1/keys/hybrid/onboarding/commit";
+    private static final String HYBRID_SIGN_PREPARE = "/api/v1/keys/hybrid/sign/prepare";
+    private static final String HYBRID_SIGN_SUBMIT = "/api/v1/keys/hybrid/sign/submit";
+
     private final RateLimitProperties properties;
     private final Cache<String, AtomicInteger> cache;
 
@@ -52,14 +57,9 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
                     .then(chain.filter(exchange));
             case "/api/v1/auth/logout" -> checkRateLimit("logout:ip:" + ip, properties.logoutPerIp())
                     .then(chain.filter(exchange));
-            // Coarse per-IP backstop for the hybrid PRF handshake (each POST triggers a WebAuthn
-            // ceremony and/or an ECDSA verify server-side) — true per-holder limiting would need
-            // the DPoP JWT already parsed, which happens downstream of this filter (F5).
-            case "/api/v1/keys/hybrid/onboarding/init",
-                 "/api/v1/keys/hybrid/onboarding/commit",
-                 "/api/v1/keys/hybrid/sign/prepare",
-                 "/api/v1/keys/hybrid/sign/submit" -> checkRateLimit("hybrid:ip:" + ip, properties.hybridSignPerIp())
-                    .then(chain.filter(exchange));
+            case HYBRID_ONBOARDING_INIT, HYBRID_ONBOARDING_COMMIT, HYBRID_SIGN_PREPARE, HYBRID_SIGN_SUBMIT ->
+                    checkRateLimit("hybrid:ip:" + ip, properties.hybridSignPerIp())
+                            .then(chain.filter(exchange));
             default -> chain.filter(exchange);
         };
     }
@@ -74,9 +74,6 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
     }
 
     private String resolveIp(ServerWebExchange exchange) {
-        // SECURITY: never log the full header map here — it includes Authorization/DPoP
-        // bearer tokens for every POST request in the app (this filter runs on all of
-        // them). Log only the single resolved value needed for rate-limit keying.
         var forwarded = exchange.getRequest().getHeaders().getFirst("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
             return forwarded.split(",")[0].trim();
