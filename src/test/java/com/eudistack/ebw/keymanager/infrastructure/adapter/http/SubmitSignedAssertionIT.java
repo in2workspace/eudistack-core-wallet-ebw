@@ -318,7 +318,9 @@ class SubmitSignedAssertionIT {
                 .header("Host", HYBRID_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + bearer)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("credential_id", CRED_ID, "vp_challenge", "vp-nonce", "format", "vc+sd-jwt"))
+                .bodyValue(Map.of("credential_id", CRED_ID, "payload",
+                        Map.of("nonce", "vp-nonce", "iat", 1_700_000_000, "aud", "https://verifier.example", "sd_hash", "test-sd-hash"),
+                        "format", "vc+sd-jwt"))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(new ParameterizedTypeReference<Map<String, Object>>() {})

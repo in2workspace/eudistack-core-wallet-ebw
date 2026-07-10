@@ -84,6 +84,8 @@ class HybridSignTracingIT {
     private static final byte[] TAG_BYTES  = new byte[16];
     private static final String CNF_JWK    =
             "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"trace-x\",\"y\":\"trace-y\"}";
+    private static final Map<String, Object> PAYLOAD =
+            Map.of("nonce", "nonce-trace", "iat", 1_700_000_000, "aud", "https://verifier.example", "sd_hash", "test-sd-hash");
 
     @Container
     static final PostgreSQLContainer<?> postgres =
@@ -186,7 +188,7 @@ class HybridSignTracingIT {
                 .header("Host", HYBRID_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("credential_id", CRED_ID, "vp_challenge", "nonce-trace", "format", "vc+sd-jwt"))
+                .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(Map.class)
@@ -217,7 +219,7 @@ class HybridSignTracingIT {
                 .header("Host", HYBRID_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("credential_id", CRED_ID, "vp_challenge", "nonce-err", "format", "vc+sd-jwt"))
+                .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
                 .exchange()
                 .expectStatus().isNotFound();
 

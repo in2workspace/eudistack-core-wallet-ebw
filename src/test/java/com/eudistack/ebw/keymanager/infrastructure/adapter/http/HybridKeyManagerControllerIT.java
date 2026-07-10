@@ -102,7 +102,7 @@ class HybridKeyManagerControllerIT {
                 .post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
-                        {"credential_id":"cred-1","vp_challenge":"ch","format":"mso_mdoc"}
+                        {"credential_id":"cred-1","payload":{"nonce":"ch"},"format":"mso_mdoc"}
                         """)
                 .exchange()
                 .expectStatus().isBadRequest()
@@ -123,7 +123,7 @@ class HybridKeyManagerControllerIT {
         webTestClient.post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
-                        {"credential_id":"cred-1","vp_challenge":"ch","format":"vc+sd-jwt"}
+                        {"credential_id":"cred-1","payload":{"nonce":"ch"},"format":"vc+sd-jwt"}
                         """)
                 .exchange()
                 .expectStatus().is5xxServerError();
@@ -141,7 +141,7 @@ class HybridKeyManagerControllerIT {
                 .post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
-                        {"credential_id":"cred-1","vp_challenge":"ch","format":"vc+sd-jwt"}
+                        {"credential_id":"cred-1","payload":{"nonce":"ch"},"format":"vc+sd-jwt"}
                         """)
                 .exchange()
                 .expectStatus().isForbidden()
@@ -179,7 +179,7 @@ class HybridKeyManagerControllerIT {
         webTestClient.post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
-                        {"vp_challenge":"ch","format":"vc+sd-jwt"}
+                        {"payload":{"nonce":"ch"},"format":"vc+sd-jwt"}
                         """)
                 .exchange()
                 .expectStatus().isBadRequest();
@@ -265,7 +265,7 @@ class HybridKeyManagerControllerIT {
 
         @Bean
         RateLimitProperties rateLimitProperties() {
-            return new RateLimitProperties(100, 100, 100, 100, 100, 100, Duration.ofMinutes(1));
+            return new RateLimitProperties(100, 100, 100, 100, 100, 100, 100, Duration.ofMinutes(1));
         }
 
         @Bean

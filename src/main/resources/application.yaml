@@ -54,6 +54,7 @@ ebw:
     verify-per-ip: 20
     refresh-per-ip: 60
     logout-per-ip: 20
+    hybrid-sign-per-ip: 30
     window: 1h
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
