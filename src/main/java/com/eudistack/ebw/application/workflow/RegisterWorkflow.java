@@ -39,7 +39,7 @@ public class RegisterWorkflow {
                 .then(findOrCreateUser(email)
                         .flatMap(user -> auditService.record("user", user.getId(),
                                 "REGISTRATION_INITIATED", user.getId(), Map.of())))
-                .then(otpService.generateAndSend(email))
+                .then(Mono.defer(() -> otpService.generateAndSend(email)))
                 .onErrorResume(e -> !(e instanceof RateLimitExceededException), e -> {
                     log.warn("Failed to send OTP to {}", email, e);
                     return Mono.empty();
