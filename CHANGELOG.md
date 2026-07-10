@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+#### [1.12.2] - 2026-07-10
+
 ### Added - 2026-07-10
 
 - **EUD-103 — `REGISTRATION_INITIATED` audit event**: `RegisterWorkflow` now records a `REGISTRATION_INITIATED` audit event after the find-or-create step, with minimal metadata and identical timing/shape whether the email was already registered or not — closes the audit gap without weakening anti-enumeration (AC-04). Together with the existing `USER_AUTHENTICATED`/`PASSKEY_CREATED` events, the full onboarding funnel is now traceable in `audit_log` (NFR-S-103-01).
