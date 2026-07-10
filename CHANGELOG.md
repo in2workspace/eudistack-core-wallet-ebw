@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - 2026-07-06
+
+- **EUDISTACK-536 US-04 — `signing_input` payload contract corrected** (architecture.md §6.2): `PrepareSignUseCase.buildSigningInput` reconstructed the KB-JWT/VP payload server-side from `vpChallenge` alone (`{nonce, iat}`), producing a KB-JWT invalid per RFC 9901 §4.1.2 (missing `aud`/`sd_hash` — the EBW has no visibility into the in-browser OID4VP session needed to build them). `PrepareSignRequest.vpChallenge` → `payload: Map<String,Object>`, the full presentation payload assembled client-side by the Wallet PWA's OID4VP engine; the EBW treats it as opaque and only prepends the canonical JWS header per `format` (`kb+jwt` for `vc+sd-jwt`, `vp+jwt`+`cty:vp`+`jwk`+`kid` for `jwt_vc_json`, matching `KbJwtSigner`/`VpEnvelopeSigner` in `db` mode).
+- **`wallet_credential.holder_key_id` overflow for hybrid tenants**: widened `VARCHAR(36)` → `VARCHAR(512)` (migration `V5`, no FK, backward-compatible) — hybrid has no server-side `holder_key` row, so the Wallet PWA stores the real `credential_id` there instead of a UUID, which didn't fit.
+
+### Security - 2026-07-06
+
+- **Full request headers (incl. `Authorization`/`DPoP` bearer tokens) logged to stdout on every POST request**: removed the two `System.out.println` calls in `RateLimitWebFilter.resolveIp` — they ran unconditionally ahead of the endpoint-specific rate-limit switch, so every POST across the whole app (not just auth) leaked its full header map to CloudWatch.
+- **Hybrid signing/onboarding endpoints had no rate limiting**: `RateLimitWebFilter`'s switch only covered `/api/v1/auth/*`. Added a coarse per-IP limit (`ebw.rate-limit.hybrid-sign-per-ip`, default 30/hour) covering `/api/v1/keys/hybrid/{onboarding/init,onboarding/commit,sign/prepare,sign/submit}`. True per-holder limiting would need the DPoP JWT already parsed, which happens downstream of this filter — tracked as a follow-up.
+- **`PrepareSignRequest.payload`/`credential_id` had no structural bounds**: added `@Size(max = 20)` (claim-count ceiling) on `payload` and an allowlist `@Pattern` on `credential_id`, on top of the existing global request-body size filter.
+- **`SubmitSignedUseCase` did not cross-check `credential_id`**: the pinned session (keyed by `correlation_id`) is authoritative regardless — the signature is verified against `prepared.signingInput()`, never against the request's `credential_id` — but a client echoing the wrong `credential_id` for a given `correlation_id` now fails loudly (`invalid_request`) instead of silently proceeding against the pinned session.
+
+### Added - 2026-07-01
+
+- **EUD-143 — `PasskeyControllerIT`**: integration tests for the `GET /api/v1/auth/passkeys` contract — 200 with the full passkey list (AC-01); each entry exposes `displayName`/`createdAt`/`lastUsedAt` (AC-02); `lastUsedAt` null is returned explicitly instead of erroring (EC-02); stable result order `last_used_at DESC NULLS LAST, created_at DESC` (EC-04); 401 with no Authorization header or an invalid token, with no passkey data leaked (ES-01).
+- **EUD-143 — `PasskeyIsolationIT`**: integration tests proving account- and tenant-level isolation — a holder never receives another account's devices, whether that account is in the same tenant or a different one (AC-04); the list is resolved solely from the token identity, request parameters cannot influence the target account, and no existence/count of another account's devices is leaked (ES-05).
+
+### Fixed - 2026-07-01
+
+- **EUD-143 — `UserPasskeyR2dbcRepository` non-deterministic list order**: added explicit `ORDER BY last_used_at DESC NULLS LAST, created_at DESC` to `SpringUserPasskeyRepository.findByUserId`, replacing the Spring Data derived query which carried no ordering guarantee (EC-04).
+- **EUD-143 — `ListPasskeysWorkflow` order lost via `flatMap`**: switched `Flux.flatMap` to `Flux.concatMap` when enriching each passkey with its active-session count. `flatMap` does not preserve source ordering under concurrent completion, silently undoing the repository-level `ORDER BY` (EC-04).
+### Fixed - 2026-07-09
+
+- **`integration/` test package broken since the schema-per-tenant migration (EUDISTACK-480/412)**: `IntegrationTestBase` and its six subclasses (`AuthFlowIntegrationTest`, `PasskeyFlowIntegrationTest`, `CredentialCrudIntegrationTest`, `CredentialFilterSecurityIntegrationTest`, `CredentialAuditIntegrationTest`, `CredentialRepositoryInsertUpdateIntegrationTest`) predated the move to schema-per-tenant and could not even start their Spring context. Root causes and fixes:
+  - `src/test/resources/application.yml` excludes `R2dbcAutoConfiguration`/`R2dbcRepositoriesAutoConfiguration`/`spring.flyway.enabled` for the no-DB `ApplicationTests.contextLoads()` smoke test only, but the exclusion leaked into every `@ActiveProfiles("integration")` test since nothing overrode it. `application-integration.yaml` now re-enables both.
+  - `IntegrationTestBase` never provisioned a tenant schema or resolved a tenant on its requests, so every query fell back to the tenant-less default where `wallet_user`/`wallet_credential`/etc. no longer exist. It now provisions a fixed `integrationtest_business_wallet` schema (Flyway `db/tenant` migrations) at static init and sends an `X-Tenant` header on every request (`ebw.security.trust-forwarded-host: true` added to the integration profile so the header is honoured).
+  - `CredentialAuditIntegrationTest` and `CredentialRepositoryInsertUpdateIntegrationTest` issued raw SQL/repository calls hardcoded to the legacy single-schema `ebw.` prefix, bypassing the tenant-resolution web filter entirely; both now target the unqualified table name and supply the tenant explicitly via `contextWrite`.
+  - `CredentialFilterSecurityIntegrationTest#filter_doesNotLeakOtherUsersCredentials`: fixed a typo (`/api/credentials` → `/api/v1/credentials`) that made 5 of its assertions fail on 404 instead of exercising the intended cross-user leak check.
+  - `CredentialController#store`: the `Location` header on `POST /api/v1/credentials` pointed to `/api/credentials/{id}` (missing `/v1`), inconsistent with the actually mapped route.
+  - Removed `AuthFlowIntegrationTest#register_disallowedDomain_returns400_andNoOtpSent` and the orphaned `ebw.registration.allowed-email-domains` test property: the `@AllowedEmailDomain` validator they exercised was intentionally deleted in commit `9d8d209` (tenant-config migration) and never reimplemented — this was stale test coverage for a removed feature, not a regression.
+
+## [1.12.1] - 2026-07-03
+
+### Added - 2026-07-01
+
+- **EUD-143 — `PasskeyControllerIT`**: integration tests for the `GET /api/v1/auth/passkeys` contract — 200 with the full passkey list (AC-01); each entry exposes `displayName`/`createdAt`/`lastUsedAt` (AC-02); `lastUsedAt` null is returned explicitly instead of erroring (EC-02); stable result order `last_used_at DESC NULLS LAST, created_at DESC` (EC-04); 401 with no Authorization header or an invalid token, with no passkey data leaked (ES-01).
+- **EUD-143 — `PasskeyIsolationIT`**: integration tests proving account- and tenant-level isolation — a holder never receives another account's devices, whether that account is in the same tenant or a different one (AC-04); the list is resolved solely from the token identity, request parameters cannot influence the target account, and no existence/count of another account's devices is leaked (ES-05).
+
+### Fixed - 2026-07-01
+
+- **EUD-143 — `UserPasskeyR2dbcRepository` non-deterministic list order**: added explicit `ORDER BY last_used_at DESC NULLS LAST, created_at DESC` to `SpringUserPasskeyRepository.findByUserId`, replacing the Spring Data derived query which carried no ordering guarantee (EC-04).
+- **EUD-143 — `ListPasskeysWorkflow` order lost via `flatMap`**: switched `Flux.flatMap` to `Flux.concatMap` when enriching each passkey with its active-session count. `flatMap` does not preserve source ordering under concurrent completion, silently undoing the repository-level `ORDER BY` (EC-04).
+
+### Added - 2026-06-25
+- **EUDISTACK-359 US-07:**
+  - Added hybrid onboarding block endpoint.
+  - Added `PrfUnsupportedException` and HTTP 422 (`prf_unsupported`) error handling.
+  - Rejected onboarding requests for hybrid tenants when PRF support is unavailable.
+  - Prevented hybrid onboarding from continuing when PRF support validation fails.
+
 ## [1.12.0] - 2026-06-30
 
 ### Added - 2026-06-30

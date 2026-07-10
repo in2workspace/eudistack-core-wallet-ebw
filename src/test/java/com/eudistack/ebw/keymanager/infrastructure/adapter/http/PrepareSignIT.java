@@ -81,6 +81,8 @@ class PrepareSignIT {
     private static final byte[] TAG_BYTES  = new byte[16];
     private static final String CNF_JWK    =
             "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"test-x\",\"y\":\"test-y\"}";
+    private static final Map<String, Object> PAYLOAD =
+            Map.of("nonce", "nonce-abc", "iat", 1_700_000_000, "aud", "https://verifier.example", "sd_hash", "test-sd-hash");
 
     @Container
     static final PostgreSQLContainer<?> postgres =
@@ -160,7 +162,7 @@ class PrepareSignIT {
                 .header("Host", HYBRID_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("credential_id", CRED_ID, "vp_challenge", "nonce-abc", "format", "vc+sd-jwt"))
+                .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
@@ -179,7 +181,7 @@ class PrepareSignIT {
                 .header("Host", HYBRID_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("credential_id", CRED_ID, "vp_challenge", "nonce-xyz", "format", "vc+sd-jwt"))
+                .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
@@ -197,7 +199,7 @@ class PrepareSignIT {
                 .header("Host", HYBRID_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("credential_id", CRED_ID, "vp_challenge", "nonce-corr", "format", "vc+sd-jwt"))
+                .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
@@ -214,7 +216,7 @@ class PrepareSignIT {
                 .header("Host", DB_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("credential_id", CRED_ID, "vp_challenge", "nonce", "format", "vc+sd-jwt"))
+                .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
                 .exchange()
                 .expectStatus().isForbidden()
                 .expectBody().isEmpty();
@@ -223,7 +225,7 @@ class PrepareSignIT {
     // ------------------------------------------------------------------ ES-01
 
     @Test
-    void prepare_missingVpChallenge_returns400() {
+    void prepare_missingPayload_returns400() {
         webClient.post().uri(PREPARE_URL)
                 .header("Host", HYBRID_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
@@ -239,7 +241,7 @@ class PrepareSignIT {
                 .header("Host", HYBRID_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("vp_challenge", "nonce", "format", "vc+sd-jwt"))
+                .bodyValue(Map.of("payload", PAYLOAD, "format", "vc+sd-jwt"))
                 .exchange()
                 .expectStatus().isBadRequest();
     }
@@ -255,7 +257,7 @@ class PrepareSignIT {
                 .header("Host", HYBRID_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("credential_id", CRED_ID, "vp_challenge", "nonce", "format", "vc+sd-jwt"))
+                .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
                 .exchange()
                 .expectStatus().isForbidden();
     }
@@ -271,7 +273,7 @@ class PrepareSignIT {
                 .header("Host", HYBRID_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("credential_id", CRED_ID, "vp_challenge", "nonce", "format", "vc+sd-jwt"))
+                .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
                 .exchange()
                 .expectStatus().isNotFound()
                 .expectBody()
@@ -289,7 +291,7 @@ class PrepareSignIT {
                 .header("Host", HYBRID_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("credential_id", CRED_ID, "vp_challenge", "nonce", "format", "vc+sd-jwt"))
+                .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
                 .exchange()
                 .expectStatus().isNotFound()
                 .expectBody(String.class)

@@ -1,6 +1,9 @@
 package com.eudistack.ebw.integration;
 
 import com.eudistack.ebw.domain.spi.EmailSender;
+import com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilter;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
@@ -13,6 +16,10 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import reactor.core.publisher.Mono;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
@@ -52,6 +59,17 @@ import static org.mockito.Mockito.doAnswer;
 @Tag("integration")
 public abstract class IntegrationTestBase {
 
+    /**
+     * Fixed tenant for the whole suite. {@code TenantAwareConnectionFactoryDecorator}
+     * routes every R2DBC connection to {@code <tenant>_business_wallet} based on the
+     * tenant resolved from the request (see {@link #addTenantHeader()}) — without a
+     * resolvable tenant, every query falls back to the schema-less default and
+     * {@code wallet_user}/{@code wallet_credential}/etc. do not exist there: those
+     * tables live per-tenant since the schema-per-tenant migration (EUDISTACK-480/412).
+     */
+    protected static final String TEST_TENANT = "integrationtest";
+    private static final String TEST_TENANT_SCHEMA = TEST_TENANT + "_business_wallet";
+
     static final PostgreSQLContainer<?> postgres;
 
     static {
@@ -60,6 +78,34 @@ public abstract class IntegrationTestBase {
                 .withUsername("test")
                 .withPassword("test");
         postgres.start();
+        provisionTenantSchema();
+    }
+
+    /**
+     * Creates the {@code integrationtest_business_wallet} schema and applies the
+     * {@code db/tenant} Flyway migrations to it, mirroring what
+     * {@code TenantSchemaFlywayMigrator} does per-tenant in production. Run once,
+     * directly via JDBC/Flyway, independent of the Spring context (which is not up
+     * yet at static-init time).
+     */
+    private static void provisionTenantSchema() {
+        String jdbcUrl = postgres.getJdbcUrl();
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE SCHEMA IF NOT EXISTS " + TEST_TENANT_SCHEMA);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to create tenant schema: " + TEST_TENANT_SCHEMA, e);
+        }
+
+        Flyway.configure()
+                .dataSource(jdbcUrl, "test", "test")
+                .locations("classpath:db/tenant")
+                .defaultSchema(TEST_TENANT_SCHEMA)
+                .schemas(TEST_TENANT_SCHEMA)
+                .table("flyway_schema_history")
+                .baselineOnMigrate(true)
+                .load()
+                .migrate();
     }
 
     @DynamicPropertySource
@@ -76,6 +122,21 @@ public abstract class IntegrationTestBase {
 
     @Autowired
     protected WebTestClient webClient;
+
+    /**
+     * Attaches the {@code X-Tenant} header to every request the shared {@link #webClient}
+     * sends, so {@code TenantDomainWebFilter} resolves {@link #TEST_TENANT} and R2DBC
+     * queries land in {@link #TEST_TENANT_SCHEMA}. Requires
+     * {@code ebw.security.trust-forwarded-host=true} (set in application-integration.yaml)
+     * since the header is only honoured under that flag. Runs before any subclass
+     * {@code @BeforeEach} (JUnit 5 executes superclass callbacks first).
+     */
+    @BeforeEach
+    void addTenantHeader() {
+        webClient = webClient.mutate()
+                .defaultHeader(TenantDomainWebFilter.HEADER_X_TENANT, TEST_TENANT)
+                .build();
+    }
 
     @MockitoBean
     protected EmailSender emailSender;

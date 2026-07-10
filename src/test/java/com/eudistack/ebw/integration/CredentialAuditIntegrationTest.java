@@ -1,5 +1,6 @@
 package com.eudistack.ebw.integration;
 
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.integration.CredentialCrudIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,15 +52,20 @@ class CredentialAuditIntegrationTest extends IntegrationTestBase {
                 .exchange()
                 .expectStatus().isOk();
 
-        // Query audit rows for this credential
+        // Query audit rows for this credential. Unqualified table name — resolved
+        // against the tenant schema via TenantAwareConnectionFactory's search_path,
+        // which requires the tenant to be present in the Reactor Context (the HTTP
+        // calls above get it from the X-Tenant header/TenantDomainWebFilter; this
+        // direct DatabaseClient call bypasses that pipeline, so it's supplied here).
         List<Map<String, Object>> rows = databaseClient.sql(
-                        "SELECT action, metadata FROM ebw.audit_log "
+                        "SELECT action, metadata FROM audit_log "
                                 + "WHERE entity_type = 'credential' AND entity_id = $1::uuid "
                                 + "ORDER BY created_at ASC")
                 .bind("$1", id)
                 .fetch()
                 .all()
                 .collectList()
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TEST_TENANT))
                 .block();
 
         assertThat(rows).hasSize(2);

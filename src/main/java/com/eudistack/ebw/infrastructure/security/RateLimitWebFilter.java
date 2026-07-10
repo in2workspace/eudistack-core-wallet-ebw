@@ -17,6 +17,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component
 public class RateLimitWebFilter implements WebFilter, Ordered {
 
+    private static final String HYBRID_ONBOARDING_INIT = "/api/v1/keys/hybrid/onboarding/init";
+    private static final String HYBRID_ONBOARDING_COMMIT = "/api/v1/keys/hybrid/onboarding/commit";
+    private static final String HYBRID_SIGN_PREPARE = "/api/v1/keys/hybrid/sign/prepare";
+    private static final String HYBRID_SIGN_SUBMIT = "/api/v1/keys/hybrid/sign/submit";
+
     private final RateLimitProperties properties;
     private final Cache<String, AtomicInteger> cache;
 
@@ -52,6 +57,9 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
                     .then(chain.filter(exchange));
             case "/api/v1/auth/logout" -> checkRateLimit("logout:ip:" + ip, properties.logoutPerIp())
                     .then(chain.filter(exchange));
+            case HYBRID_ONBOARDING_INIT, HYBRID_ONBOARDING_COMMIT, HYBRID_SIGN_PREPARE, HYBRID_SIGN_SUBMIT ->
+                    checkRateLimit("hybrid:ip:" + ip, properties.hybridSignPerIp())
+                            .then(chain.filter(exchange));
             default -> chain.filter(exchange);
         };
     }
@@ -67,8 +75,6 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
 
     private String resolveIp(ServerWebExchange exchange) {
         var forwarded = exchange.getRequest().getHeaders().getFirst("X-Forwarded-For");
-        System.out.println("headers: " + exchange.getRequest().getHeaders());
-        System.out.println("X-Forwarded-For: " + forwarded);
         if (forwarded != null && !forwarded.isBlank()) {
             return forwarded.split(",")[0].trim();
         }

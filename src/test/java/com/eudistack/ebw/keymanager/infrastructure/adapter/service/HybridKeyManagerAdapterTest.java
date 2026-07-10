@@ -15,6 +15,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.Map;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -41,7 +43,7 @@ class HybridKeyManagerAdapterTest {
 
     @Test
     void prepareSign_unsupportedFormat_jwtVcJsonLd_throwsBeforeUseCase() {
-        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", "ch", "jwt_vc_json-ld")))
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"),"jwt_vc_json-ld")))
                 .expectErrorMatches(ex -> ex instanceof UnsupportedCredentialFormatException
                         && ex.getMessage().contains("jwt_vc_json-ld"))
                 .verify();
@@ -49,14 +51,14 @@ class HybridKeyManagerAdapterTest {
 
     @Test
     void prepareSign_unsupportedFormat_msoMdoc_throwsBeforeUseCase() {
-        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", "ch", "mso_mdoc")))
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"),"mso_mdoc")))
                 .expectError(UnsupportedCredentialFormatException.class)
                 .verify();
     }
 
     @Test
     void prepareSign_unsupportedFormat_applicationVc_throwsBeforeUseCase() {
-        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", "ch", "application/vc")))
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"),"application/vc")))
                 .expectError(UnsupportedCredentialFormatException.class)
                 .verify();
     }
@@ -69,7 +71,7 @@ class HybridKeyManagerAdapterTest {
                 "salt", "blob", "iv", "tag", "{}", "header.payload", "corr-id");
         when(prepareSignUseCase.execute(any(), any())).thenReturn(Mono.just(mockResponse));
 
-        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", "ch", "vc+sd-jwt"))
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"),"vc+sd-jwt"))
                         .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, "holder")))
                 .assertNext(r -> {
                     // Confirmed format validation passed and use case was called
@@ -83,7 +85,7 @@ class HybridKeyManagerAdapterTest {
                 "salt", "blob", "iv", "tag", "{}", "header.payload", "corr-id");
         when(prepareSignUseCase.execute(any(), any())).thenReturn(Mono.just(mockResponse));
 
-        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", "ch", "jwt_vc_json"))
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"),"jwt_vc_json"))
                         .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, "holder")))
                 .assertNext(r -> {
                     // Confirmed format validation passed and use case was called

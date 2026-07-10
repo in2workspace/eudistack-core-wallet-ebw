@@ -61,7 +61,7 @@ public class CredentialController {
                         auth.getUserId(), request.credentialRaw(), request.format(),
                         request.credentialConfigurationId(), request.kid(), request.issuerMetadata(), null)
                 .map(credential -> ResponseEntity
-                        .created(URI.create("/api/credentials/" + credential.getId()))
+                        .created(URI.create("/api/v1/credentials/" + credential.getId()))
                         .body(CredentialDetailResponse.from(credential)));
     }
 

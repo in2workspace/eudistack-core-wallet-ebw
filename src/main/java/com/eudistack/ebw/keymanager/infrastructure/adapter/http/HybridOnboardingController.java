@@ -5,6 +5,8 @@ import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
 import com.eudistack.ebw.keymanager.domain.exception.InvalidCommitException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
+import com.eudistack.ebw.keymanager.domain.exception.PrfUnsupportedException;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.BlockOnboardingRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitResponse;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
@@ -83,11 +85,11 @@ public class HybridOnboardingController {
         String holderId = auth.getUserId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(this::requireHybridProfile)
-                .flatMap(profile -> Mono.deferContextual(ctx -> {
-                    String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
-                    return enrollHolderUseCase.init(tenantId, holderId, request);
-                }))
+                .flatMap(profile -> requireHybridWalletProfile(profile)
+                        .then(Mono.deferContextual(ctx -> {
+                            String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
+                            return enrollHolderUseCase.init(tenantId, holderId, request);
+                        })))
                 .map(ResponseEntity::ok);
     }
 
@@ -121,44 +123,24 @@ public class HybridOnboardingController {
         String holderId = auth.getUserId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(this::requireHybridProfile)
-                .flatMap(profile -> Mono.deferContextual(ctx -> {
-                    String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
-                    return enrollHolderUseCase.commit(tenantId, holderId, request);
-                }))
+                .flatMap(profile -> requireHybridWalletProfile(profile)
+                        .then(enrollHolderUseCase.commit(holderId, request)))
                 .map(response -> ResponseEntity.status(
                         response.replay() ? HttpStatus.OK : HttpStatus.CREATED).body(response));
     }
 
-    /**
-     * Records that hybrid onboarding was blocked because the holder's device does not support
-     * Passkey PRF. The PWA calls this endpoint when the WebAuthn PRF extension is unavailable,
-     * so the server can audit the attempt (US-08, AC-01).
-     *
-     * @param auth the authenticated holder principal
-     * @return 204 No Content on success
-     */
-    @PostMapping("/prf-unsupported")
-    public Mono<ResponseEntity<Void>> prfUnsupported(JwtAuthenticationToken auth) {
+    @PostMapping("/block")
+    public Mono<Void> block(@Valid @RequestBody BlockOnboardingRequest request, JwtAuthenticationToken auth) {
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(this::requireHybridProfile)
-                .flatMap(profile -> Mono.deferContextual(ctx -> {
-                    String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
-                    return enrollHolderUseCase.recordPrfUnsupported(tenantId, auth.getUserId().toString());
-                }))
-                .thenReturn(ResponseEntity.<Void>noContent().build());
+                .flatMap(profile -> requireHybridWalletProfile(profile)
+                        .then(Mono.error(new PrfUnsupportedException())));
     }
 
-    /**
-     * Rejects tenants whose wallet profile is not {@code (SERVER, HYBRID)} with an opaque
-     * {@link TenantWalletProfileUnsupportedException} (403), shared by every onboarding endpoint.
-     */
-    private Mono<TenantWalletProfile> requireHybridProfile(TenantWalletProfile profile) {
+    private Mono<Void> requireHybridWalletProfile(TenantWalletProfile profile) {
         if (profile.walletMode() != WalletMode.SERVER || profile.keyManager() != KeyManager.HYBRID) {
-            return Mono.deferContextual(ctx ->
-                    Mono.error(new TenantWalletProfileUnsupportedException(
-                            ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
+            return Mono.deferContextual(ctx -> Mono.error(new TenantWalletProfileUnsupportedException(
+                    ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
         }
-        return Mono.just(profile);
+        return Mono.empty();
     }
 }
