@@ -45,21 +45,22 @@ import static org.mockito.Mockito.when;
  *
  * <p>Covers:
  * <ul>
- *   <li>US-08 AC-01 — PRF-unsupported → audit emitted → 204</li>
- *   <li>US-08 — DB tenant on prf-unsupported → 403 opaque</li>
- *   <li>US-08 — audit failure on prf-unsupported → 500</li>
+ *   <li>EUDISTACK-359 / US-08 AC-01 — PRF detection gate blocks onboarding, audit emitted,
+ *       422 {@code prf_unsupported}</li>
+ *   <li>US-08 — DB tenant on block → 403 opaque</li>
+ *   <li>US-08 — audit failure on block does not mask the {@code prf_unsupported} rejection</li>
  *   <li>US-02 AC-07 — commit with HYBRID tenant → 201 (verifies tenantId extraction wire-up)</li>
  * </ul>
  *
- * <p>Spec: EUDISTACK-534 (US-02), EUDISTACK-540 (US-08).</p>
+ * <p>Spec: EUDISTACK-534 (US-02), EUDISTACK-540 (US-08), EUDISTACK-359 (PRF detection gate).</p>
  */
 @WebFluxTest(controllers = HybridOnboardingController.class)
 @Import(HybridKeyManagerExceptionHandler.class)
 @WithMockUser
 class HybridOnboardingControllerIT {
 
-    private static final String COMMIT_URL          = "/api/v1/keys/hybrid/onboarding/commit";
-    private static final String PRF_UNSUPPORTED_URL = "/api/v1/keys/hybrid/onboarding/prf-unsupported";
+    private static final String COMMIT_URL = "/api/v1/keys/hybrid/onboarding/commit";
+    private static final String BLOCK_URL  = "/api/v1/keys/hybrid/onboarding/block";
 
     // Minimal valid commit payload fixtures
     private static final byte[] BLOB_BYTES = new byte[48];
@@ -77,10 +78,14 @@ class HybridOnboardingControllerIT {
 
     @Autowired WebTestClient webTestClient;
 
-    // --- US-08: prf-unsupported happy path ---
+    // --- EUDISTACK-359 / US-08: PRF detection gate ("block") ---
+
+    private static final String BLOCK_BODY = """
+            {"credential_id":"cred-1","correlation_id":"client-corr-1"}
+            """;
 
     @Test
-    void prfUnsupported_givenHybridTenant_emitsAuditAndReturns204() {
+    void block_givenHybridTenant_emitsAuditAndReturnsPrfUnsupported() {
         // Arrange
         UUID actorId = UUID.randomUUID();
         stubHybridProfile();
@@ -90,17 +95,20 @@ class HybridOnboardingControllerIT {
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
-                .post().uri(PRF_UNSUPPORTED_URL)
+                .post().uri(BLOCK_URL)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(BLOCK_BODY)
                 .exchange()
-                .expectStatus().isNoContent()
-                .expectBody().isEmpty();
+                .expectStatus().isEqualTo(422)
+                .expectBody()
+                .jsonPath("$.error").isEqualTo("prf_unsupported");
 
         // Assert
         verify(enrollHolderUseCase).recordPrfUnsupported(eq("test-tenant"), eq(actorId.toString()));
     }
 
     @Test
-    void prfUnsupported_givenDbTenant_returns403Opaque() {
+    void block_givenDbTenant_returns403Opaque() {
         // Arrange
         UUID actorId = UUID.randomUUID();
         stubDbProfile();
@@ -109,27 +117,33 @@ class HybridOnboardingControllerIT {
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
-                .post().uri(PRF_UNSUPPORTED_URL)
+                .post().uri(BLOCK_URL)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(BLOCK_BODY)
                 .exchange()
                 .expectStatus().isForbidden()
                 .expectBody().isEmpty();
     }
 
     @Test
-    void prfUnsupported_givenAuditFailure_returns500() {
+    void block_givenAuditFailure_stillReturnsPrfUnsupported() {
         // Arrange
         UUID actorId = UUID.randomUUID();
         stubHybridProfile();
         when(enrollHolderUseCase.recordPrfUnsupported(any(), any()))
                 .thenReturn(Mono.error(new RuntimeException("cloudwatch unavailable")));
 
-        // Act & Assert
+        // Act & Assert — audit failure must not mask the security rejection
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
                         new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
-                .post().uri(PRF_UNSUPPORTED_URL)
+                .post().uri(BLOCK_URL)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(BLOCK_BODY)
                 .exchange()
-                .expectStatus().is5xxServerError();
+                .expectStatus().isEqualTo(422)
+                .expectBody()
+                .jsonPath("$.error").isEqualTo("prf_unsupported");
     }
 
     // --- US-02 commit: verify tenantId extraction wire-up ---
@@ -188,7 +202,7 @@ class HybridOnboardingControllerIT {
 
         @Bean
         RateLimitProperties rateLimitProperties() {
-            return new RateLimitProperties(100, 100, 100, 100, 100, 100, Duration.ofMinutes(1));
+            return new RateLimitProperties(100, 100, 100, 100, 100, 100, 100, Duration.ofMinutes(1));
         }
 
         @Bean
