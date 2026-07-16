@@ -1,13 +1,19 @@
 package com.eudistack.ebw.integration;
 
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.r2dbc.core.DatabaseClient;
 
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthFlowIntegrationTest extends IntegrationTestBase {
+
+    @Autowired
+    private DatabaseClient databaseClient;
 
     @BeforeEach
     void setUp() {
@@ -161,7 +167,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
 
     @Test
     void reAuthentication_existingUser_issuesNewTokens() {
-        var email = "test-reauth@example.com";
+        var email = "test-reauth-" + System.nanoTime() + "@example.com";
         var firstTokens = registerAndVerify(email);
 
         // Re-register and verify same email
@@ -169,6 +175,18 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
 
         assertThat(secondTokens.get("accessToken")).isNotEqualTo(firstTokens.get("accessToken"));
         assertThat(secondTokens.get("refreshToken")).isNotEqualTo(firstTokens.get("refreshToken"));
+
+        // AC-02: the second alta MUST NOT create a second account for the same email.
+        // Unqualified table name — direct DatabaseClient call bypasses the
+        // X-Tenant/TenantDomainWebFilter pipeline, so the tenant is supplied explicitly.
+        var count = databaseClient.sql("SELECT COUNT(*) AS c FROM wallet_user WHERE email = $1")
+                .bind("$1", email)
+                .fetch()
+                .one()
+                .map(row -> (Long) row.get("c"))
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TEST_TENANT))
+                .block();
+        assertThat(count).isEqualTo(1L);
     }
 
     // --- Helpers ---
