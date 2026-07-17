@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+#### [1.12.3] - 2026-07-13
+
+### Added - 2026-07-13
+
+- **EUD-144 — backend test coverage for `DELETE /api/v1/auth/passkeys/{id}` (revoke device / delete passkey)**: `DeletePasskeyWorkflow` already implemented the full business logic (anti cross-account resolution, last-passkey guard, refresh-token revocation before delete, audit event) — this Story closes the missing test coverage, without changing its behaviour. `PasskeyControllerIT` extended with the `DELETE` contract (204 happy path, 401 with no/invalid token, 404 for a nonexistent or not-owned passkey, 409 on the account's last passkey). New `DeletePasskeyWorkflowIT`: asserts `refresh_token.revoked = true` for the deleted passkey's tokens (and only those — a token tied to a different passkey is left untouched), the `user_passkey` row is actually gone, and a `PASSKEY_DELETED` event is written to `audit_log` (AC-03/AC-04/AC-07). New `PasskeyRevocationIsolationIT`: account A cannot delete account B's passkey, whether B is in the same tenant or a different one — even when both accounts share the same `userId` value, proving isolation comes from the schema-per-tenant boundary rather than `userId` equality (AC-05); and the response for "passkey doesn't exist" vs. "passkey belongs to someone else" is indistinguishable on every field but `instance` (anti-enumeration, ES-02).
+- All three suites are self-contained (own Testcontainers + Flyway migrated directly to a real tenant schema), following the same pattern as `PasskeyIsolationIT` (EUD-143) rather than extending `IntegrationTestBase` — sidesteps the multi-tenant migration gap noted in EUD-103.
+
 #### [1.12.2] - 2026-07-10
 
 ### Added - 2026-07-10
