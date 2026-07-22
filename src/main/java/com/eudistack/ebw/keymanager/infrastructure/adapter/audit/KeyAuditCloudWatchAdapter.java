@@ -11,6 +11,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.cloudwatchlogs.CloudWatchLogsAsyncClient;
 import software.amazon.awssdk.services.cloudwatchlogs.model.CloudWatchLogsException;
 import software.amazon.awssdk.services.cloudwatchlogs.model.CreateLogStreamRequest;
@@ -155,7 +156,7 @@ public class KeyAuditCloudWatchAdapter implements KeyAuditPort, DisposableBean {
             log.info("keymanager.audit.stream_created group={} stream={}", logGroupName, logStreamName);
         } catch (ResourceAlreadyExistsException e) {
             log.debug("Log stream already exists, applying retention policy");
-        } catch (CloudWatchLogsException e) {
+        } catch (SdkException e) {
             log.error("keymanager.audit.stream_create_failed group={} stream={}: {}",
                     logGroupName, logStreamName, e.getMessage());
         }
@@ -166,7 +167,7 @@ public class KeyAuditCloudWatchAdapter implements KeyAuditPort, DisposableBean {
                     .retentionInDays(2555)
                     .build()));
             log.info("keymanager.audit.retention_set group={} days=2555", logGroupName);
-        } catch (CloudWatchLogsException e) {
+        } catch (SdkException e) {
             log.error("keymanager.audit.retention_set_failed group={}: {}", logGroupName, e.getMessage());
         }
     }
