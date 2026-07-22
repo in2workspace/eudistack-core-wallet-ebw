@@ -192,17 +192,18 @@ public class EnrollHolderUseCase {
                                 req.kdfAlgo(), req.kdfVersion(),
                                 req.cnfJwk(), Instant.now(), null);
 
+                        KeyAuditEvent event = KeyAuditEvent.forWrap(
+                                tenantId, holderId, req.credentialId(),
+                                Instant.now(), currentCorrelationId());
+
                         return wrappedKeyHandleRepository.insert(handle)
-                                .thenReturn(new EnrollHolderCommitResponse(req.credentialId(), false))
-                                .doOnSuccess(response -> {
-                                    KeyAuditEvent event = KeyAuditEvent.forWrap(
-                                            tenantId, holderId, req.credentialId(),
-                                            Instant.now(), currentCorrelationId());
-                                    auditPort.emit(event)
-                                            .doOnError(e -> log.warn("keymanager.hybrid.wrap_audit_failed credentialId={}: {}",
-                                                    req.credentialId(), e.getMessage()))
-                                            .subscribe();
-                                });
+                                .then(auditPort.emit(event)
+                                        .onErrorResume(e -> {
+                                            log.warn("keymanager.hybrid.wrap_audit_failed credentialId={}: {}",
+                                                    req.credentialId(), e.getMessage());
+                                            return Mono.empty();
+                                        }))
+                                .thenReturn(new EnrollHolderCommitResponse(req.credentialId(), false));
                     });
         });
     }

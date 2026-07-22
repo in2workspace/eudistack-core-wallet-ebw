@@ -144,6 +144,8 @@ public class HybridOnboardingController {
      * @param request the block request carrying {@code credential_id} and {@code correlation_id}
      * @param auth    the authenticated holder principal
      */
+    // request.credentialId()/correlationId() are validated but deliberately not read here —
+    // see BlockOnboardingRequest javadoc.
     @PostMapping("/block")
     public Mono<Void> block(@Valid @RequestBody BlockOnboardingRequest request, JwtAuthenticationToken auth) {
         String holderId = auth.getUserId().toString();

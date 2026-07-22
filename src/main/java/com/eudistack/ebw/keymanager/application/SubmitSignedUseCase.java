@@ -142,10 +142,8 @@ public class SubmitSignedUseCase {
                     request.correlationId());
             return preparedSignStore
                     .markResolved(request.correlationId(), result.kbJwt())
-                    .thenReturn(new SubmitSignedAssertionResponse(result.kbJwt()))
-                    .doOnSuccess(response -> auditPort.emit(event)
-                            .doOnError(e -> log.warn("keymanager.hybrid.unwrap_sign_audit_failed: {}", e.getMessage()))
-                            .subscribe());
+                    .then(emitAuditBestEffort(event, "keymanager.hybrid.unwrap_sign_audit_failed"))
+                    .thenReturn(new SubmitSignedAssertionResponse(result.kbJwt()));
         }).onErrorResume(e -> {
             if (e instanceof SignatureInvalidException || e instanceof InvalidSignatureSubmissionException) {
                 KeyAuditEvent failEvent = KeyAuditEvent.forUnwrapFailed(
@@ -154,17 +152,38 @@ public class SubmitSignedUseCase {
                         prepared.credentialId(),
                         prepared.format(),
                         KeyAlgorithm.ES256,
-                        null,
+                        tryComputeJkt(prepared.cnfJwk()),
                         Instant.now(),
                         request.correlationId(),
                         e.getMessage());
-                auditPort.emit(failEvent)
-                        .doOnError(ex -> log.warn("keymanager.hybrid.unwrap_fail_audit_failed: {}", ex.getMessage()))
-                        .subscribe();
-                return Mono.error(e);
+                return emitAuditBestEffort(failEvent, "keymanager.hybrid.unwrap_fail_audit_failed")
+                        .then(Mono.error(e));
             }
             return Mono.error(e);
         });
+    }
+
+    /**
+     * Emits an audit event as a best-effort side effect composed into the reactive chain
+     * (never a detached {@code subscribe()}, which would leave the emission unmanaged and
+     * error handling opaque). Audit failures are logged and swallowed — they must never fail
+     * the underlying signing operation.
+     */
+    private Mono<Void> emitAuditBestEffort(KeyAuditEvent event, String failureLogPrefix) {
+        return auditPort.emit(event)
+                .onErrorResume(e -> {
+                    log.warn("{}: {}", failureLogPrefix, e.getMessage());
+                    return Mono.empty();
+                });
+    }
+
+    /** Best-effort JWK thumbprint for audit correlation (B2, AC-08) — null if cnf.jwk cannot be parsed. */
+    private String tryComputeJkt(String cnfJwk) {
+        try {
+            return ECKey.parse(cnfJwk).computeThumbprint().toString();
+        } catch (ParseException | JOSEException e) {
+            return null;
+        }
     }
 
     private record VerifiedResult(String kbJwt, String jkt) {}
