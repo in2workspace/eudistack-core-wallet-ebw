@@ -1,8 +1,8 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
-import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
+import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
 import com.eudistack.ebw.keymanager.domain.model.PrepareSignResponse;
@@ -10,6 +10,7 @@ import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
 import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionResponse;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
+import com.eudistack.ebw.wallet.profile.domain.model.TenantWalletProfile;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import jakarta.validation.Valid;
@@ -20,8 +21,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
-
-import java.util.Map;
 
 /**
  * REST controller for the hybrid (Passkey PRF) two-step signing handshake and audit events.
@@ -55,14 +54,14 @@ public class HybridKeyManagerController {
 
     private final KeyManagerPort hybridAdapter;
     private final WalletProfileQueryPort walletProfileQueryPort;
-    private final AuditService auditService;
+    private final EnrollHolderUseCase enrollHolderUseCase;
 
     public HybridKeyManagerController(KeyManagerPort hybridAdapter,
                                        WalletProfileQueryPort walletProfileQueryPort,
-                                       AuditService auditService) {
+                                       EnrollHolderUseCase enrollHolderUseCase) {
         this.hybridAdapter = hybridAdapter;
         this.walletProfileQueryPort = walletProfileQueryPort;
-        this.auditService = auditService;
+        this.enrollHolderUseCase = enrollHolderUseCase;
     }
 
     /**
@@ -84,15 +83,8 @@ public class HybridKeyManagerController {
         String holderId = auth.getUserId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(profile -> {
-                    if (profile.walletMode() != WalletMode.SERVER
-                            || profile.keyManager() != KeyManager.HYBRID) {
-                        return Mono.deferContextual(ctx ->
-                                Mono.error(new TenantWalletProfileUnsupportedException(
-                                        ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
-                    }
-                    return hybridAdapter.prepareSign(request);
-                })
+                .flatMap(this::requireHybridProfile)
+                .flatMap(profile -> hybridAdapter.prepareSign(request))
                 .map(ResponseEntity::ok)
                 .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, holderId));
     }
@@ -117,15 +109,8 @@ public class HybridKeyManagerController {
         String holderId = auth.getUserId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(profile -> {
-                    if (profile.walletMode() != WalletMode.SERVER
-                            || profile.keyManager() != KeyManager.HYBRID) {
-                        return Mono.deferContextual(ctx ->
-                                Mono.error(new TenantWalletProfileUnsupportedException(
-                                        ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
-                    }
-                    return hybridAdapter.submitSignedAssertion(request);
-                })
+                .flatMap(this::requireHybridProfile)
+                .flatMap(profile -> hybridAdapter.submitSignedAssertion(request))
                 .map(ResponseEntity::ok)
                 .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, holderId));
     }
@@ -144,21 +129,24 @@ public class HybridKeyManagerController {
     public Mono<ResponseEntity<Void>> acceptConstraint(JwtAuthenticationToken auth) {
 
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(profile -> {
-                    if (profile.walletMode() != WalletMode.SERVER
-                            || profile.keyManager() != KeyManager.HYBRID) {
-                        return Mono.deferContextual(ctx ->
-                                Mono.error(new TenantWalletProfileUnsupportedException(
-                                        ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
-                    }
-                    return auditService.record(
-                            "hybrid_consent",
-                            auth.getUserId(),
-                            "hybrid_constraint_accepted",
-                            auth.getUserId(),
-                            Map.of("key_manager", "hybrid")
-                    );
-                })
+                .flatMap(this::requireHybridProfile)
+                .flatMap(profile -> Mono.deferContextual(ctx -> {
+                    String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
+                    return enrollHolderUseCase.recordConsent(tenantId, auth.getUserId().toString());
+                }))
                 .thenReturn(ResponseEntity.<Void>noContent().build());
+    }
+
+    /**
+     * Rejects tenants whose wallet profile is not {@code (SERVER, HYBRID)} with an opaque
+     * {@link TenantWalletProfileUnsupportedException} (403), shared by every hybrid endpoint.
+     */
+    private Mono<TenantWalletProfile> requireHybridProfile(TenantWalletProfile profile) {
+        if (profile.walletMode() != WalletMode.SERVER || profile.keyManager() != KeyManager.HYBRID) {
+            return Mono.deferContextual(ctx ->
+                    Mono.error(new TenantWalletProfileUnsupportedException(
+                            ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
+        }
+        return Mono.just(profile);
     }
 }

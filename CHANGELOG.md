@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+#### [1.12.4] - 2026-07-22
+
+### Added
+
+- EUDISTACK-540 — hybrid adapter audit: 5 `change_kind` events (`wrap.completed`, `constraint.accepted`, `unwrap.sign.completed`, `unwrap.failed`, `onboarding.blocked.prf.unsupported`) wired into `KeyAuditPort`/CloudWatch, each carrying the current OTEL trace id as `correlation_id`.
+- ArchUnit + domain test coverage for the audit event model and hexagonal layering (`KeyManagerArchitectureTest`, `KeyAuditEventTest`, shared `KeyAuditEventAssertions` helper asserting no sensitive data leaks into audit payloads).
+
+### Fixed
+
+- `KeyAuditCloudWatchAdapter` crashed the whole application on startup whenever AWS credentials/region couldn't be resolved — now catches `SdkException` (not just the narrower `CloudWatchLogsException`), so it logs and degrades gracefully instead of taking down the service.
+- Removed a `.block()` call inside `flushRemaining()` (WebFlux reactive-chain rule).
+- Deduplicated the repeated hybrid wallet-profile guard across `HybridKeyManagerController`/`HybridOnboardingController` into a single `requireHybridProfile` check.
+- Reconciled with `main`'s PRF-detection-gate (`/onboarding/block`) so it also records the `onboarding.blocked.prf.unsupported` audit event before erroring.
+
 #### [1.12.3] - 2026-07-13
 
 ### Added - 2026-07-13

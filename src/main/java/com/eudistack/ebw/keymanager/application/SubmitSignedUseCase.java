@@ -9,9 +9,12 @@ import com.eudistack.ebw.keymanager.domain.model.KeyAlgorithm;
 import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
 import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionResponse;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
+import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSObject;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.jwk.ECKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 import java.text.ParseException;
@@ -47,6 +50,8 @@ import java.time.Instant;
  * NFR-S-536-02, NFR-S-536-03; architecture.md §6.2, §8.3.</p>
  */
 public class SubmitSignedUseCase {
+
+    private static final Logger log = LoggerFactory.getLogger(SubmitSignedUseCase.class);
 
     private final PreparedSignStore preparedSignStore;
     private final KeyAuditPort auditPort;
@@ -114,7 +119,7 @@ public class SubmitSignedUseCase {
             boolean valid;
             try {
                 valid = jwsObject.verify(new ECDSAVerifier(ecKey.toPublicJWK()));
-            } catch (Exception e) {
+            } catch (JOSEException e) {
                 throw new SignatureInvalidException("Signature verification error");
             }
 
@@ -126,8 +131,7 @@ public class SubmitSignedUseCase {
             String jkt = ecKey.computeThumbprint().toString();
             return new VerifiedResult(kbJwt, jkt);
         }).flatMap(result -> {
-            KeyAuditEvent event = KeyAuditEvent.forSigning(
-                    KeyAuditEvent.KeyAuditEventType.KEY_SIGNED,
+            KeyAuditEvent event = KeyAuditEvent.forUnwrapSignCompleted(
                     prepared.tenantId(),
                     prepared.holderId(),
                     prepared.credentialId(),
@@ -135,13 +139,51 @@ public class SubmitSignedUseCase {
                     KeyAlgorithm.ES256,
                     result.jkt(),
                     Instant.now(),
-                    request.correlationId(),
-                    null, null, null, null, null);
+                    request.correlationId());
             return preparedSignStore
                     .markResolved(request.correlationId(), result.kbJwt())
-                    .then(auditPort.emit(event).onErrorResume(e -> Mono.empty()))
+                    .then(emitAuditBestEffort(event, "keymanager.hybrid.unwrap_sign_audit_failed"))
                     .thenReturn(new SubmitSignedAssertionResponse(result.kbJwt()));
+        }).onErrorResume(e -> {
+            if (e instanceof SignatureInvalidException || e instanceof InvalidSignatureSubmissionException) {
+                KeyAuditEvent failEvent = KeyAuditEvent.forUnwrapFailed(
+                        prepared.tenantId(),
+                        prepared.holderId(),
+                        prepared.credentialId(),
+                        prepared.format(),
+                        KeyAlgorithm.ES256,
+                        tryComputeJkt(prepared.cnfJwk()),
+                        Instant.now(),
+                        request.correlationId(),
+                        e.getMessage());
+                return emitAuditBestEffort(failEvent, "keymanager.hybrid.unwrap_fail_audit_failed")
+                        .then(Mono.error(e));
+            }
+            return Mono.error(e);
         });
+    }
+
+    /**
+     * Emits an audit event as a best-effort side effect composed into the reactive chain
+     * (never a detached {@code subscribe()}, which would leave the emission unmanaged and
+     * error handling opaque). Audit failures are logged and swallowed — they must never fail
+     * the underlying signing operation.
+     */
+    private Mono<Void> emitAuditBestEffort(KeyAuditEvent event, String failureLogPrefix) {
+        return auditPort.emit(event)
+                .onErrorResume(e -> {
+                    log.warn("{}: {}", failureLogPrefix, e.getMessage());
+                    return Mono.empty();
+                });
+    }
+
+    /** Best-effort JWK thumbprint for audit correlation (B2, AC-08) — null if cnf.jwk cannot be parsed. */
+    private String tryComputeJkt(String cnfJwk) {
+        try {
+            return ECKey.parse(cnfJwk).computeThumbprint().toString();
+        } catch (ParseException | JOSEException e) {
+            return null;
+        }
     }
 
     private record VerifiedResult(String kbJwt, String jkt) {}
