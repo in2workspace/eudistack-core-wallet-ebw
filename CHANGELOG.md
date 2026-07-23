@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **EUD-141 US-06 — Recuperar y sincronizar el historial de actividad en modo server**: nuevo bounded context `activity` (hexagonal, siguiendo el patrón de `WalletCredential`). `WalletActivity` (domain model) + enum `ActivityType {ISSUED, PRESENTED, DELETED}`. `RecordActivityWorkflow.recordActivity(userId, activityId, type, credentialName, counterparty, details, sharedAttributes)`: registro idempotente vía `WalletActivityRepository.insertIfAbsent` (PK = `id` suministrado por el cliente, `INSERT ... ON CONFLICT (id) DO NOTHING`), con auditoría (`AuditService.record`) solo en la primera inserción — un reintento o replay del mismo evento no duplica ni audita de nuevo (EC-01). `ListActivityWorkflow.listActivity(userId)`: lista holder-scoped, newest-first, con tope `MAX_ENTRIES=200` aplicado server-side (EC-02). `ActivityController`: `POST`/`GET /api/v1/activity`, `userId` derivado siempre de `JwtAuthenticationToken.getUserId()` (`sub` del JWT) — nunca del body ni de la ruta (AC-05/AC-06, defensa contra suplantación, ES-03). Migración Flyway `V6__create_wallet_activity.sql`: tabla `wallet_activity` en el schema del tenant (aislamiento estructural por tenant), índice `(user_id, created_at DESC)` para servir la lista eficientemente.
 - **EUD-141 — test coverage**: `RecordActivityWorkflowTest`/`ListActivityWorkflowTest` (unit — idempotencia, cap de 200, lista vacía) y `ActivityControllerIT` (WebTestClient + Testcontainers Postgres) cubriendo recuperación tras borrado local (AC-01), sincronización entre dos dispositivos que convergen en el mismo historial (AC-02), servidor como fuente de verdad (AC-03), aislamiento holder (mismo tenant, dos holders) y cross-tenant (AC-05/AC-06), payload inválido → 400 (`id`/`type`/`credentialName`/`counterparty` ausentes o `type` desconocido, ES-01), sin token / token inválido → 401 (ES-02), `id` forjado perteneciente a otro holder ignorado sin fuga ni sobrescritura (ES-03), y convergencia en el tope de 200 entradas más recientes (EC-02).
+#### [1.12.4] - 2026-07-22
+
+### Added
+
+- EUDISTACK-540 — hybrid adapter audit: 5 `change_kind` events (`wrap.completed`, `constraint.accepted`, `unwrap.sign.completed`, `unwrap.failed`, `onboarding.blocked.prf.unsupported`) wired into `KeyAuditPort`/CloudWatch, each carrying the current OTEL trace id as `correlation_id`.
+- ArchUnit + domain test coverage for the audit event model and hexagonal layering (`KeyManagerArchitectureTest`, `KeyAuditEventTest`, shared `KeyAuditEventAssertions` helper asserting no sensitive data leaks into audit payloads).
+
+### Fixed
+
+- `KeyAuditCloudWatchAdapter` crashed the whole application on startup whenever AWS credentials/region couldn't be resolved — now catches `SdkException` (not just the narrower `CloudWatchLogsException`), so it logs and degrades gracefully instead of taking down the service.
+- Removed a `.block()` call inside `flushRemaining()` (WebFlux reactive-chain rule).
+- Deduplicated the repeated hybrid wallet-profile guard across `HybridKeyManagerController`/`HybridOnboardingController` into a single `requireHybridProfile` check.
+- Reconciled with `main`'s PRF-detection-gate (`/onboarding/block`) so it also records the `onboarding.blocked.prf.unsupported` audit event before erroring.
 
 #### [1.12.3] - 2026-07-13
 
