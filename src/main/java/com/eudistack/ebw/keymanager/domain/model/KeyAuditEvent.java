@@ -1,9 +1,9 @@
 package com.eudistack.ebw.keymanager.domain.model;
 
+import com.eudistack.ebw.keymanager.domain.exception.KeyAuditEventValidationException;
 import jakarta.annotation.Nullable;
 
 import java.time.Instant;
-import java.util.Objects;
 
 /**
  * Domain event emitted to the audit Dominio D2 for every security-relevant key operation.
@@ -39,17 +39,18 @@ public record KeyAuditEvent(
         KeyAuditEventType type,
         String tenantId,
         String holderId,
-        String credentialId,
-        CredentialFormat format,
-        KeyAlgorithm algorithm,
-        String jkt,
+        // Null for CONSTRAINT_ACCEPTED events (no key or credential yet — US-06)
+        @Nullable String credentialId,
+        @Nullable CredentialFormat format,
+        @Nullable KeyAlgorithm algorithm,
+        @Nullable String jkt,
         Instant timestamp,
         String correlationId,
         // Optional fields — null for generation events (US-02 backward-compat)
-        SigningType signingType,
-        SignaturePurpose purpose,
-        ConsumerOrigin consumerOrigin,
-        String reason,
+        @Nullable SigningType signingType,
+        @Nullable SignaturePurpose purpose,
+        @Nullable ConsumerOrigin consumerOrigin,
+        @Nullable String reason,
         @Nullable String keyId
 ) {
 
@@ -73,37 +74,50 @@ public record KeyAuditEvent(
         SIGN_TIMEOUT,
         /** A dependency (DB) was unavailable during signing (ES-04). */
         SIGN_DEPENDENCY_FAILURE,
+        /** Holder accepted the multi-device constraint before hybrid onboarding (US-06, EUDISTACK-538). */
+        CONSTRAINT_ACCEPTED,
+        /** Holder key wrapped and committed after client-side generation (US-08, EUDISTACK-540). */
+        WRAP_COMPLETED,
+        /** Holder key unwrapped and signing completed in hybrid two-step flow (US-04/US-08). */
+        UNWRAP_SIGN_COMPLETED,
+        /** Holder key unwrap failed during hybrid signing (US-04/US-08). */
+        UNWRAP_FAILED,
+        /** Hybrid onboarding blocked — holder device does not support Passkey PRF (US-08, EUDISTACK-540). */
         ONBOARDING_BLOCKED_PRF_UNSUPPORTED
-
     }
 
     public KeyAuditEvent {
-        Objects.requireNonNull(type, "type must not be null");
-        Objects.requireNonNull(tenantId, "tenantId must not be null");
-        if (tenantId.isBlank()) {
-            throw new IllegalArgumentException("tenantId must not be blank");
+        if (type == null)      throw new KeyAuditEventValidationException("type must not be null");
+        if (tenantId == null)  throw new KeyAuditEventValidationException("tenantId must not be null");
+        if (tenantId.isBlank()) throw new KeyAuditEventValidationException("tenantId must not be blank");
+        if (holderId == null)  throw new KeyAuditEventValidationException("holderId must not be null");
+        if (holderId.isBlank()) throw new KeyAuditEventValidationException("holderId must not be blank");
+
+        // Types where no key context exists yet (consent / device-blocked events)
+        boolean noKeyContext = type == KeyAuditEventType.CONSTRAINT_ACCEPTED
+                || type == KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED;
+        // Types where credentialId is present but format/algorithm/jkt are not available server-side
+        // (key was generated and wrapped client-side — US-08)
+        boolean wrapContext = type == KeyAuditEventType.WRAP_COMPLETED;
+        // UNWRAP_FAILED: credentialId/format/algorithm required but jkt may be absent
+        // (cnf.jwk may not parse when the submission itself is malformed — US-04/US-08)
+        boolean unwrapFailedContext = type == KeyAuditEventType.UNWRAP_FAILED;
+
+        if (!noKeyContext) {
+            if (credentialId == null) throw new KeyAuditEventValidationException("credentialId must not be null");
+            if (credentialId.isBlank()) throw new KeyAuditEventValidationException("credentialId must not be blank");
         }
-        Objects.requireNonNull(holderId, "holderId must not be null");
-        if (holderId.isBlank()) {
-            throw new IllegalArgumentException("holderId must not be blank");
+        if (!noKeyContext && !wrapContext) {
+            if (format == null)    throw new KeyAuditEventValidationException("format must not be null");
+            if (algorithm == null) throw new KeyAuditEventValidationException("algorithm must not be null");
+            if (!unwrapFailedContext) {
+                if (jkt == null)    throw new KeyAuditEventValidationException("jkt must not be null");
+                if (jkt.isBlank())  throw new KeyAuditEventValidationException("jkt must not be blank");
+            }
         }
-        Objects.requireNonNull(credentialId, "credentialId must not be null");
-        if (credentialId.isBlank()) {
-            throw new IllegalArgumentException("credentialId must not be blank");
-        }
-        Objects.requireNonNull(format, "format must not be null");
-        Objects.requireNonNull(algorithm, "algorithm must not be null");
-        Objects.requireNonNull(jkt, "jkt must not be null");
-        if (jkt.isBlank()) {
-            throw new IllegalArgumentException("jkt must not be blank");
-        }
-        Objects.requireNonNull(timestamp, "timestamp must not be null");
-        Objects.requireNonNull(correlationId, "correlationId must not be null");
-        if (correlationId.isBlank()) {
-            throw new IllegalArgumentException("correlationId must not be blank");
-        }
-        // signingType, purpose, consumerOrigin, reason, keyId are intentionally nullable
-        // (null for KEY_GENERATED / KEY_FETCHED — US-02 backward-compat)
+        if (timestamp == null)     throw new KeyAuditEventValidationException("timestamp must not be null");
+        if (correlationId == null) throw new KeyAuditEventValidationException("correlationId must not be null");
+        if (correlationId.isBlank()) throw new KeyAuditEventValidationException("correlationId must not be blank");
     }
 
     /**
@@ -123,6 +137,101 @@ public record KeyAuditEvent(
                 type, tenantId, holderId, credentialId, format, algorithm,
                 jkt, timestamp, correlationId,
                 null, null, null, null, null);
+    }
+
+    /**
+     * Factory for US-06 consent events — no key material exists yet.
+     * credentialId, format, algorithm, and jkt are null by design.
+     */
+    public static KeyAuditEvent forConsent(
+            String tenantId,
+            String holderId,
+            Instant timestamp,
+            String correlationId) {
+        return new KeyAuditEvent(
+                KeyAuditEventType.CONSTRAINT_ACCEPTED,
+                tenantId, holderId,
+                null, null, null, null,
+                timestamp, correlationId,
+                null, null, null, null, null);
+    }
+
+    /**
+     * Factory for US-08 wrap events — key was generated and wrapped client-side.
+     * format, algorithm, and jkt are null because the server never holds the plaintext key.
+     */
+    public static KeyAuditEvent forWrap(
+            String tenantId,
+            String holderId,
+            String credentialId,
+            Instant timestamp,
+            String correlationId) {
+        return new KeyAuditEvent(
+                KeyAuditEventType.WRAP_COMPLETED,
+                tenantId, holderId,
+                credentialId, null, null, null,
+                timestamp, correlationId,
+                null, null, null, null, null);
+    }
+
+    /**
+     * Factory for US-08 PRF-unsupported events — onboarding blocked at device level, no key material.
+     */
+    public static KeyAuditEvent forPrfUnsupported(
+            String tenantId,
+            String holderId,
+            Instant timestamp,
+            String correlationId) {
+        return new KeyAuditEvent(
+                KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED,
+                tenantId, holderId,
+                null, null, null, null,
+                timestamp, correlationId,
+                null, null, null, null, null);
+    }
+
+    /**
+     * Factory for US-08 unwrap-sign-completed events — hybrid two-step signing handshake succeeded.
+     */
+    public static KeyAuditEvent forUnwrapSignCompleted(
+            String tenantId,
+            String holderId,
+            String credentialId,
+            CredentialFormat format,
+            KeyAlgorithm algorithm,
+            String jkt,
+            Instant timestamp,
+            String correlationId) {
+        return new KeyAuditEvent(
+                KeyAuditEventType.UNWRAP_SIGN_COMPLETED,
+                tenantId, holderId,
+                credentialId, format, algorithm, jkt,
+                timestamp, correlationId,
+                null, null, null, null, null);
+    }
+
+    /**
+     * Factory for US-08 unwrap-failed events — hybrid signing handshake failed.
+     *
+     * <p>{@code jkt} may be {@code null} when {@code cnf.jwk} could not be parsed
+     * (e.g. malformed submission) and the public key thumbprint was therefore not computable.</p>
+     */
+    public static KeyAuditEvent forUnwrapFailed(
+            String tenantId,
+            String holderId,
+            String credentialId,
+            CredentialFormat format,
+            KeyAlgorithm algorithm,
+            @Nullable String jkt,
+            Instant timestamp,
+            String correlationId,
+            @Nullable String reason) {
+        return new KeyAuditEvent(
+                KeyAuditEventType.UNWRAP_FAILED,
+                tenantId, holderId,
+                credentialId, format, algorithm, jkt,
+                timestamp, correlationId,
+                null, null, null, reason, null);
     }
 
     /**
