@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+#### [1.12.4] - 2026-07-23
+
+### Added
+
+- **EUD-104 — backend test coverage for associating a second device to an existing server account**: the register → verify-email → passkeys pipeline already handled this via find-or-create (EUD-103); no new endpoint, `/add-device` was deliberately not built (AD-1). This Story closes the missing test coverage that proves the second-device outcome explicitly and formalizes the boundary against re-auth. New `SecondDeviceAssociationIT` (AC-01/AC-02/AC-04): registers a second passkey for an already-existing account and asserts exactly one `wallet_user` row, ≥2 `user_passkey` rows, and the first device's row untouched. `OnboardingAuditIT` extended with a second-device scenario proving the audit trail (`REGISTRATION_INITIATED`/`USER_AUTHENTICATED`/`PASSKEY_CREATED`) is emitted once per device under the same `actor_id` (NFR-O-104-01). `AuthFlowIntegrationTest#reAuthentication_existingUser_issuesNewTokens` extended with an explicit zero-passkey assertion documenting the EC-04 boundary: re-auth without registering a new passkey must never be mistaken for device association, and does not substitute `SecondDeviceAssociationIT`. New `AuthFlowIntegrationTest#verifyEmail_tooManyWrongAttempts_returns429_neverIssuesTokensOrPasskey` (ES-01): exhausting the 5-attempt OTP budget fails closed (429, no tokens, no passkey), and stays closed even for the correct code afterwards. New `RegisterTenantIsolationIT` (ES-04): the same email registered from two different tenants produces two fully independent accounts with no passkey leakage between schemas — proves the register/verify/passkeys pipeline itself is tenant-isolated, not just already-created passkeys (the existing `PasskeyIsolationIT`/`PasskeyRevocationIsolationIT` only cover `GET`/`DELETE`). `RegisterAntiEnumerationIT` (AC-05), `PasskeyFlowIntegrationTest#duplicateCredentialId_returns409` (EC-03), and `RegisterRateLimitIT` (ES-03) re-verified green as regressions — no code changes needed.
+
 #### [1.12.3] - 2026-07-13
 
 ### Added - 2026-07-13
