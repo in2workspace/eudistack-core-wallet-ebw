@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+#### [1.13.0] - 2026-07-24
+
+### Added
+
+- **EUD-141 — Retrieve and sync the activity history in server mode**: new `activity` bounded context (hexagonal, following the `WalletCredential` pattern). `WalletActivity` (domain model) + `ActivityType {ISSUED, PRESENTED, DELETED}` enum. `RecordActivityWorkflow.recordActivity(userId, activityId, type, credentialName, counterparty, details, sharedAttributes)`: idempotent recording via `WalletActivityRepository.insertIfAbsent` (PK = client-supplied `id`, `INSERT ... ON CONFLICT (id) DO NOTHING`), with auditing (`AuditService.record`) only on the first insert — a retry or replay of the same event neither duplicates it nor audits it again (EC-01). `ListActivityWorkflow.listActivity(userId)`: holder-scoped, newest-first list, with a server-side `MAX_ENTRIES=200` cap (EC-02). `ActivityController`: `POST`/`GET /api/v1/activity`, `userId` always derived from `JwtAuthenticationToken.getUserId()` (the JWT `sub`) — never from the body or the route (AC-05/AC-06, defense against impersonation, ES-03). Flyway migration `V6__create_wallet_activity.sql`: `wallet_activity` table in the tenant's schema (structural tenant isolation), `(user_id, created_at DESC)` index to serve the list efficiently.
+- **EUD-141 — test coverage**: `RecordActivityWorkflowTest`/`ListActivityWorkflowTest` (unit — idempotency, 200 cap, empty list) and `ActivityControllerIT` (WebTestClient + Testcontainers Postgres) covering recovery after local deletion (AC-01), sync between two devices converging on the same history (AC-02), server as source of truth (AC-03), holder isolation (same tenant, two holders) and cross-tenant isolation (AC-05/AC-06), invalid payload → 400 (missing `id`/`type`/`credentialName`/`counterparty` or unknown `type`, ES-01), no token / invalid token → 401 (ES-02), a forged `id` belonging to another holder ignored with no leak or overwrite (ES-03), and convergence on the 200 most recent entries cap (EC-02).
+
 #### [1.12.5] - 2026-07-24
 
 ### Added
