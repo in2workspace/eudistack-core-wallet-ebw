@@ -95,6 +95,7 @@ sonar {
         property 'sonar.projectKey', 'in2workspace_eudistack-core-wallet-ebw'
         property 'sonar.organization', 'in2workspace'
         property 'sonar.host.url', 'https://sonarcloud.io'
+        property 'sonar.sources', 'src/main/java,src/main/resources'
         property 'sonar.coverage.jacoco.xmlReportPaths', 'build/reports/jacoco/test/jacocoTestReport.xml'
     }
 }
