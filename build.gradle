@@ -114,6 +114,12 @@ checkstyleTest {
     source = 'src/test/java'
 }
 
+dependencyCheck {
+    failBuildOnCVSS = 7
+    formats = ['HTML', 'JSON']
+    suppressionFile = "${rootDir}/config/dependency-check/suppressions.xml"
+}
+
 // --- Tasks ---
 
 tasks.named('compileJava') {

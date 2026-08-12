@@ -46,6 +46,14 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./gradlew build sonar --info
 
+      - name: SonarCloud Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          scanMetadataReportFile: build/sonar/report-task.txt
+
   ci:
     name: Build > Tag > Push
     runs-on: ubuntu-latest

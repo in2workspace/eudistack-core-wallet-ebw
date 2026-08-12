@@ -43,6 +43,12 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x ./gradlew
 
+      - name: Cache OWASP dependency-check NVD database
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/dependency-check-data
+          key: ${{ runner.os }}-depcheck-nvd
+
       - name: Build & Test
         run: ./gradlew build --info
 
@@ -68,3 +74,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./gradlew sonar --info
+
+      - name: SonarCloud Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          scanMetadataReportFile: build/sonar/report-task.txt
+
+      - name: OWASP Dependency-Check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: ./gradlew dependencyCheckAnalyze --info
+
+      - name: Upload Dependency-Check Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: build/reports/dependency-check-report.html
