@@ -1,0 +1,3 @@
+# Add one CVE ID per line for confirmed false positives or accepted risks,
+# with a comment explaining why. See:
+# https://trivy.dev/latest/docs/configuration/filtering/#trivyignore
