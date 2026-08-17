@@ -81,9 +81,10 @@ public class TenantSchemaFlywayMigrator implements ApplicationRunner {
 
     private void migrateTenantSchema(String jdbcUrl, String username, String password, String schema) {
         log.info("Migrating tenant schema: {}", schema);
+        String validatedSchema = sanitizeSchemaName(schema);
         try (Connection conn = DriverManager.getConnection(jdbcUrl, username, password);
              Statement stmt = conn.createStatement()) {
-            stmt.execute("CREATE SCHEMA IF NOT EXISTS " + sanitizeSchemaName(schema));
+            stmt.execute("CREATE SCHEMA IF NOT EXISTS \"" + validatedSchema + "\"");
         } catch (Exception e) {
             throw new IllegalStateException("Failed to create schema: " + schema, e);
         }
@@ -91,8 +92,8 @@ public class TenantSchemaFlywayMigrator implements ApplicationRunner {
         Flyway.configure()
                 .dataSource(jdbcUrl, username, password)
                 .locations("classpath:db/tenant")
-                .defaultSchema(schema)
-                .schemas(schema)
+                .defaultSchema(validatedSchema)
+                .schemas(validatedSchema)
                 .table("flyway_schema_history")
                 .baselineOnMigrate(true)
                 .load()
@@ -100,7 +101,7 @@ public class TenantSchemaFlywayMigrator implements ApplicationRunner {
     }
 
     private String sanitizeSchemaName(String schema) {
-        if (!schema.matches("^[a-zA-Z0-9_-]+$")) {
+        if (schema == null || !schema.matches("^[a-z0-9][a-z0-9_-]{0,62}$")) {
             throw new IllegalArgumentException("Invalid schema name: " + schema);
         }
         return schema;
