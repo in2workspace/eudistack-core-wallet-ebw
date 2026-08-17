@@ -12,8 +12,8 @@ import org.springframework.stereotype.Component;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -57,6 +57,7 @@ public class TenantSchemaFlywayMigrator implements ApplicationRunner {
                 .locations("classpath:db/migration")
                 .defaultSchema("public")
                 .schemas("public")
+                .createSchemas(true)
                 .baselineOnMigrate(true)
                 .load()
                 .migrate();
@@ -65,9 +66,9 @@ public class TenantSchemaFlywayMigrator implements ApplicationRunner {
     private List<String> loadActiveTenants(String jdbcUrl, String username, String password) {
         List<String> tenants = new ArrayList<>();
         try (Connection conn = DriverManager.getConnection(jdbcUrl, username, password);
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(
-                     "SELECT schema_name FROM public.tenant_registry WHERE status = 'active'")) {
+             PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT schema_name FROM public.tenant_registry WHERE status = 'active'");
+             ResultSet rs = stmt.executeQuery()) {
             while (rs.next()) {
                 tenants.add(rs.getString("schema_name"));
             }
@@ -82,18 +83,13 @@ public class TenantSchemaFlywayMigrator implements ApplicationRunner {
     private void migrateTenantSchema(String jdbcUrl, String username, String password, String schema) {
         log.info("Migrating tenant schema: {}", schema);
         String validatedSchema = sanitizeSchemaName(schema);
-        try (Connection conn = DriverManager.getConnection(jdbcUrl, username, password);
-             Statement stmt = conn.createStatement()) {
-            stmt.execute("CREATE SCHEMA IF NOT EXISTS \"" + validatedSchema + "\"");
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to create schema: " + schema, e);
-        }
 
         Flyway.configure()
                 .dataSource(jdbcUrl, username, password)
                 .locations("classpath:db/tenant")
                 .defaultSchema(validatedSchema)
                 .schemas(validatedSchema)
+                .createSchemas(true)
                 .table("flyway_schema_history")
                 .baselineOnMigrate(true)
                 .load()
