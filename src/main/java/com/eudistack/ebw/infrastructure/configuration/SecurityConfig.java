@@ -71,7 +71,7 @@ public class SecurityConfig {
                 .build();
     }
 
-    private CorsConfigurationSource corsConfigurationSource() {
+    CorsConfigurationSource corsConfigurationSource() {
         var config = new CorsConfiguration();
         List<String> allowedOrigins = corsOriginsLoader.loadOrigins();
         config.setAllowedOriginPatterns(allowedOrigins);
