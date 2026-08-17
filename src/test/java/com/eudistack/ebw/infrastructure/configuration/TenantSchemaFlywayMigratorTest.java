@@ -13,11 +13,9 @@ class TenantSchemaFlywayMigratorTest {
     void sanitizeSchemaName_shouldAllowValidNames() {
         TenantSchemaFlywayMigrator migrator = new TenantSchemaFlywayMigrator(new FlywayProperties(), new R2dbcProperties());
 
-        assertDoesNotThrow(() -> {
-            invokeSanitizeSchemaName(migrator, "tenant1");
-            invokeSanitizeSchemaName(migrator, "tenant-1");
-            invokeSanitizeSchemaName(migrator, "t123");
-        });
+        assertDoesNotThrow(() -> invokeSanitizeSchemaName(migrator, "tenant1"));
+        assertDoesNotThrow(() -> invokeSanitizeSchemaName(migrator, "tenant-1"));
+        assertDoesNotThrow(() -> invokeSanitizeSchemaName(migrator, "t123"));
     }
 
     @Test
@@ -30,7 +28,8 @@ class TenantSchemaFlywayMigratorTest {
         assertThrows(IllegalArgumentException.class, () -> invokeSanitizeSchemaName(migrator, "tenant space"));
         assertThrows(IllegalArgumentException.class, () -> invokeSanitizeSchemaName(migrator, "tenant'"));
         assertThrows(IllegalArgumentException.class, () -> invokeSanitizeSchemaName(migrator, "tenant\""));
-        assertThrows(IllegalArgumentException.class, () -> invokeSanitizeSchemaName(migrator, "a".repeat(64)));
+        String longSchema = "a".repeat(64);
+        assertThrows(IllegalArgumentException.class, () -> invokeSanitizeSchemaName(migrator, longSchema));
     }
 
     private void invokeSanitizeSchemaName(TenantSchemaFlywayMigrator migrator, String schema) throws Exception {
