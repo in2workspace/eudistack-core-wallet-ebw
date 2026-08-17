@@ -86,7 +86,7 @@ public class TenantAwareConnectionFactoryDecorator {
         }
 
         private String sanitize(String tenant) {
-            if (tenant == null || !tenant.matches("^[a-zA-Z0-9_-]+$")) {
+            if (tenant == null || !tenant.matches("^[a-zA-Z][a-zA-Z0-9_-]*$")) {
                 throw new IllegalArgumentException("Invalid tenant schema name: " + tenant);
             }
             return tenant;
