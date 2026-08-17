@@ -97,7 +97,7 @@ public class TenantSchemaFlywayMigrator implements ApplicationRunner {
     }
 
     private String sanitizeSchemaName(String schema) {
-        if (schema == null || !schema.matches("^[a-z0-9][a-z0-9_-]{0,62}$")) {
+        if (schema == null || !schema.matches("^[a-z][a-z0-9_-]{0,62}$")) {
             throw new IllegalArgumentException("Invalid schema name: " + schema);
         }
         return schema;
