@@ -81,7 +81,12 @@ public class TenantAwareConnectionFactoryDecorator {
                     .doOnSuccess(c -> log.trace("R2DBC search_path set to '{}'", searchPath))
                     .onErrorResume(e -> {
                         log.warn("Failed to set search_path: {}", e.getMessage());
-                        return Mono.from(connection.close()).then(Mono.error(e));
+                        return Mono.from(connection.close())
+                                .onErrorResume(closeErr -> {
+                                    log.warn("Error closing connection after search_path failure: {}", closeErr.getMessage());
+                                    return Mono.empty();
+                                })
+                                .then(Mono.error(e));
                     });
         }
 
