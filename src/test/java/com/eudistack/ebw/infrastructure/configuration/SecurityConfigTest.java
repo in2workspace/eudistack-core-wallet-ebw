@@ -19,17 +19,13 @@ import static org.mockito.Mockito.when;
 class SecurityConfigTest {
 
     @Test
-    void corsConfigurationSource_usesLoaderOrigins() throws Exception {
+    void corsConfigurationSource_usesLoaderOrigins() {
         CorsOriginsLoader loader = mock(CorsOriginsLoader.class);
         JwtAuthenticationWebFilter filter = mock(JwtAuthenticationWebFilter.class);
         when(loader.loadOrigins()).thenReturn(List.of("https://trusted.com"));
 
         SecurityConfig config = new SecurityConfig(filter, loader);
-
-        // corsConfigurationSource is private, use reflection to test it
-        java.lang.reflect.Method method = SecurityConfig.class.getDeclaredMethod("corsConfigurationSource");
-        method.setAccessible(true);
-        CorsConfigurationSource source = (CorsConfigurationSource) method.invoke(config);
+        CorsConfigurationSource source = config.corsConfigurationSource();
 
         ServerWebExchange exchange = mock(ServerWebExchange.class);
         ServerHttpRequest request = mock(ServerHttpRequest.class);
