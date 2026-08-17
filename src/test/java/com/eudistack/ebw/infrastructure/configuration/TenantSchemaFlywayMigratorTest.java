@@ -67,16 +67,16 @@ class TenantSchemaFlywayMigratorTest {
                 .thenReturn(conn);
         when(conn.prepareStatement(anyString())).thenReturn(stmt);
         when(stmt.executeQuery()).thenReturn(rs);
-        when(rs.next()).thenReturn(true, false); // Un solo inquilino
+        when(rs.next()).thenReturn(true, false); // Single tenant
         when(rs.getString("schema_name")).thenReturn("tenant1");
 
         migrator.run(mock(ApplicationArguments.class));
 
-        // Verificar migración de esquema público
+        // Verify public schema migration
         verify(fluentConfiguration).defaultSchema("public");
         verify(fluentConfiguration).schemas("public");
 
-        // Verificar migración de esquema de inquilino
+        // Verify tenant schema migration
         // Suffix is _business_wallet
         String expectedTenantSchema = "tenant1_business_wallet";
         verify(fluentConfiguration).defaultSchema(expectedTenantSchema);
@@ -96,6 +96,7 @@ class TenantSchemaFlywayMigratorTest {
 
         java.lang.reflect.Method method = TenantSchemaFlywayMigrator.class.getDeclaredMethod("loadActiveTenants", String.class, String.class, String.class);
         method.setAccessible(true);
+        @SuppressWarnings("unchecked")
         List<String> tenants = (List<String>) method.invoke(migrator, "jdbc:postgresql://localhost:5432/db", "user", "pass");
 
         assertTrue(tenants.isEmpty());
@@ -113,6 +114,7 @@ class TenantSchemaFlywayMigratorTest {
         assertThrows(IllegalArgumentException.class, () -> invokeSanitizeSchemaName(migrator, null));
         assertThrows(IllegalArgumentException.class, () -> invokeSanitizeSchemaName(migrator, "TENANT"));
         assertThrows(IllegalArgumentException.class, () -> invokeSanitizeSchemaName(migrator, "_tenant"));
+        assertThrows(IllegalArgumentException.class, () -> invokeSanitizeSchemaName(migrator, "1tenant"));
         
         String longSchema = "a".repeat(64);
         assertThrows(IllegalArgumentException.class, () -> invokeSanitizeSchemaName(migrator, longSchema));
