@@ -1,6 +1,5 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
-import com.eudistack.ebw.infrastructure.security.CorsOriginsLoader;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationWebFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.server.RequestPath;
@@ -19,12 +18,10 @@ import static org.mockito.Mockito.when;
 class SecurityConfigTest {
 
     @Test
-    void corsConfigurationSource_usesLoaderOrigins() {
-        CorsOriginsLoader loader = mock(CorsOriginsLoader.class);
+    void corsConfigurationSource_usesAsteriskOrigin() {
         JwtAuthenticationWebFilter filter = mock(JwtAuthenticationWebFilter.class);
-        when(loader.loadOrigins()).thenReturn(List.of("https://trusted.com"));
 
-        SecurityConfig config = new SecurityConfig(filter, loader);
+        SecurityConfig config = new SecurityConfig(filter);
         CorsConfigurationSource source = config.corsConfigurationSource();
 
         ServerWebExchange exchange = mock(ServerWebExchange.class);
@@ -37,7 +34,7 @@ class SecurityConfigTest {
         CorsConfiguration corsConfig = source.getCorsConfiguration(exchange);
 
         assertNotNull(corsConfig);
-        assertEquals(List.of("https://trusted.com"), corsConfig.getAllowedOriginPatterns());
+        assertEquals(List.of("*"), corsConfig.getAllowedOriginPatterns());
         assertTrue(corsConfig.getAllowCredentials());
     }
 }
