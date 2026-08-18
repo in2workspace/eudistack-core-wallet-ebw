@@ -1,7 +1,6 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationWebFilter;
-import com.eudistack.ebw.infrastructure.security.CorsOriginsLoader;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -21,11 +20,9 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationWebFilter jwtAuthFilter;
-    private final CorsOriginsLoader corsOriginsLoader;
 
-    public SecurityConfig(JwtAuthenticationWebFilter jwtAuthFilter, CorsOriginsLoader corsOriginsLoader) {
+    public SecurityConfig(JwtAuthenticationWebFilter jwtAuthFilter) {
         this.jwtAuthFilter = jwtAuthFilter;
-        this.corsOriginsLoader = corsOriginsLoader;
     }
 
     @Bean
@@ -73,8 +70,7 @@ public class SecurityConfig {
 
     CorsConfigurationSource corsConfigurationSource() {
         var config = new CorsConfiguration();
-        List<String> allowedOrigins = corsOriginsLoader.loadOrigins();
-        config.setAllowedOriginPatterns(allowedOrigins);
+        config.setAllowedOriginPatterns(List.of("*"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Api-Version"));
         config.setAllowCredentials(true);
