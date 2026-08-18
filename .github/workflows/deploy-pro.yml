@@ -152,6 +152,30 @@ jobs:
 
           echo "### ✅ Deployment successful" >> $GITHUB_STEP_SUMMARY
 
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+          cache: 'gradle'
+
+      - name: Make Gradlew Executable
+        run: chmod +x ./gradlew
+
+      - name: Generate CycloneDX SBOM
+        run: ./gradlew cyclonedxBom
+
+      - name: Prepare SBOM Release Asset
+        run: |
+          set -euo pipefail
+          TAG="v${{ env.VERSION }}"
+          cp build/reports/sbom/sbom.json "./sbom-${TAG}.cdx.json"
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -159,7 +183,8 @@ jobs:
           set -euo pipefail
           TAG="v${{ env.VERSION }}"
           gh release create "${TAG}" \
+            "./sbom-${TAG}.cdx.json#CycloneDX SBOM (${TAG})" \
             --repo "${{ github.repository }}" \
             --title "${TAG}" \
             --generate-notes
-          echo "### 🏷️ GitHub Release published: ${TAG}" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏷️ GitHub Release published: ${TAG} with attached SBOM" >> $GITHUB_STEP_SUMMARY

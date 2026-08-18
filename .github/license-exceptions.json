@@ -1,0 +1,103 @@
+{
+  "exceptions": [
+    {
+      "purl": "pkg:maven/aopalliance/aopalliance@1.0?type=jar",
+      "license": "Public Domain",
+      "reason": "Transitive dependency with Public Domain license",
+      "approved_by": "DevOps Lead",
+      "approved_on": "2026-08-17",
+      "expires_on": "2026-11-17",
+      "ticket": "EUD-221"
+    },
+    {
+      "purl": "pkg:maven/ch.qos.logback/logback-classic@1.5.32?type=jar",
+      "license": "EPL-2.0, GNU Lesser General Public License",
+      "reason": "Spring Boot logging framework dual licensed",
+      "approved_by": "DevOps Lead",
+      "approved_on": "2026-08-17",
+      "expires_on": "2026-11-17",
+      "ticket": "EUD-221"
+    },
+    {
+      "purl": "pkg:maven/ch.qos.logback/logback-core@1.5.32?type=jar",
+      "license": "EPL-2.0, GNU Lesser General Public License",
+      "reason": "Spring Boot logging framework dual licensed",
+      "approved_by": "DevOps Lead",
+      "approved_on": "2026-08-17",
+      "expires_on": "2026-11-17",
+      "ticket": "EUD-221"
+    },
+    {
+      "purl": "pkg:maven/jakarta.annotation/jakarta.annotation-api@2.1.1?type=jar",
+      "license": "EPL-2.0, GPL-2.0-with-classpath-exception",
+      "reason": "Jakarta API with dual license (EPL / GPL+CPE)",
+      "approved_by": "DevOps Lead",
+      "approved_on": "2026-08-17",
+      "expires_on": "2026-11-17",
+      "ticket": "EUD-219"
+    },
+    {
+      "purl": "pkg:maven/org.bouncycastle/bcpkix-jdk18on@1.80?type=jar",
+      "license": "Bouncy Castle Licence",
+      "reason": "Bouncy Castle cryptography library with MIT-style Bouncy Castle license",
+      "approved_by": "DevOps Lead",
+      "approved_on": "2026-08-17",
+      "expires_on": "2026-11-17",
+      "ticket": "EUD-219"
+    },
+    {
+      "purl": "pkg:maven/org.bouncycastle/bcprov-jdk18on@1.80?type=jar",
+      "license": "Bouncy Castle Licence",
+      "reason": "Bouncy Castle cryptography library with MIT-style Bouncy Castle license",
+      "approved_by": "DevOps Lead",
+      "approved_on": "2026-08-17",
+      "expires_on": "2026-11-17",
+      "ticket": "EUD-219"
+    },
+    {
+      "purl": "pkg:maven/org.bouncycastle/bcutil-jdk18on@1.80.2?type=jar",
+      "license": "Bouncy Castle Licence",
+      "reason": "Bouncy Castle cryptography library with MIT-style Bouncy Castle license",
+      "approved_by": "DevOps Lead",
+      "approved_on": "2026-08-17",
+      "expires_on": "2026-11-17",
+      "ticket": "EUD-219"
+    },
+    {
+      "purl": "pkg:maven/org.eclipse.angus/jakarta.mail@2.0.5?type=jar",
+      "license": "EPL-2.0, GPL-2.0-with-classpath-exception, BSD-3-Clause",
+      "reason": "Jakarta Mail implementation with multi-license",
+      "approved_by": "DevOps Lead",
+      "approved_on": "2026-08-17",
+      "expires_on": "2026-11-17",
+      "ticket": "EUD-219"
+    },
+    {
+      "purl": "pkg:maven/org.hdrhistogram/HdrHistogram@2.2.2?type=jar",
+      "license": "CC0-1.0, BSD-2-Clause",
+      "reason": "Micrometer dependency with dual CC0/BSD license",
+      "approved_by": "DevOps Lead",
+      "approved_on": "2026-08-17",
+      "expires_on": "2026-11-17",
+      "ticket": "EUD-221"
+    },
+    {
+      "purl": "pkg:maven/org.latencyutils/LatencyUtils@2.0.3?type=jar",
+      "license": "CC0-1.0",
+      "reason": "Micrometer latency tracking dependency with CC0-1.0 license",
+      "approved_by": "DevOps Lead",
+      "approved_on": "2026-08-17",
+      "expires_on": "2026-11-17",
+      "ticket": "EUD-221"
+    },
+    {
+      "purl": "pkg:maven/org.reactivestreams/reactive-streams@1.0.4?type=jar",
+      "license": "MIT-0",
+      "reason": "Reactive streams specification library under MIT-0",
+      "approved_by": "DevOps Lead",
+      "approved_on": "2026-08-17",
+      "expires_on": "2026-11-17",
+      "ticket": "EUD-221"
+    }
+  ]
+}

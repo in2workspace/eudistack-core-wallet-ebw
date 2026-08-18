@@ -1,0 +1,3 @@
+# CODEOWNERS for license policies and exceptions
+.github/license-*.json @in2workspace/devops-lead
+.github/workflows/license-gate.yml @in2workspace/devops-lead
