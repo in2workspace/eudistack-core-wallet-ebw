@@ -43,7 +43,7 @@
       "approved_by": "DevOps Lead",
       "approved_on": "2026-08-17",
       "expires_on": "2026-11-17",
-      "ticket": "EUD-219"
+      "ticket": "EUD-221"
     },
     {
       "purl": "pkg:maven/org.bouncycastle/bcprov-jdk18on@1.80?type=jar",
@@ -52,7 +52,7 @@
       "approved_by": "DevOps Lead",
       "approved_on": "2026-08-17",
       "expires_on": "2026-11-17",
-      "ticket": "EUD-219"
+      "ticket": "EUD-221"
     },
     {
       "purl": "pkg:maven/org.bouncycastle/bcutil-jdk18on@1.80.2?type=jar",
@@ -61,7 +61,7 @@
       "approved_by": "DevOps Lead",
       "approved_on": "2026-08-17",
       "expires_on": "2026-11-17",
-      "ticket": "EUD-219"
+      "ticket": "EUD-221"
     },
     {
       "purl": "pkg:maven/org.eclipse.angus/jakarta.mail@2.0.5?type=jar",
@@ -76,24 +76,6 @@
       "purl": "pkg:maven/org.hdrhistogram/HdrHistogram@2.2.2?type=jar",
       "license": "CC0-1.0, BSD-2-Clause",
       "reason": "Micrometer dependency with dual CC0/BSD license",
-      "approved_by": "DevOps Lead",
-      "approved_on": "2026-08-17",
-      "expires_on": "2026-11-17",
-      "ticket": "EUD-221"
-    },
-    {
-      "purl": "pkg:maven/org.latencyutils/LatencyUtils@2.0.3?type=jar",
-      "license": "CC0-1.0",
-      "reason": "Micrometer latency tracking dependency with CC0-1.0 license",
-      "approved_by": "DevOps Lead",
-      "approved_on": "2026-08-17",
-      "expires_on": "2026-11-17",
-      "ticket": "EUD-221"
-    },
-    {
-      "purl": "pkg:maven/org.reactivestreams/reactive-streams@1.0.4?type=jar",
-      "license": "MIT-0",
-      "reason": "Reactive streams specification library under MIT-0",
       "approved_by": "DevOps Lead",
       "approved_on": "2026-08-17",
       "expires_on": "2026-11-17",
