@@ -140,3 +140,70 @@ jobs:
         with:
           name: trivy-report
           path: build/reports/trivy-report.json
+
+  dast-baseline:
+    name: ZAP DAST Baseline
+    needs: [changes, build]
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ubuntu-latest
+    # G2 (conv-infrastructure-testing.md §6.3): passive scan, non-blocking.
+    # WARN-level findings are surfaced only via the uploaded HTML report.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: eudistack
+          POSTGRES_USER: eudistack
+          POSTGRES_PASSWORD: eudistack
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eudistack -d eudistack"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t eudistack-core-wallet-ebw:pr .
+
+      - name: Run container
+        run: |
+          docker run -d --name wallet-ebw-service \
+            --network host \
+            -e DB_HOST=localhost \
+            -e DB_PORT=5432 \
+            -e DB_NAME=eudistack \
+            -e DB_USERNAME=eudistack \
+            -e DB_PASSWORD=eudistack \
+            eudistack-core-wallet-ebw:pr
+
+      - name: Wait for service health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health; then exit 0; fi
+            sleep 2
+          done
+          echo "Service did not become healthy in time"
+          docker logs wallet-ebw-service
+          exit 1
+
+      # FAIL/WARN/IGNORE ruleset vendored from eudistack-platform-dev's
+      # dev-tools/testing/baseline/zap/zap-baseline.conf (single source of truth
+      # per convention §5.3) — copied here to avoid a cross-repo read token.
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: 'http://localhost:8080/business-wallet'
+          rules_file_name: 'dev-tools/testing/zap/zap-baseline.conf'
+          fail_action: false
+          allow_issue_writing: false
+
+      - name: Upload ZAP Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: report_html.html
