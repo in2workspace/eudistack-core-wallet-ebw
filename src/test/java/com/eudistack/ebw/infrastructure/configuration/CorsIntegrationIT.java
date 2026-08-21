@@ -44,8 +44,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     },
     properties = {
         "ebw.cors.allowed-origins=http://localhost:4200",
-        "ebw.security.max-payload-size=10485760",
-        "ebw.ratelimit.enabled=false"
+        "ebw.security.max-payload-size=10485760"
     }
 )
 @EnableConfigurationProperties({CorsProperties.class, SecurityProperties.class, RateLimitProperties.class})
