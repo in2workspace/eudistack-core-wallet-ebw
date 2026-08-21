@@ -58,7 +58,7 @@ dependencies {
     implementation 'com.nimbusds:nimbus-jose-jwt:10.3'
 
     // --- AWS SDK v2 ---
-    implementation 'software.amazon.awssdk:cloudwatchlogs:2.31.78'
+    implementation 'software.amazon.awssdk:cloudwatchlogs:2.53.2'
 
     // --- Cryptography ---
     implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
