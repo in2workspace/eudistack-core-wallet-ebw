@@ -1,6 +1,7 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationWebFilter;
+import com.eudistack.ebw.infrastructure.security.CorsOriginsLoader;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -20,9 +21,11 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationWebFilter jwtAuthFilter;
+    private final CorsOriginsLoader corsOriginsLoader;
 
-    public SecurityConfig(JwtAuthenticationWebFilter jwtAuthFilter) {
+    public SecurityConfig(JwtAuthenticationWebFilter jwtAuthFilter, CorsOriginsLoader corsOriginsLoader) {
         this.jwtAuthFilter = jwtAuthFilter;
+        this.corsOriginsLoader = corsOriginsLoader;
     }
 
     @Bean
@@ -31,7 +34,6 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((exchange, e) -> {
                             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
@@ -70,10 +72,11 @@ public class SecurityConfig {
 
     CorsConfigurationSource corsConfigurationSource() {
         var config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+        List<String> allowedOrigins = corsOriginsLoader.loadOrigins();
+        config.setAllowedOriginPatterns(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Api-Version"));
-        config.setAllowCredentials(true);
+        config.setAllowCredentials(false);
         config.setMaxAge(3600L);
 
         var source = new UrlBasedCorsConfigurationSource();
