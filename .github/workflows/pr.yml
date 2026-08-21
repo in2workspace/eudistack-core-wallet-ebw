@@ -201,10 +201,16 @@ jobs:
             -e TRUST_FORWARDED_HOST=true \
             eudistack-core-wallet-ebw:pr
 
+      # Polls the readiness group, not the aggregate /health: the aggregate
+      # includes SmtpHealthIndicator, which reports DOWN whenever no SMTP
+      # server is reachable (true in this CI container) and would tumble
+      # /health even though the app is fully up — application.yaml's own
+      # comment documents readiness/liveness as the indicators that matter
+      # for pool membership, deliberately excluding smtp.
       - name: Wait for service health
         run: |
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:8080/business-wallet/health; then exit 0; fi
+            if curl -sf http://localhost:8080/business-wallet/health/readiness; then exit 0; fi
             sleep 2
           done
           echo "Service did not become healthy in time"
