@@ -204,7 +204,7 @@ jobs:
       - name: Wait for service health
         run: |
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:8080/health; then exit 0; fi
+            if curl -sf http://localhost:8080/business-wallet/health; then exit 0; fi
             sleep 2
           done
           echo "Service did not become healthy in time"
