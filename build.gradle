@@ -54,7 +54,7 @@ dependencies {
     implementation 'com.github.ben-manes.caffeine:caffeine'
 
     // --- Serialization ---
-    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.18.2'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.22.2'
     implementation 'com.nimbusds:nimbus-jose-jwt:10.3'
 
     // --- AWS SDK v2 ---
