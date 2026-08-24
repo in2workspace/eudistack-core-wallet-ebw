@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CI — Dependabot para el control de composición de software (SCA)**
+  - Configuración de actualizaciones de seguridad para `gradle`, `github-actions` y las imágenes base de Docker, alineada con `eudistack-core-issuer`. Complementa el escaneo Trivy que ya corre en `pr.yml`: Trivy detecta, Dependabot propone el arreglo.
+
+
 #### [1.13.0] - 2026-07-24
 
 ### Added
