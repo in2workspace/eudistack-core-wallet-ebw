@@ -7,7 +7,7 @@
       "approved_by": "DevOps Lead",
       "approved_on": "2026-08-17",
       "expires_on": "2026-11-17",
-      "ticket": "EUD-221"
+      "ticket": "EUD-219"
     },
     {
       "purl": "pkg:maven/ch.qos.logback/logback-classic@1.5.32?type=jar",
@@ -16,7 +16,7 @@
       "approved_by": "DevOps Lead",
       "approved_on": "2026-08-17",
       "expires_on": "2026-11-17",
-      "ticket": "EUD-221"
+      "ticket": "EUD-219"
     },
     {
       "purl": "pkg:maven/ch.qos.logback/logback-core@1.5.32?type=jar",
@@ -25,7 +25,7 @@
       "approved_by": "DevOps Lead",
       "approved_on": "2026-08-17",
       "expires_on": "2026-11-17",
-      "ticket": "EUD-221"
+      "ticket": "EUD-219"
     },
     {
       "purl": "pkg:maven/jakarta.annotation/jakarta.annotation-api@2.1.1?type=jar",
@@ -43,7 +43,7 @@
       "approved_by": "DevOps Lead",
       "approved_on": "2026-08-17",
       "expires_on": "2026-11-17",
-      "ticket": "EUD-221"
+      "ticket": "EUD-219"
     },
     {
       "purl": "pkg:maven/org.bouncycastle/bcprov-jdk18on@1.80?type=jar",
@@ -52,7 +52,7 @@
       "approved_by": "DevOps Lead",
       "approved_on": "2026-08-17",
       "expires_on": "2026-11-17",
-      "ticket": "EUD-221"
+      "ticket": "EUD-219"
     },
     {
       "purl": "pkg:maven/org.bouncycastle/bcutil-jdk18on@1.80.2?type=jar",
@@ -61,7 +61,7 @@
       "approved_by": "DevOps Lead",
       "approved_on": "2026-08-17",
       "expires_on": "2026-11-17",
-      "ticket": "EUD-221"
+      "ticket": "EUD-219"
     },
     {
       "purl": "pkg:maven/org.eclipse.angus/jakarta.mail@2.0.5?type=jar",
@@ -79,7 +79,7 @@
       "approved_by": "DevOps Lead",
       "approved_on": "2026-08-17",
       "expires_on": "2026-11-17",
-      "ticket": "EUD-221"
+      "ticket": "EUD-219"
     }
   ]
 }
