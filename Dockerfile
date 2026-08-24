@@ -1,5 +1,5 @@
 # Stage 1
-FROM docker.io/gradle:9.3.1-jdk25 AS temp_build
+FROM docker.io/gradle:9.7.0-jdk25 AS temp_build
 ARG SKIP_TESTS=false
 WORKDIR /home/gradle/src
 # Copy the project files
