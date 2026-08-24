@@ -140,3 +140,99 @@ jobs:
         with:
           name: trivy-report
           path: build/reports/trivy-report.json
+
+  dast-baseline:
+    name: ZAP DAST Baseline
+    needs: [changes, build]
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ubuntu-latest
+    # G2 (conv-infrastructure-testing.md §6.3): passive scan, non-blocking.
+    # WARN-level findings are surfaced only via the uploaded HTML report.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: eudistack
+          POSTGRES_USER: eudistack
+          POSTGRES_PASSWORD: eudistack
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eudistack -d eudistack"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # SKIP_TESTS=true: the `build` job (above) already ran the full test suite
+      # for the quality gate — re-running tests inside the Docker build here would
+      # duplicate that work and risks failing this job on a test issue unrelated
+      # to DAST (e.g. a test needing infra this container's build stage lacks).
+      - name: Build Docker image
+        run: docker build --build-arg SKIP_TESTS=true -t eudistack-core-wallet-ebw:pr .
+
+      - name: Seed tenant_registry (sandbox)
+        run: |
+          PGPASSWORD=eudistack psql -h localhost -U eudistack -d eudistack -c "
+            CREATE TABLE IF NOT EXISTS public.tenant_registry (
+                schema_name   VARCHAR(64)  PRIMARY KEY,
+                display_name  VARCHAR(255) NOT NULL,
+                tenant_type   VARCHAR(20)  NOT NULL DEFAULT 'simple',
+                status        VARCHAR(20)  NOT NULL DEFAULT 'active',
+                created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+                updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
+            );
+            INSERT INTO public.tenant_registry (schema_name, display_name, tenant_type)
+            VALUES ('sandbox', 'EUDIStack Sandbox', 'multi_org')
+            ON CONFLICT (schema_name) DO NOTHING;
+          "
+
+      - name: Run container
+        run: |
+          docker run -d --name wallet-ebw-service \
+            --network host \
+            -e DB_HOST=localhost \
+            -e DB_PORT=5432 \
+            -e DB_NAME=eudistack \
+            -e DB_USERNAME=eudistack \
+            -e DB_PASSWORD=eudistack \
+            -e TRUST_FORWARDED_HOST=true \
+            eudistack-core-wallet-ebw:pr
+
+      # Polls the readiness group, not the aggregate /health: the aggregate
+      # includes SmtpHealthIndicator, which reports DOWN whenever no SMTP
+      # server is reachable (true in this CI container) and would tumble
+      # /health even though the app is fully up — application.yaml's own
+      # comment documents readiness/liveness as the indicators that matter
+      # for pool membership, deliberately excluding smtp.
+      - name: Wait for service health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/business-wallet/health/readiness; then exit 0; fi
+            sleep 2
+          done
+          echo "Service did not become healthy in time"
+          docker logs wallet-ebw-service
+          exit 1
+
+      # Rules file: dev-tools/testing/zap/zap-baseline.conf (this repo), vendored
+      # from eudistack-platform-dev's dev-tools/testing/baseline/zap/zap-baseline.conf
+      # (single source of truth per convention §5.3) — copied here to avoid a
+      # cross-repo read token. Update the source there, then re-copy here.
+      #
+      # TRUST_FORWARDED_HOST=true (above) + ZAP_AUTH_HEADER make X-Tenant: sandbox
+      # actually resolve: TenantDomainWebFilter ignores X-Tenant entirely unless
+      # ebw.security.trust-forwarded-host is enabled (default false).
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        env:
+          ZAP_AUTH_HEADER: X-Tenant
+          ZAP_AUTH_HEADER_VALUE: sandbox
+        with:
+          target: 'http://localhost:8080/business-wallet'
+          rules_file_name: 'dev-tools/testing/zap/zap-baseline.conf'
+          artifact_name: 'zap-report'
+          fail_action: false
+          allow_issue_writing: false

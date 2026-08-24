@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **EUD-220 — SBOM CycloneDX and License Gate**: Added CycloneDX 1.6 SBOM generation (`cyclonedxBom`), CI license compliance gate (`license-gate.yml`), and automated SBOM asset attachment to GitHub Releases.
 
+### Added
+
+- **CI — Dependabot para el control de composición de software (SCA)**
+  - Configuración de actualizaciones de seguridad para `gradle`, `github-actions` y las imágenes base de Docker, alineada con `eudistack-core-issuer`. Complementa el escaneo Trivy que ya corre en `pr.yml`: Trivy detecta, Dependabot propone el arreglo.
+
+
 #### [1.13.0] - 2026-07-24
 
 ### Added
