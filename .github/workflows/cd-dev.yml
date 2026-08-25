@@ -1,5 +1,6 @@
-name: ci-cd
+name: cd-dev
 
+# TBD flow: every merge to main is automatically deployed to DEV.
 on:
   push:
     branches: [main]
@@ -16,9 +17,7 @@ env:
   REGION_CODE: ew1
 
 permissions:
-  contents: write
-  packages: write
-  actions: write
+  contents: read
 
 jobs:
   sonar:
@@ -54,13 +53,12 @@ jobs:
         with:
           scanMetadataReportFile: build/sonar/report-task.txt
 
-  ci:
+  build:
     name: Build > Tag > Push
+    needs: sonar
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.metadata.outputs.version }}
     env:
-      ENVIRONMENT: stg
+      ENVIRONMENT: dev
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -80,25 +78,12 @@ jobs:
         run: |
           VERSION=$(./gradlew -q properties | grep '^version:' | awk '{print $2}')
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Check Release Does Not Exist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="v${{ env.VERSION }}"
-          if gh release view "${TAG}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "::error::Release ${TAG} already exists. Bump the version before merging."
-            exit 1
-          fi
-          echo "Release ${TAG} does not exist — proceeding."
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -126,18 +111,19 @@ jobs:
           docker push "${ECR_LATEST}"
           docker push "${ECR_VERSION}"
           docker push "${ECR_SHA}"
-  cd-stg:
-    name: Deploy to Staging
-    needs: ci
+
+  cd-dev:
+    name: Deploy to Dev
+    needs: build
     runs-on: ubuntu-latest
     env:
-      ENVIRONMENT: stg
+      ENVIRONMENT: dev
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Force new ECS deployment

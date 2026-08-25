@@ -1,7 +1,15 @@
 name: deploy-pro
 
+# Emergency fallback only: PROD is normally promoted automatically by
+# release.yml once a release branch's STG deployment is approved. Use this
+# only to re-promote an existing STG artifact (e.g. re-running a failed
+# production deployment) without cutting a new release branch.
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'STG version tag to promote (e.g. 1.4.0). Must already exist in the STG ECR repo.'
+        required: true
 
 env:
   PROJECT_NAME: eudistack
@@ -15,9 +23,13 @@ jobs:
   cd-pro:
     name: Deploy to Production
     runs-on: ubuntu-latest
+    # Gated by the `production` GitHub Environment's required reviewers
+    # (Tech Lead), configured in repo Settings > Environments.
+    environment: production
     env:
       FROM_ENV: stg
       ENVIRONMENT: pro
+      VERSION: ${{ inputs.version }}
     steps:
       - name: Configure AWS credentials (${{ env.FROM_ENV }})
         uses: aws-actions/configure-aws-credentials@v4
@@ -30,39 +42,14 @@ jobs:
         id: ecr-stg
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Read version and SHA from STG ECR tags
-        env:
-          ECR_REPOSITORY_STG: ${{ env.PROJECT_NAME }}-${{ env.FROM_ENV }}-ecr-${{ env.REGION_CODE }}-${{ env.APP_NAME }}
-        run: |
-          set -euo pipefail
-
-          DIGEST=$(aws ecr describe-images \
-            --repository-name "${ECR_REPOSITORY_STG}" \
-            --image-ids imageTag=latest \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query 'imageDetails[0].imageDigest' \
-            --output text)
-
-          TAGS=$(aws ecr describe-images \
-            --repository-name "${ECR_REPOSITORY_STG}" \
-            --image-ids imageDigest="${DIGEST}" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query 'imageDetails[0].imageTags' \
-            --output json)
-
-          VERSION=$(echo "${TAGS}" | jq -r '.[] | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' | head -1 | sed 's/^v//')
-          SHA=$(echo "${TAGS}" | jq -r '.[] | select(test("^[0-9a-f]{40}$"))' | head -1)
-
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "SHA=${SHA}" >> $GITHUB_ENV
-
       - name: Confirm deployment target
         run: |
-          echo "### 🎯 Production deployment" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎯 Production deployment (manual fallback)" >> $GITHUB_STEP_SUMMARY
           echo "- **Version:** v${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **SHA:** ${{ env.SHA }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Approved by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
 
+      # Pinned by the immutable version tag, not `latest`, so PROD gets the
+      # exact artifact that was validated in STG.
       - name: Pull image from ${{ env.FROM_ENV }} ECR
         env:
           ECR_REGISTRY_STG: ${{ steps.ecr-stg.outputs.registry }}
@@ -70,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:latest"
+          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:v${{ env.VERSION }}"
           echo "Pulling staging image: ${STG_IMAGE}"
           docker pull "${STG_IMAGE}"
 
@@ -94,11 +81,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:latest"
+          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:v${{ env.VERSION }}"
           PRO_IMAGE="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:${{ env.ENVIRONMENT }}"
           PRO_LATEST="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:latest"
           PRO_VERSION="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:v${{ env.VERSION }}"
-          PRO_SHA="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:${{ env.SHA }}"
+          PRO_SHA="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:${{ github.sha }}"
 
           echo "Tagging for production..."
           docker tag "${STG_IMAGE}" "${PRO_IMAGE}"
@@ -152,12 +139,18 @@ jobs:
 
           echo "### ✅ Deployment successful" >> $GITHUB_STEP_SUMMARY
 
-      - name: Publish GitHub Release
+      # Idempotent: the release is normally already published by release.yml;
+      # this only fires when re-promoting via this manual fallback.
+      - name: Publish GitHub Release (if missing)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           TAG="v${{ env.VERSION }}"
+          if gh release view "${TAG}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "Release ${TAG} already exists — skipping."
+            exit 0
+          fi
           gh release create "${TAG}" \
             --repo "${{ github.repository }}" \
             --title "${TAG}" \
