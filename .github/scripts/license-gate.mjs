@@ -84,6 +84,12 @@ export const LICENSE_NAME_NORMALIZATION = {
   'isc license': 'ISC',
   'the unlicense': 'Unlicense',
 
+  // GPL family, declared as a standalone free-text `license.name` entry
+  // (a separate array item, not comma-joined text — see the multi-licensed
+  // block below for that case). Each maps to one SPDX id, not a disjunction.
+  'gnu lesser general public license': 'LGPL-2.1',
+  'gpl v2': 'GPL-2.0-only',
+
   // Multi-licensed components declared as free text. All are disjunctions.
   'epl-1.0, gnu lesser general public license': 'EPL-1.0 OR LGPL-2.1',
   'epl-2.0, gnu lesser general public license': 'EPL-2.0 OR LGPL-2.1',
