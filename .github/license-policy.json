@@ -1,17 +1,17 @@
 {
+  "$comment": "Transcription of conv-quality-security-gates.md §16.1. Protected by .github/CODEOWNERS: changing it requires DevOps Lead review.",
   "allow": [
     "Apache-2.0",
     "MIT",
+    "MIT-0",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "0BSD",
+    "ISC",
     "MPL-2.0",
     "EPL-2.0",
     "CC0-1.0",
-    "MIT-0",
-    "0BSD",
-    "ISC"
+    "LicenseRef-PublicDomain"
   ],
-  "gatedScopes": [
-    "runtime"
-  ]
+  "gatedScopes": ["runtime"]
 }
