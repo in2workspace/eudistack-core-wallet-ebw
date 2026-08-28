@@ -1,0 +1,3 @@
+origins:
+  - url: "http://localhost:4200"
+    tenant: local
