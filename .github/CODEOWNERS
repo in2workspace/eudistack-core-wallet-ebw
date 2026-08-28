@@ -1,4 +1,4 @@
-
+* @in2workspace/kizunaops
 
 # License gate (EUD-220). These rules MUST stay at the end of the file:
 # GitHub applies the LAST matching pattern, so a catch-all below them would
