@@ -152,6 +152,25 @@ jobs:
 
           echo "### ✅ Deployment successful" >> $GITHUB_STEP_SUMMARY
 
+      - name: Download SBOM Artifact from CI run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ env.VERSION }}"
+          echo "Downloading SBOM artifact for ${TAG} (SHA: ${{ env.SHA }})..."
+          gh run download --repo "${{ github.repository }}" --commit "${{ env.SHA }}" --name "sbom-${TAG}" --dir ./sbom-artifact || \
+          gh run download --repo "${{ github.repository }}" --name "sbom-${TAG}" --dir ./sbom-artifact
+
+      - name: Validate the published SBOM
+        run: node .github/scripts/license-gate.mjs --sbom-path ./sbom-artifact/sbom.json --expect-version ${{ env.VERSION }}
+
+      - name: Prepare SBOM Release Asset
+        run: |
+          set -euo pipefail
+          TAG="v${{ env.VERSION }}"
+          cp ./sbom-artifact/sbom.json "./sbom-${TAG}.cdx.json"
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -159,7 +178,8 @@ jobs:
           set -euo pipefail
           TAG="v${{ env.VERSION }}"
           gh release create "${TAG}" \
+            "./sbom-${TAG}.cdx.json#CycloneDX SBOM (${TAG})" \
             --repo "${{ github.repository }}" \
             --title "${TAG}" \
             --generate-notes
-          echo "### 🏷️ GitHub Release published: ${TAG}" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏷️ GitHub Release published: ${TAG} with attached SBOM" >> $GITHUB_STEP_SUMMARY

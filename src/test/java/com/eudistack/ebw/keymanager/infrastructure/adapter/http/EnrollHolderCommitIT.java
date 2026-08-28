@@ -19,8 +19,6 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import reactor.core.publisher.Mono;
-
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -28,7 +26,6 @@ import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
@@ -43,8 +40,12 @@ import static org.mockito.Mockito.when;
  *   <li>ES-02 — non-hybrid tenant → 403 opaque</li>
  * </ul>
  *
- * <p>The {@code hybrid_wrapped_key_handle} table is created via a temporary DDL stub.
- * // TODO: replace with US-03 (EUDISTACK-535) Flyway tenant migration once merged.</p>
+ * <p>The {@code hybrid_wrapped_key_handle} table is created by the real Flyway V4 tenant
+ * migration (EUDISTACK-535). The composite FK to {@code hybrid_prf_salt} requires
+ * pre-seeding a {@code wallet_user} row and one {@code hybrid_prf_salt} row per
+ * {@code (HOLDER_UUID, credentialId)} pair used in each test. {@link PrfSaltUseCase} is
+ * mocked — the prf_salt rows are seeded directly by the test setup rather than through the
+ * application layer.</p>
  *
  * <p>Spec: EUDISTACK-534 AC-04, AC-06, AC-07, ES-01, ES-02, ES-03.</p>
  */
@@ -119,8 +120,15 @@ class EnrollHolderCommitIT {
         }
         runTenantMigrations(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX);
         runTenantMigrations(jdbcUrl, DB_TENANT + SCHEMA_SUFFIX);
-        createHandleTable(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX);
-        createHandleTable(jdbcUrl, DB_TENANT + SCHEMA_SUFFIX);
+        // Seed wallet_user for HOLDER_UUID in both schemas (required by V1 FK on hybrid_wrapped_key_handle)
+        seedWalletUser(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX, HOLDER_UUID);
+        seedWalletUser(jdbcUrl, DB_TENANT + SCHEMA_SUFFIX, HOLDER_UUID);
+        // Seed prf_salt in the hybrid schema for all credential IDs used in tests
+        // (composite FK in V4 requires a prf_salt row per (holder_id, credential_id);
+        //  PrfSaltUseCase is mocked so prf_salt is not written through the application layer)
+        seedPrfSalt(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX, HOLDER_UUID, "cred-new-1");
+        seedPrfSalt(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX, HOLDER_UUID, "cred-replay-1");
+        seedPrfSalt(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX, HOLDER_UUID, "cred-conflict-1");
     }
 
     private static void runTenantMigrations(String jdbcUrl, String schema) {
@@ -135,23 +143,25 @@ class EnrollHolderCommitIT {
                 .migrate();
     }
 
-    // TODO: replace with US-03 (EUDISTACK-535) Flyway tenant migration once merged
-    private static void createHandleTable(String jdbcUrl, String schema) throws SQLException {
+    private static void seedWalletUser(String jdbcUrl, String schema, UUID holderId)
+            throws SQLException {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.createStatement().execute(
-                    "CREATE TABLE IF NOT EXISTS " + schema + ".hybrid_wrapped_key_handle ("
-                    + "  holder_id     TEXT NOT NULL,"
-                    + "  credential_id TEXT NOT NULL,"
-                    + "  wrapped_blob  BYTEA NOT NULL,"
-                    + "  iv            BYTEA NOT NULL,"
-                    + "  tag           BYTEA NOT NULL,"
-                    + "  kdf_algo      VARCHAR(32) NOT NULL,"
-                    + "  kdf_version   INTEGER NOT NULL,"
-                    + "  cnf_jwk       TEXT NOT NULL,"
-                    + "  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
-                    + "  last_used_at  TIMESTAMPTZ,"
-                    + "  PRIMARY KEY (holder_id, credential_id)"
-                    + ")");
+                    "INSERT INTO " + schema + ".wallet_user (id, email) "
+                    + "VALUES ('" + holderId + "', 'commit-it@test.local') "
+                    + "ON CONFLICT (id) DO NOTHING");
+        }
+    }
+
+    private static void seedPrfSalt(String jdbcUrl, String schema, UUID holderId, String credId)
+            throws SQLException {
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
+            conn.createStatement().execute(
+                    "INSERT INTO " + schema + ".hybrid_prf_salt "
+                    + "(holder_id, credential_id, prf_salt) "
+                    + "VALUES ('" + holderId + "', '" + credId + "', "
+                    + " decode('" + hex(new byte[32]) + "', 'hex')) "
+                    + "ON CONFLICT (holder_id, credential_id) DO NOTHING");
         }
     }
 
@@ -176,6 +186,12 @@ class EnrollHolderCommitIT {
         }
     }
 
+    /**
+     * Clears handle rows between tests. The {@code hybrid_prf_salt} rows seeded in
+     * {@link #provisionSchemas()} are intentionally kept — HOLDER_UUID is constant across
+     * all tests and prf_salt seeding is idempotent; re-deleting and re-inserting on every
+     * test would add no value and break FK ordering.
+     */
     private void clearHandleTable(String schema) throws SQLException {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
@@ -295,5 +311,13 @@ class EnrollHolderCommitIT {
                 "kdf_version",   1,
                 "cnf_jwk",       CNF_JWK
         );
+    }
+
+    private static String hex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
     }
 }

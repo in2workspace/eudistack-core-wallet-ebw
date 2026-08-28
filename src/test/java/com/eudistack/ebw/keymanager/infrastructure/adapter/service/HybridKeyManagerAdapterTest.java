@@ -1,80 +1,99 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.service;
 
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.keymanager.application.PrepareSignUseCase;
+import com.eudistack.ebw.keymanager.application.SubmitSignedUseCase;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
 import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
+import com.eudistack.ebw.keymanager.domain.model.PrepareSignResponse;
+import com.eudistack.ebw.keymanager.infrastructure.observability.HybridSignTelemetry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.Map;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
 /**
- * Unit tests for {@link HybridKeyManagerAdapter} format allow-list validation.
+ * Unit tests for {@link HybridKeyManagerAdapter} format allow-list validation and delegation.
  *
- * <p>Spec: EUDISTACK-533 AC-05, ES-01.</p>
+ * <p>Spec: EUDISTACK-533 AC-05, ES-01; EUDISTACK-536 AC-01.</p>
  */
+@ExtendWith(MockitoExtension.class)
 class HybridKeyManagerAdapterTest {
+
+    @Mock private PrepareSignUseCase prepareSignUseCase;
+    @Mock private SubmitSignedUseCase submitSignedUseCase;
+    @Mock private HybridSignTelemetry telemetry;
 
     private HybridKeyManagerAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        adapter = new HybridKeyManagerAdapter();
+        adapter = new HybridKeyManagerAdapter(prepareSignUseCase, submitSignedUseCase, telemetry);
     }
 
-    // --- AC-05 / ES-01: unsupported formats are rejected at prepareSign time ---
+    // --- AC-05 / ES-01: unsupported formats are rejected before reaching the use case ---
 
     @Test
-    void prepareSign_givenUnsupportedFormat_jwt_vc_json_ld_thenUnsupportedCredentialFormatException() {
-        PrepareSignRequest request = new PrepareSignRequest("cred-1", "challenge-abc", "jwt_vc_json-ld");
-
-        StepVerifier.create(adapter.prepareSign(request))
+    void prepareSign_unsupportedFormat_jwtVcJsonLd_throwsBeforeUseCase() {
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"),"jwt_vc_json-ld")))
                 .expectErrorMatches(ex -> ex instanceof UnsupportedCredentialFormatException
                         && ex.getMessage().contains("jwt_vc_json-ld"))
                 .verify();
     }
 
     @Test
-    void prepareSign_givenUnsupportedFormat_mdoc_thenUnsupportedCredentialFormatException() {
-        PrepareSignRequest request = new PrepareSignRequest("cred-1", "challenge-abc", "mso_mdoc");
-
-        StepVerifier.create(adapter.prepareSign(request))
-                .expectErrorMatches(ex -> ex instanceof UnsupportedCredentialFormatException)
+    void prepareSign_unsupportedFormat_msoMdoc_throwsBeforeUseCase() {
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"),"mso_mdoc")))
+                .expectError(UnsupportedCredentialFormatException.class)
                 .verify();
     }
 
     @Test
-    void prepareSign_givenUnsupportedFormat_blank_thenUnsupportedCredentialFormatException() {
-        PrepareSignRequest request = new PrepareSignRequest("cred-1", "challenge-abc", "application/vc");
-
-        StepVerifier.create(adapter.prepareSign(request))
-                .expectErrorMatches(ex -> ex instanceof UnsupportedCredentialFormatException)
+    void prepareSign_unsupportedFormat_applicationVc_throwsBeforeUseCase() {
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"),"application/vc")))
+                .expectError(UnsupportedCredentialFormatException.class)
                 .verify();
     }
 
-    // --- AC-05: supported formats pass allow-list and reach the stub ---
+    // --- AC-05: supported formats bypass the allow-list and delegate to the use case ---
 
     @Test
-    void prepareSign_givenSupportedFormat_vcSdJwt_thenPassesAllowList() {
-        PrepareSignRequest request = new PrepareSignRequest("cred-1", "challenge-abc", "vc+sd-jwt");
+    void prepareSign_vcSdJwt_passesAllowListAndDelegatesToUseCase() {
+        PrepareSignResponse mockResponse = new PrepareSignResponse(
+                "salt", "blob", "iv", "tag", "{}", "header.payload", "corr-id");
+        when(prepareSignUseCase.execute(any(), any())).thenReturn(Mono.just(mockResponse));
 
-        // The stub throws UnsupportedOperationException (TODO US-04), NOT UnsupportedCredentialFormatException.
-        // This confirms format validation passed.
-        StepVerifier.create(adapter.prepareSign(request))
-                .expectErrorMatches(ex -> ex instanceof UnsupportedOperationException
-                        && !(ex instanceof UnsupportedCredentialFormatException))
-                .verify();
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"),"vc+sd-jwt"))
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, "holder")))
+                .assertNext(r -> {
+                    // Confirmed format validation passed and use case was called
+                })
+                .verifyComplete();
     }
 
     @Test
-    void prepareSign_givenSupportedFormat_jwtVcJson_thenPassesAllowList() {
-        PrepareSignRequest request = new PrepareSignRequest("cred-1", "challenge-abc", "jwt_vc_json");
+    void prepareSign_jwtVcJson_passesAllowListAndDelegatesToUseCase() {
+        PrepareSignResponse mockResponse = new PrepareSignResponse(
+                "salt", "blob", "iv", "tag", "{}", "header.payload", "corr-id");
+        when(prepareSignUseCase.execute(any(), any())).thenReturn(Mono.just(mockResponse));
 
-        StepVerifier.create(adapter.prepareSign(request))
-                .expectErrorMatches(ex -> ex instanceof UnsupportedOperationException
-                        && !(ex instanceof UnsupportedCredentialFormatException))
-                .verify();
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"),"jwt_vc_json"))
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, "holder")))
+                .assertNext(r -> {
+                    // Confirmed format validation passed and use case was called
+                })
+                .verifyComplete();
     }
 
-    // --- AC-06: generateHolderKey is not applicable for the hybrid adapter ---
+    // --- generateHolderKey and signWithHolderKey are not applicable for the hybrid adapter ---
 
     @Test
     void generateHolderKey_alwaysThrowsUnsupportedOperationException() {
@@ -82,8 +101,6 @@ class HybridKeyManagerAdapterTest {
                 .expectError(UnsupportedOperationException.class)
                 .verify();
     }
-
-    // --- signWithHolderKey not applicable for hybrid (AC-03 / US-04) ---
 
     @Test
     void signWithHolderKey_alwaysThrowsUnsupportedOperationException() {

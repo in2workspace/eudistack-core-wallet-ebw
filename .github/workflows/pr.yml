@@ -4,12 +4,6 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
-    paths-ignore:
-      - '**.md'
-      - '.github/**'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
 
 env:
   JACOCO_MIN_COVERAGE_OVERALL: 40
@@ -26,8 +20,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            code:
+              - '!**/*.md'
+              - '!docs/**'
+              - '!.github/**'
+              - '!LICENSE'
+              - '!.gitignore'
+
   build:
     name: Build & Test
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -62,3 +81,205 @@ jobs:
         with:
           name: jacoco-report
           path: build/jacocoHtml/
+
+      - name: SonarCloud Scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./gradlew sonar --info
+
+      - name: SonarCloud Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          scanMetadataReportFile: build/sonar/report-task.txt
+
+      - name: Get current date
+        id: date
+        run: echo "date=$(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Trivy vulnerability DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: ${{ runner.os }}-trivy-db-${{ steps.date.outputs.date }}
+          restore-keys: |
+            ${{ runner.os }}-trivy-db-
+
+      - name: Trivy Vulnerability Scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: 'build/libs'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+          ignore-unfixed: true
+          format: 'table'
+          cache-dir: '~/.cache/trivy'
+          trivyignores: 'config/trivy/.trivyignore'
+
+      - name: Trivy Report (JSON)
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: 'build/libs'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '0'
+          ignore-unfixed: true
+          format: 'json'
+          output: 'build/reports/trivy-report.json'
+          cache-dir: '~/.cache/trivy'
+          trivyignores: 'config/trivy/.trivyignore'
+
+      - name: Upload Trivy Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: build/reports/trivy-report.json
+
+  dast-baseline:
+    name: ZAP DAST Baseline
+    needs: [changes, build]
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ubuntu-latest
+    # G2 (conv-infrastructure-testing.md §6.3): passive scan, non-blocking.
+    # WARN-level findings are surfaced only via the uploaded HTML report.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: eudistack
+          POSTGRES_USER: eudistack
+          POSTGRES_PASSWORD: eudistack
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eudistack -d eudistack"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # SKIP_TESTS=true: the `build` job (above) already ran the full test suite
+      # for the quality gate — re-running tests inside the Docker build here would
+      # duplicate that work and risks failing this job on a test issue unrelated
+      # to DAST (e.g. a test needing infra this container's build stage lacks).
+      - name: Build Docker image
+        run: docker build --build-arg SKIP_TESTS=true -t eudistack-core-wallet-ebw:pr .
+
+      - name: Seed tenant_registry (sandbox)
+        run: |
+          PGPASSWORD=eudistack psql -h localhost -U eudistack -d eudistack -c "
+            CREATE TABLE IF NOT EXISTS public.tenant_registry (
+                schema_name   VARCHAR(64)  PRIMARY KEY,
+                display_name  VARCHAR(255) NOT NULL,
+                tenant_type   VARCHAR(20)  NOT NULL DEFAULT 'simple',
+                status        VARCHAR(20)  NOT NULL DEFAULT 'active',
+                created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+                updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
+            );
+            INSERT INTO public.tenant_registry (schema_name, display_name, tenant_type)
+            VALUES ('sandbox', 'EUDIStack Sandbox', 'multi_org')
+            ON CONFLICT (schema_name) DO NOTHING;
+          "
+
+      - name: Run container
+        run: |
+          docker run -d --name wallet-ebw-service \
+            --network host \
+            -e DB_HOST=localhost \
+            -e DB_PORT=5432 \
+            -e DB_NAME=eudistack \
+            -e DB_USERNAME=eudistack \
+            -e DB_PASSWORD=eudistack \
+            -e TRUST_FORWARDED_HOST=true \
+            eudistack-core-wallet-ebw:pr
+
+      # Polls the readiness group, not the aggregate /health: the aggregate
+      # includes SmtpHealthIndicator, which reports DOWN whenever no SMTP
+      # server is reachable (true in this CI container) and would tumble
+      # /health even though the app is fully up — application.yaml's own
+      # comment documents readiness/liveness as the indicators that matter
+      # for pool membership, deliberately excluding smtp.
+      - name: Wait for service health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/business-wallet/health/readiness; then exit 0; fi
+            sleep 2
+          done
+          echo "Service did not become healthy in time"
+          docker logs wallet-ebw-service
+          exit 1
+
+      # Rules file: dev-tools/testing/zap/zap-baseline.conf (this repo), vendored
+      # from eudistack-platform-dev's dev-tools/testing/baseline/zap/zap-baseline.conf
+      # (single source of truth per convention §5.3) — copied here to avoid a
+      # cross-repo read token. Update the source there, then re-copy here.
+      #
+      # TRUST_FORWARDED_HOST=true (above) + ZAP_AUTH_HEADER make X-Tenant: sandbox
+      # actually resolve: TenantDomainWebFilter ignores X-Tenant entirely unless
+      # ebw.security.trust-forwarded-host is enabled (default false).
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        env:
+          ZAP_AUTH_HEADER: X-Tenant
+          ZAP_AUTH_HEADER_VALUE: sandbox
+        with:
+          target: 'http://localhost:8080/business-wallet'
+          rules_file_name: 'dev-tools/testing/zap/zap-baseline.conf'
+          artifact_name: 'zap-report'
+          fail_action: false
+          allow_issue_writing: false
+
+      # The `zap-report` artifact is a ZIP with 90-day retention, so reading it
+      # means downloading it first. Dumping ZAP's markdown report into the job
+      # summary makes it readable on the run page itself, which is what a PR
+      # actually needs. A published HTML report with history belongs to the
+      # nightly authenticated DAST (see the delivery-cycle quality gates), not
+      # to this gate. action-baseline writes report_md.md to GITHUB_WORKSPACE.
+      - name: Publish ZAP report in the job summary
+        if: always()
+        run: |
+          if [ -f report_md.md ]; then
+            {
+              echo '## ZAP DAST Baseline'
+              echo
+              cat report_md.md
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo '## ZAP DAST Baseline'
+              echo
+              echo 'The scan produced no markdown report — check the step above.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # High/Critical gate. `fail_action: false` above deliberately keeps Low and
+      # Informational findings from failing anything — on a passive baseline they
+      # are noise. Anything at riskcode >= 3 fails the job instead: that is what
+      # turns the run red and triggers GitHub's failure notification. ZAP's risk
+      # scale tops out at 3 (High) today, so >= 3 also covers a future Critical.
+      - name: Fail on High/Critical findings
+        if: always()
+        run: |
+          if [ ! -f report_json.json ]; then
+            echo "::warning::No ZAP JSON report to evaluate."
+            exit 0
+          fi
+          high=$(jq '[.site[]?.alerts[]? | select(((.riskcode // "0") | tonumber) >= 3)] | length' report_json.json)
+          echo "High/Critical alerts: ${high}"
+          if [ "${high}" -gt 0 ]; then
+            {
+              echo
+              echo "### Blocking: ${high} High/Critical finding(s)"
+              jq -r '.site[]?.alerts[]? | select(((.riskcode // "0") | tonumber) >= 3) | "- \(.riskdesc) — \(.name) (\(.count) instance(s))"' report_json.json
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::ZAP reported ${high} High/Critical alert(s)."
+            exit 1
+          fi

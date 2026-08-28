@@ -1,4 +1,18 @@
 spring:
+  # Re-enable R2DBC autoconfig for the full integration suite. The base test
+  # application.yml excludes R2dbcAutoConfiguration/R2dbcRepositoriesAutoConfiguration
+  # for the no-DB ApplicationTests.contextLoads() smoke test only; without this
+  # override every @ActiveProfiles("integration") test fails to start its context
+  # because no Spring Data R2DBC repository gets registered.
+  autoconfigure:
+    exclude:
+  # Re-enable Boot's Flyway auto-migration for this profile too. Production disables
+  # it (main application.yaml) because ECS only injects R2DBC creds, not JDBC ones,
+  # and the custom TenantSchemaFlywayMigrator runner handles migrations there instead.
+  # IntegrationTestBase supplies JDBC creds via @DynamicPropertySource specifically so
+  # Boot's own Flyway can migrate the base "ebw" schema before tests run.
+  flyway:
+    enabled: true
   mail:
     host: localhost
     port: 1025
@@ -20,13 +34,16 @@ ebw:
     verify-per-ip: 1000
     refresh-per-ip: 1000
     logout-per-ip: 1000
+    hybrid-sign-per-ip: 1000
     window: 1h
   cors:
     allowed-origins: http://localhost:4200
   security:
     max-payload-size: 65536
-  registration:
-    allowed-email-domains: example.com
+    # Honour the X-Tenant header sent by IntegrationTestBase.addTenantHeader() so
+    # requests resolve to the "integrationtest" tenant schema instead of falling
+    # back to the tenant-less default (see TenantDomainWebFilter).
+    trust-forwarded-host: true
 
 logging:
   level:

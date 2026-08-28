@@ -7,21 +7,177 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **EUD-220 — SBOM CycloneDX and License Gate**: Added CycloneDX 1.6 SBOM generation (`cyclonedxBom`), CI license compliance gate (`license-gate.yml`), and automated SBOM asset attachment to GitHub Releases. The evaluator is vendored at `.github/scripts/license-gate.mjs` with its own `node --test` suite, which the gate workflow runs before evaluating anything: this repository verifies itself without depending on any other one. Free-text upstream license names resolve through a reviewed SPDX equivalence table instead of piling up as expiring exceptions, and the `CODEOWNERS` rules that protect the policy, the exception register and the evaluator sit at the END of the file, because GitHub applies the last matching pattern.
+
+### Added
+
+- **CI — Dependabot para el control de composición de software (SCA)**
+  - Configuración de actualizaciones de seguridad para `gradle`, `github-actions` y las imágenes base de Docker, alineada con `eudistack-core-issuer`. Complementa el escaneo Trivy que ya corre en `pr.yml`: Trivy detecta, Dependabot propone el arreglo.
+
+
 ### Changed - 2026-06-25
 - Updated Netty to 4.1.132.Final to address CVE-2026-33870.
 - Updated Bouncy Castle (bcprov-jdk18on and bcpkix-jdk18on) to version 1.84 to address CVE-2026-0636.
 
-### Added - 2026-06-17
+#### [1.13.0] - 2026-07-24
 
-- **EUDISTACK-534 US-02 — Hybrid onboarding `POST /api/v1/keys/hybrid/onboarding/init`**: returns `{prf_salt, kdf_params, signing_pubkey_envelope_format}` for hybrid tenants. `prf_salt` delegated to `PrfSaltUseCase` (implemented by US-05/EUDISTACK-537; fallback `@ConditionalOnMissingBean` raises 409 until US-05 merges). `holderId` always from DPoP session token — never from request body (AC-01, AC-06).
-- **EUDISTACK-534 US-02 — Hybrid onboarding `POST /api/v1/keys/hybrid/onboarding/commit`**: persists `{wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk}` keyed by `(tenantId, holderId, credentialId)`. Idempotent: identical re-submit → 200 ACK; different blob for same key → 409 `idempotency_replay` (AC-04, AC-07). Validates `wrappedBlob ≥ 48B`, `iv = 12B`, `tag = 16B`, `cnf_jwk` contains no private key parameter `d` (AC-03, ES-01).
-- **EUDISTACK-534 US-02 — `EnrollHolderUseCase`**: application use case for `init` and `commit` flows; enforces holder isolation (AC-06), length invariants, cnf.jwk sanitisation, and idempotency check before insert (AC-07).
-- **EUDISTACK-534 US-02 — `WrappedKeyHandle` domain model**: immutable record with defensive copies for binary fields; `toString()` redacts `wrappedBlob`, `iv`, `tag` (NFR-06). Composite PK `(tenant_id, holder_id, credential_id)` via raw `DatabaseClient` SQL (Spring Data R2DBC composite PK limitation).
-- **EUDISTACK-534 US-02 — `HybridWrappedKeyHandleR2dbcAdapter`**: R2DBC adapter backed by raw `DatabaseClient` SQL for `findBy` and `insert` on `hybrid_wrapped_key_handle`. DDL provided by US-03 (EUDISTACK-535) Flyway migration; tests use a temporary DDL stub.
-- **EUDISTACK-534 US-02 — `PrfSaltUseCase` port**: application interface defining `getOrCreatePrfSalt(tenantId, holderId, credentialId): Mono<byte[]>`; implementation provided by US-05 (EUDISTACK-537).
-- **EUDISTACK-534 US-02 — `HybridOnboardingController`**: WebFlux controller at `/api/v1/keys/hybrid/onboarding`; guarded by `(SERVER, HYBRID)` wallet profile (ES-02).
-- **EUDISTACK-534 US-02 — Exception handlers extended**: `InvalidCommitException` → 400 `invalid_request`; `OnboardingStateException` → 409 `idempotency_replay`; no `wrapped_blob` or `prf_salt` in error responses (NFR-06). Added to `HybridKeyManagerExceptionHandler`.
-- **EUDISTACK-534 US-02 — Integration tests**: `EnrollHolderCommitIT` (201 new, 200 replay, 409 conflict, 400, 403), `EnrollHolderInitIT` (200 with base64url `prf_salt`, 400, 403), `HybridPgDumpNonReconstructionIT` (AC-05/NFR-04: stored blob does not contain plaintext key bytes; no `private`/`plaintext` columns).
+### Added
+
+- **EUD-141 — Retrieve and sync the activity history in server mode**: new `activity` bounded context (hexagonal, following the `WalletCredential` pattern). `WalletActivity` (domain model) + `ActivityType {ISSUED, PRESENTED, DELETED}` enum. `RecordActivityWorkflow.recordActivity(userId, activityId, type, credentialName, counterparty, details, sharedAttributes)`: idempotent recording via `WalletActivityRepository.insertIfAbsent` (PK = client-supplied `id`, `INSERT ... ON CONFLICT (id) DO NOTHING`), with auditing (`AuditService.record`) only on the first insert — a retry or replay of the same event neither duplicates it nor audits it again (EC-01). `ListActivityWorkflow.listActivity(userId)`: holder-scoped, newest-first list, with a server-side `MAX_ENTRIES=200` cap (EC-02). `ActivityController`: `POST`/`GET /api/v1/activity`, `userId` always derived from `JwtAuthenticationToken.getUserId()` (the JWT `sub`) — never from the body or the route (AC-05/AC-06, defense against impersonation, ES-03). Flyway migration `V6__create_wallet_activity.sql`: `wallet_activity` table in the tenant's schema (structural tenant isolation), `(user_id, created_at DESC)` index to serve the list efficiently.
+- **EUD-141 — test coverage**: `RecordActivityWorkflowTest`/`ListActivityWorkflowTest` (unit — idempotency, 200 cap, empty list) and `ActivityControllerIT` (WebTestClient + Testcontainers Postgres) covering recovery after local deletion (AC-01), sync between two devices converging on the same history (AC-02), server as source of truth (AC-03), holder isolation (same tenant, two holders) and cross-tenant isolation (AC-05/AC-06), invalid payload → 400 (missing `id`/`type`/`credentialName`/`counterparty` or unknown `type`, ES-01), no token / invalid token → 401 (ES-02), a forged `id` belonging to another holder ignored with no leak or overwrite (ES-03), and convergence on the 200 most recent entries cap (EC-02).
+
+#### [1.12.5] - 2026-07-24
+
+### Added
+
+- **EUD-104 — backend test coverage for associating a second device to an existing server account**: the register → verify-email → passkeys pipeline already handled this via find-or-create (EUD-103); no new endpoint, `/add-device` was deliberately not built (AD-1). This Story closes the missing test coverage that proves the second-device outcome explicitly and formalizes the boundary against re-auth. New `SecondDeviceAssociationIT` (AC-01/AC-02/AC-04): registers a second passkey for an already-existing account and asserts exactly one `wallet_user` row, ≥2 `user_passkey` rows, and the first device's row untouched. `OnboardingAuditIT` extended with a second-device scenario proving the audit trail (`REGISTRATION_INITIATED`/`USER_AUTHENTICATED`/`PASSKEY_CREATED`) is emitted once per device under the same `actor_id` (NFR-O-104-01). `AuthFlowIntegrationTest#reAuthentication_existingUser_issuesNewTokens` extended with an explicit zero-passkey assertion documenting the EC-04 boundary: re-auth without registering a new passkey must never be mistaken for device association, and does not substitute `SecondDeviceAssociationIT`. New `AuthFlowIntegrationTest#verifyEmail_tooManyWrongAttempts_returns429_neverIssuesTokensOrPasskey` (ES-01): exhausting the 5-attempt OTP budget fails closed (429, no tokens, no passkey), and stays closed even for the correct code afterwards. New `RegisterTenantIsolationIT` (ES-04): the same email registered from two different tenants produces two fully independent accounts with no passkey leakage between schemas — proves the register/verify/passkeys pipeline itself is tenant-isolated, not just already-created passkeys (the existing `PasskeyIsolationIT`/`PasskeyRevocationIsolationIT` only cover `GET`/`DELETE`). `RegisterAntiEnumerationIT` (AC-05), `PasskeyFlowIntegrationTest#duplicateCredentialId_returns409` (EC-03), and `RegisterRateLimitIT` (ES-03) re-verified green as regressions — no code changes needed.
+
+#### [1.12.4] - 2026-07-22
+
+### Added
+
+- EUDISTACK-540 — hybrid adapter audit: 5 `change_kind` events (`wrap.completed`, `constraint.accepted`, `unwrap.sign.completed`, `unwrap.failed`, `onboarding.blocked.prf.unsupported`) wired into `KeyAuditPort`/CloudWatch, each carrying the current OTEL trace id as `correlation_id`.
+- ArchUnit + domain test coverage for the audit event model and hexagonal layering (`KeyManagerArchitectureTest`, `KeyAuditEventTest`, shared `KeyAuditEventAssertions` helper asserting no sensitive data leaks into audit payloads).
+
+### Fixed
+
+- `KeyAuditCloudWatchAdapter` crashed the whole application on startup whenever AWS credentials/region couldn't be resolved — now catches `SdkException` (not just the narrower `CloudWatchLogsException`), so it logs and degrades gracefully instead of taking down the service.
+- Removed a `.block()` call inside `flushRemaining()` (WebFlux reactive-chain rule).
+- Deduplicated the repeated hybrid wallet-profile guard across `HybridKeyManagerController`/`HybridOnboardingController` into a single `requireHybridProfile` check.
+- Reconciled with `main`'s PRF-detection-gate (`/onboarding/block`) so it also records the `onboarding.blocked.prf.unsupported` audit event before erroring.
+
+#### [1.12.3] - 2026-07-13
+
+### Added - 2026-07-13
+
+- **EUD-144 — backend test coverage for `DELETE /api/v1/auth/passkeys/{id}` (revoke device / delete passkey)**: `DeletePasskeyWorkflow` already implemented the full business logic (anti cross-account resolution, last-passkey guard, refresh-token revocation before delete, audit event) — this Story closes the missing test coverage, without changing its behaviour. `PasskeyControllerIT` extended with the `DELETE` contract (204 happy path, 401 with no/invalid token, 404 for a nonexistent or not-owned passkey, 409 on the account's last passkey). New `DeletePasskeyWorkflowIT`: asserts `refresh_token.revoked = true` for the deleted passkey's tokens (and only those — a token tied to a different passkey is left untouched), the `user_passkey` row is actually gone, and a `PASSKEY_DELETED` event is written to `audit_log` (AC-03/AC-04/AC-07). New `PasskeyRevocationIsolationIT`: account A cannot delete account B's passkey, whether B is in the same tenant or a different one — even when both accounts share the same `userId` value, proving isolation comes from the schema-per-tenant boundary rather than `userId` equality (AC-05); and the response for "passkey doesn't exist" vs. "passkey belongs to someone else" is indistinguishable on every field but `instance` (anti-enumeration, ES-02).
+- All three suites are self-contained (own Testcontainers + Flyway migrated directly to a real tenant schema), following the same pattern as `PasskeyIsolationIT` (EUD-143) rather than extending `IntegrationTestBase` — sidesteps the multi-tenant migration gap noted in EUD-103.
+
+#### [1.12.2] - 2026-07-10
+
+### Added - 2026-07-10
+
+- **EUD-103 — `REGISTRATION_INITIATED` audit event**: `RegisterWorkflow` now records a `REGISTRATION_INITIATED` audit event after the find-or-create step, with minimal metadata and identical timing/shape whether the email was already registered or not — closes the audit gap without weakening anti-enumeration (AC-04). Together with the existing `USER_AUTHENTICATED`/`PASSKEY_CREATED` events, the full onboarding funnel is now traceable in `audit_log` (NFR-S-103-01).
+- **EUD-103 — backend test coverage for the server-mode onboarding flow**: `RegisterAntiEnumerationIT` (identical `POST /register` response for an existing vs. a new email, AC-04), `RegisterPasskeyFlowIT` (verify → register passkey with an edited `displayName` → account + passkey persisted, AC-01/AC-05), `OnboardingAuditIT` (all three audit events present after a full onboarding run, NFR-S-103-01), `RegisterRateLimitIT` (429 + `Retry-After` on both the per-email and per-origin dimensions, AC-06/NFR-S-103-02), and an extra no-duplicate-account assertion added to `AuthFlowIntegrationTest#reAuthentication_existingUser_issuesNewTokens` (AC-02). This flow previously had integration coverage for the happy path only.
+
+### Fixed - 2026-07-10
+
+- **`RateLimitWebFilter` returned 500 instead of 429 when the per-IP limit was exceeded, on all four rate-limited auth endpoints** (`/register`, `/verify-email`, `/refresh`, `/logout`): `RateLimitExceededException` was thrown from a `WebFilter`, which runs outside `@ControllerAdvice`'s exception-handling scope, so `GlobalExceptionHandler`'s existing 429 mapping never saw it and the request fell through to the default 500 handler. The filter now catches the exception itself and writes the 429 response (same `ProblemDetail` shape + `Retry-After` header as the email-based limiter) directly. Found while writing `RegisterRateLimitIT` for EUD-103, which only exercises `/register` — **`/verify-email`, `/refresh` and `/logout` still have no test coverage for their per-IP limit**, follow-up recommended.
+- **`RegisterWorkflow` sent the OTP email even when the per-email rate limit had just rejected the request**: `otpService.generateAndSend(email)` was passed as a direct argument to `.then(...)`, so it was invoked eagerly while assembling the reactive chain rather than lazily on subscription — the call fired regardless of whether the upstream rate-limit check would end up erroring. Wrapped in `Mono.defer(...)` so it only runs once the chain actually reaches that step. No user-visible effect with the current (lazy, Mono-returning) `EmailSender`, but was a latent side-effect-ordering bug and made `RegisterRateLimitIT`'s "no further OTP sent" assertion (AC-06) fail against a mocked sender, whose stub answer runs synchronously on invocation rather than on subscription.
+
+### Fixed - 2026-07-09
+
+- **`integration/` test package broken since the schema-per-tenant migration (EUDISTACK-480/412)**: `IntegrationTestBase` and its six subclasses (`AuthFlowIntegrationTest`, `PasskeyFlowIntegrationTest`, `CredentialCrudIntegrationTest`, `CredentialFilterSecurityIntegrationTest`, `CredentialAuditIntegrationTest`, `CredentialRepositoryInsertUpdateIntegrationTest`) predated the move to schema-per-tenant and could not even start their Spring context. Root causes and fixes:
+  - `src/test/resources/application.yml` excludes `R2dbcAutoConfiguration`/`R2dbcRepositoriesAutoConfiguration`/`spring.flyway.enabled` for the no-DB `ApplicationTests.contextLoads()` smoke test only, but the exclusion leaked into every `@ActiveProfiles("integration")` test since nothing overrode it. `application-integration.yaml` now re-enables both.
+  - `IntegrationTestBase` never provisioned a tenant schema or resolved a tenant on its requests, so every query fell back to the tenant-less default where `wallet_user`/`wallet_credential`/etc. no longer exist. It now provisions a fixed `integrationtest_business_wallet` schema (Flyway `db/tenant` migrations) at static init and sends an `X-Tenant` header on every request (`ebw.security.trust-forwarded-host: true` added to the integration profile so the header is honoured).
+  - `CredentialAuditIntegrationTest` and `CredentialRepositoryInsertUpdateIntegrationTest` issued raw SQL/repository calls hardcoded to the legacy single-schema `ebw.` prefix, bypassing the tenant-resolution web filter entirely; both now target the unqualified table name and supply the tenant explicitly via `contextWrite`.
+  - `CredentialFilterSecurityIntegrationTest#filter_doesNotLeakOtherUsersCredentials`: fixed a typo (`/api/credentials` → `/api/v1/credentials`) that made 5 of its assertions fail on 404 instead of exercising the intended cross-user leak check.
+  - `CredentialController#store`: the `Location` header on `POST /api/v1/credentials` pointed to `/api/credentials/{id}` (missing `/v1`), inconsistent with the actually mapped route.
+  - Removed `AuthFlowIntegrationTest#register_disallowedDomain_returns400_andNoOtpSent` and the orphaned `ebw.registration.allowed-email-domains` test property: the `@AllowedEmailDomain` validator they exercised was intentionally deleted in commit `9d8d209` (tenant-config migration) and never reimplemented — this was stale test coverage for a removed feature, not a regression.
+
+### Fixed - 2026-07-06
+
+- **EUDISTACK-536 US-04 — `signing_input` payload contract corrected** (architecture.md §6.2): `PrepareSignUseCase.buildSigningInput` reconstructed the KB-JWT/VP payload server-side from `vpChallenge` alone (`{nonce, iat}`), producing a KB-JWT invalid per RFC 9901 §4.1.2 (missing `aud`/`sd_hash` — the EBW has no visibility into the in-browser OID4VP session needed to build them). `PrepareSignRequest.vpChallenge` → `payload: Map<String,Object>`, the full presentation payload assembled client-side by the Wallet PWA's OID4VP engine; the EBW treats it as opaque and only prepends the canonical JWS header per `format` (`kb+jwt` for `vc+sd-jwt`, `vp+jwt`+`cty:vp`+`jwk`+`kid` for `jwt_vc_json`, matching `KbJwtSigner`/`VpEnvelopeSigner` in `db` mode).
+- **`wallet_credential.holder_key_id` overflow for hybrid tenants**: widened `VARCHAR(36)` → `VARCHAR(512)` (migration `V5`, no FK, backward-compatible) — hybrid has no server-side `holder_key` row, so the Wallet PWA stores the real `credential_id` there instead of a UUID, which didn't fit.
+
+### Security - 2026-07-06
+
+- **Full request headers (incl. `Authorization`/`DPoP` bearer tokens) logged to stdout on every POST request**: removed the two `System.out.println` calls in `RateLimitWebFilter.resolveIp` — they ran unconditionally ahead of the endpoint-specific rate-limit switch, so every POST across the whole app (not just auth) leaked its full header map to CloudWatch.
+- **Hybrid signing/onboarding endpoints had no rate limiting**: `RateLimitWebFilter`'s switch only covered `/api/v1/auth/*`. Added a coarse per-IP limit (`ebw.rate-limit.hybrid-sign-per-ip`, default 30/hour) covering `/api/v1/keys/hybrid/{onboarding/init,onboarding/commit,sign/prepare,sign/submit}`. True per-holder limiting would need the DPoP JWT already parsed, which happens downstream of this filter — tracked as a follow-up.
+- **`PrepareSignRequest.payload`/`credential_id` had no structural bounds**: added `@Size(max = 20)` (claim-count ceiling) on `payload` and an allowlist `@Pattern` on `credential_id`, on top of the existing global request-body size filter.
+- **`SubmitSignedUseCase` did not cross-check `credential_id`**: the pinned session (keyed by `correlation_id`) is authoritative regardless — the signature is verified against `prepared.signingInput()`, never against the request's `credential_id` — but a client echoing the wrong `credential_id` for a given `correlation_id` now fails loudly (`invalid_request`) instead of silently proceeding against the pinned session.
+
+## [1.12.1] - 2026-07-03
+
+### Added - 2026-07-01
+
+- **EUD-143 — `PasskeyControllerIT`**: integration tests for the `GET /api/v1/auth/passkeys` contract — 200 with the full passkey list (AC-01); each entry exposes `displayName`/`createdAt`/`lastUsedAt` (AC-02); `lastUsedAt` null is returned explicitly instead of erroring (EC-02); stable result order `last_used_at DESC NULLS LAST, created_at DESC` (EC-04); 401 with no Authorization header or an invalid token, with no passkey data leaked (ES-01).
+- **EUD-143 — `PasskeyIsolationIT`**: integration tests proving account- and tenant-level isolation — a holder never receives another account's devices, whether that account is in the same tenant or a different one (AC-04); the list is resolved solely from the token identity, request parameters cannot influence the target account, and no existence/count of another account's devices is leaked (ES-05).
+
+### Fixed - 2026-07-01
+
+- **EUD-143 — `UserPasskeyR2dbcRepository` non-deterministic list order**: added explicit `ORDER BY last_used_at DESC NULLS LAST, created_at DESC` to `SpringUserPasskeyRepository.findByUserId`, replacing the Spring Data derived query which carried no ordering guarantee (EC-04).
+- **EUD-143 — `ListPasskeysWorkflow` order lost via `flatMap`**: switched `Flux.flatMap` to `Flux.concatMap` when enriching each passkey with its active-session count. `flatMap` does not preserve source ordering under concurrent completion, silently undoing the repository-level `ORDER BY` (EC-04).
+
+### Added - 2026-06-25
+- **EUDISTACK-359 US-07:**
+  - Added hybrid onboarding block endpoint.
+  - Added `PrfUnsupportedException` and HTTP 422 (`prf_unsupported`) error handling.
+  - Rejected onboarding requests for hybrid tenants when PRF support is unavailable.
+  - Prevented hybrid onboarding from continuing when PRF support validation fails.
+
+## [1.12.0] - 2026-06-30
+
+### Added - 2026-06-30
+
+- **EUDISTACK-541 US-09 — `HybridHealthContributor`**: per-tenant Actuator health indicator for the hybrid key manager, exposing `prf_gate_pass_rate`, `wrap_handles_total` and `salt_coherent` under `/health`. Resolves hybrid-ness per request via `WalletProfileQueryPort` (no global toggle); non-hybrid tenants get a neutral UP.
+- **EUDISTACK-541 US-09 — `HybridKeyManagerTelemetry`**: Micrometer counters/gauge/timer for the hybrid adapter (PRF gate attempts/passes, per-tenant wrap-handle gauge, sign latency/errors).
+- **EUDISTACK-541 US-09 — `WrappedKeyHandleRepository.count()` / `.countOrphaned()`**: backs `wrap_handles_total` and a real FK-coherence check against `hybrid_prf_salt` (defense-in-depth on top of the `fk_hwkh_prf_salt` constraint from US-03).
+
+### Fixed - 2026-06-30
+
+- **EUDISTACK-541 US-09 — tenant-scoped metrics**: `prf_gate_pass_rate` and the wrap-handles gauge were aggregated globally across all tenants; now filtered/tagged by the resolved tenant.
+- **EUDISTACK-541 US-09 — tenant resolution error handling**: a genuine `WalletProfileQueryPort` failure was swallowed into a neutral UP; now only `TenantUnknownException` is treated as "not applicable", other errors report DOWN.
+
+## [1.11.0] - 2026-06-29
+
+### Added - 2026-06-29
+
+- **EUDISTACK-535 US-03 — Flyway migration `V4__create_hybrid_wrapped_key_handle.sql`**: creates `hybrid_wrapped_key_handle` tenant table with composite PK `(holder_id, credential_id)`, FK `holder_id → wallet_user(id)` ON DELETE RESTRICT, composite FK `(holder_id, credential_id) → hybrid_prf_salt(holder_id, credential_id)` enforcing referential integrity with US-05, column `cnf_jwk TEXT NOT NULL` (public confirmation JWK — no private key column), cryptographic columns `wrapped_blob BYTEA`, `iv BYTEA`, `tag BYTEA` with CHECK constraints (≥48 B, =12 B, =16 B respectively), and `kdf_algo/kdf_version` metadata. ACL: column-level `GRANT SELECT, INSERT` + `GRANT UPDATE (last_used_at)` only — no table-level UPDATE, no DELETE (no-custody invariant, FR-06/07, AC-01/02/03). GRANT statements are idempotent via `DO $$ BEGIN … EXCEPTION WHEN undefined_object THEN NULL; END $$`.
+- **EUDISTACK-535 US-03 — `HybridWrappedKeyHandleColumnAllowlistTest`**: static CI guard (no DB) parsing `V4__create_hybrid_wrapped_key_handle.sql` from classpath. Asserts ALLOW_LIST contains exactly `{holder_id, credential_id, wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk, created_at, last_used_at}` and that no column matches DENY_PATTERNS (`*_plain*`, `private_key*`, `wrap_key*`, `secret*`, etc.) — enforces no-custody invariant at diff time (FR-08, AC-03).
+- **EUDISTACK-535 US-03 — `HybridWrappedKeyHandleSchemaIT`**: integration test verifying table structure post-migration — expected columns/types, NOT NULL constraints, DEFAULT expressions, composite PK, FK to `wallet_user`, and composite FK to `hybrid_prf_salt` (AC-01, AC-02, AC-05).
+- **EUDISTACK-535 US-03 — `HybridWrappedKeyHandleConstraintIT`**: integration test for CHECK and NOT NULL constraints — rejects `wrapped_blob` < 48 B, `iv` ≠ 12 B, `tag` ≠ 16 B (including new W2 `tag` = 15 B case); duplicate composite PK insert returns SQLSTATE 23505 (AC-01, AC-02, AC-03).
+- **EUDISTACK-535 US-03 — `HybridWrappedKeyHandleAclIT`**: integration test connecting as `ebw_app_role` (via `ebw_app_user_acl` login user) — asserts INSERT + `UPDATE last_used_at` succeed; DELETE and full-row UPDATE are rejected; unprivileged login without `ebw_app_role` membership is denied (SQLSTATE 42501 or 42P01) confirming `REVOKE ALL FROM PUBLIC` baseline (AC-04, NFR-S-535-03).
+- **EUDISTACK-535 US-03 — `HybridWrappedKeyHandleFkIT`**: integration test for FK constraints — INSERT with non-existent `holder_id` → 23503; DELETE of referenced `wallet_user` → 23503 ON DELETE RESTRICT; INSERT without matching `hybrid_prf_salt` row → 23503 composite FK (AC-05, ES-02).
+- **EUDISTACK-535 US-03 — `HybridMultiTenantIsolationIT`**: integration test verifying schema-per-tenant isolation — schema A context cannot read schema B rows and vice versa, combined count confirms no cross-schema leakage (AC-06, NFR-S-535-04).
+- **EUDISTACK-535 US-03 — `HybridPgDumpNonReconstructionIT`**: integration test using real Flyway V1-V4 migration and `pg_dump` via `execInContainer`. Verifies `wrapped_blob` column does not contain simulated plaintext marker; 100-holder volume test confirms no plaintext leak at scale; composite PK lookup verified to use Index Scan via EXPLAIN (FR-07, FR-08, EC-03, AC-01/02/03).
+
+### Fixed - 2026-06-29
+
+- **EUDISTACK-535 US-03 — `V4__create_hybrid_wrapped_key_handle.sql` PUBLIC revoke**: added `REVOKE ALL ON hybrid_wrapped_key_handle FROM PUBLIC;` immediately after the `CREATE TABLE` statement, matching the V1/V3 least-privilege pattern. Without this line PostgreSQL default grants read access to `PUBLIC`, violating the ACL baseline (AC-04, NFR-S-535-03, AD-1).
+- **EUDISTACK-535 US-03 — `HybridWrappedKeyHandleR2dbcAdapter` UUID binding**: corrected R2DBC parameter binding to use `UUID.fromString(holderId)` (instead of raw `String`) for both `SELECT` and `INSERT` on the `holder_id UUID` column. Row mapping also updated to read `holder_id` as `UUID.class`. Binding a `String` to a `UUID` column caused `BadSqlGrammarException` at runtime once the V4 Flyway migration replaced the US-02 stub table's `TEXT` column with the correct `UUID` type (AC-04, AC-06).
+
+## [1.10.2] - 2026-06-29
+
+### Added - 2026-06-22
+
+- **EUDISTACK-538 US-06 — `POST /api/v1/keys/hybrid/constraint-accepted`**: records hybrid_constraint_accepted audit event when the holder accepts the multi-device constraint. Returns 204; 403 opaque for non-HYBRID tenants. actorId always from JWT, never from body.
+
+### Added - 2026-06-26
+
+- **EUDISTACK-536 US-04 — `PreparedSignStore` port + `CaffeinePreparedSignStore` adapter**: Caffeine in-process correlation store (TTL 5 min, MAX_SIZE 100 k) tracking `{signingInput, cnfJwk, holderId, credentialId}` per `correlationId`. `putPending` is idempotent (`putIfAbsent`). `markResolved` stores the final `kb_jwt` so `submit` replays are served without re-verifying the signature (EC-03, NFR-S-536-01). Single-instance caveat documented in code — see EUDISTACK-68 for shared-store milestone.
+- **EUDISTACK-536 US-04 — `PrepareSignUseCase`**: resolves PRF salt (`PrfSaltUseCase.getForHolder`) and wrapped-key handle (`WrappedKeyHandleRepository.findBy`) concurrently via `Mono.zip`; builds `kb_jwt` `signing_input = headerB64.payloadB64` with a `kb+jwt`-typed JWSHeader; encodes all material as base64url; generates UUID v4 `correlation_id` and stores `PreparedSign` via `PreparedSignStore.putPending`. Holder ID never read from request body — always from Reactor context (ES-04). 100% non-blocking (NFR-S-536-02).
+- **EUDISTACK-536 US-04 — `SubmitSignedUseCase`**: resolves `PreparedSign` from store by `correlationId`; enforces holder isolation (stored `holderId` vs context `holderId` → 403 on mismatch, AC-08, ES-04); verifies raw ES256 signature against `cnf.jwk` via Nimbus `ECKey` + `ECDSAVerifier`; assembles `kb_jwt = signingInput + "." + base64url(signature)`; calls `store.markResolved` on success. Invalid sig → `SignatureInvalidException` (400 `signature_invalid`, ES-03); unknown/expired `correlationId` → `InvalidSignatureSubmissionException` (400 `invalid_request`, ES-01); idempotent replay → cached `kb_jwt` without re-verification (EC-03).
+- **EUDISTACK-536 US-04 — `InvalidSignatureSubmissionException`**: new domain exception (400 `invalid_request`) for unknown/expired `correlation_id` or malformed JWS encoding, distinct from `SignatureInvalidException` (400 `signature_invalid`) for cryptographic failures. Mapped in `HybridKeyManagerExceptionHandler`.
+- **EUDISTACK-536 US-04 — `HybridSignTelemetry`**: OTEL spans (`hybrid.sign.prepare`, `hybrid.sign.submit`) with `correlation_id` tag; Micrometer counter `hybrid_sign_total` (tags: `operation`, `result`) and timer `hybrid_sign_latency_ms`. Holder ID hashed (SHA-256, 12-char hex prefix) before any log/metric emission (NFR-S-536-04). Error classifier maps exception type to `signature_invalid` / `not_found` / `forbidden` / `error`.
+- **EUDISTACK-536 US-04 — `HybridKeyManagerAdapter` wired**: replaced `prepareSign` and `submitSignedAssertion` stubs with delegation to `PrepareSignUseCase` and `SubmitSignedUseCase` via `Mono.deferContextual` (context-safe telemetry capture). `holderId` threaded from controller Reactor context; telemetry hooks attached as `doOnSuccess`/`doOnError`.
+- **EUDISTACK-536 US-04 — Controller `holderId` wiring**: `HybridKeyManagerController.prepare()` and `submit()` now accept `JwtAuthenticationToken auth`; `holderId = auth.getUserId().toString()` is extracted synchronously and written into the Reactor context via `.contextWrite(ctx → ctx.put(HOLDER_ID, holderId))`. `holderId` is never read from request body (ES-04, spec invariant).
+- **EUDISTACK-536 US-04 — Tests (unit)**: `PrepareSignUseCaseTest` (8 tests — happy path, base64url encoding, signing_input format, store interaction, UUID format, not-found, isolation, DB failure); `SubmitSignedUseCaseTest` (6 tests — real P-256 crypto, valid sig, markResolved, idempotent replay without re-verification, unknown correlationId, holder mismatch, wrong-key forgery); `HybridKeyManagerAdapterTest` updated (7 tests).
+- **EUDISTACK-536 US-04 — Tests (integration)**: `PrepareSignIT` (9 tests — AC-01 full response fields, signing_input format, UUID correlationId, ES-02 db-tenant 403, ES-01 missing field 400, AC-08 isolation 403, not-found 404, NFR-S-536-03 no-leak); `SubmitSignedAssertionIT` (6 tests — AC-02 valid sig 200 + kb_jwt, EC-03 idempotent replay, ES-01 unknown correlationId 400, ES-03 wrong-key 400 `signature_invalid`, ES-04/AC-08 cross-holder 403, NFR-S-536-03 no-leak in error body).
+
+## [1.10.1] - 2026-06-25
+
+### Fixed - 2026-06-25
+
+- **EUDISTACK-537 code-review fixes — bean wiring**: removed `@Service` from `PrfSaltService` (prevents double-registration with the explicit `@Bean` in `KeyManagerConfiguration`); added `@Primary` to `prfSaltService` `@Bean`; removed the stale `prfSaltUseCaseNotYetAvailable` `@ConditionalOnMissingBean` stub (US-02→US-05 bridge no longer needed).
+- **EUDISTACK-537 code-review fixes — duplicate-key swallow**: narrowed `onErrorResume(DataIntegrityViolationException.class, …)` in `PrfSaltRepository.insert` to only swallow SQLSTATE `23505` (`unique_violation`). FK violations (`23503`) and CHECK violations (`23514`) now propagate as typed errors. Added `isUniqueViolation()` helper; new unit test asserts FK propagation path is not silently suppressed.
+- **EUDISTACK-537 code-review fixes — lazy reactive assembly**: wrapped `generateAndInsert` and `resolveAbsence` in `Mono.defer(…)` in `PrfSaltService`. CSPRNG `nextBytes` and `countByCredential` now execute only on a real cache miss, not on every call. Hit-path unit tests tightened with `verify(…, never())` assertions.
+- **EUDISTACK-537 code-review fixes — redundant `created_at` bind**: removed `:createdAt` parameter and `created_at` column from `INSERT_SQL` in `PrfSaltRepository`; DDL `DEFAULT NOW()` is the single source for timestamp.
+- **EUDISTACK-537 code-review fixes — credentialId logging**: replaced `credentialId.hashCode()` with `credentialId` in all `PrfSaltService` log statements. Per AC-06, `credential_id` may appear in logs; `prf_salt` and `holder_id` remain absent.
+- **EUDISTACK-537 code-review fixes — `salt_coherent` health indicator**: removed tautological `GROUP BY (holder_id, credential_id) HAVING COUNT(*) > 1` query (PK guarantee makes this condition structurally unreachable). Replaced with a table-reachability probe. Added no-tenant-context guard: when `HybridHealthContributor` is invoked without a tenant domain in Reactor context (e.g. Actuator background polls), it returns `UP` with a note instead of a misleading `DOWN`. Full per-tenant coherence (detecting credentials without a salt row) is delegated to EUDISTACK-541 (US-09) per architecture §5.4. Updated `HybridHealthSaltCoherentIT`: removed the artificial PK-drop duplicate test; added no-false-DOWN assertion for no-context invocation.
+- **EUDISTACK-537 code-review fixes — HTTP-layer isolation test**: added `PrfSaltIsolationIT` (`@WebFluxTest` + test-only stub `@RestController`) asserting that cross-holder access returns 403 `holder_isolation_violation` and absent credential returns 404, with no `prf_salt` or `holder_id` in any error response body (NFR-S-537-01/02, AC-04, AC-06, ES-04).
+
+### Added - 2026-06-19
+
+- **EUDISTACK-537 US-05 — Flyway migration `V3__create_hybrid_prf_salt.sql`**: creates `hybrid_prf_salt` tenant table with composite PK `(holder_id, credential_id)`, FK `holder_id → wallet_user(id)` ON DELETE RESTRICT, `prf_salt BYTEA NOT NULL` with CHECK `octet_length(prf_salt) = 32`, and `created_at TIMESTAMPTZ`. ACL `SELECT, INSERT` only — no `UPDATE/DELETE` grant (immutability invariant AD-3, NFR-S-537-04). Ordered before US-03 migration (R-4).
+- **EUDISTACK-537 US-05 — `PrfSaltPort`**: outgoing application port with `findBy`, `insert`, and `countByCredential` — all reactive `Mono<…>`.
+- **EUDISTACK-537 US-05 — `PrfSaltRepository`**: R2DBC adapter implementing `PrfSaltPort` via raw `DatabaseClient` SQL (composite PK). Duplicate-key on `insert` is silently swallowed (get-or-create concurrency, EC-03). Path 100% non-blocking (NFR-S-537-05).
+- **EUDISTACK-537 US-05 — `PrfSaltService`**: `@Service` implementing `PrfSaltUseCase` (defined by US-02). `getOrCreatePrfSalt`: get-or-create — SELECT → miss → CSPRNG 32B → INSERT → re-SELECT (idempotent, EC-01, EC-03). `getForHolder`: read-only with holder isolation — absent + count=0 → `PrfSaltNotFoundException` 404; absent + count>0 → `HolderIsolationViolationException` 403 (AC-04, ES-02, ES-04).
+- **EUDISTACK-537 US-05 — `PrfSaltNotFoundException` + `HolderIsolationViolationException`**: typed domain exceptions mapping to `wrap_handle_not_found` 404 and `holder_isolation_violation` 403 respectively (architecture.md §8.3). `HolderIsolationViolationException` fills gap from US-01 (EUDISTACK-533). Handler mappings added to `HybridKeyManagerExceptionHandler`; no `prf_salt` in any error response.
+- **EUDISTACK-537 US-05 — `HybridHealthContributor`**: Spring Boot Actuator `ReactiveHealthIndicator` with `salt_coherent` detail. Queries `hybrid_prf_salt` for duplicate `(holder_id, credential_id)` pairs (coherence check); reports `UP/true` when clean, `DOWN/false` on violations. No `prf_salt` bytes or `holder_id` values in the health response (AC-08, NFR-S-537-01).
+- **EUDISTACK-537 US-05 — Invariante R-5 (dueña del test)**: `PrfSaltFkInvariantIT` verifies that every `holder_id` in `hybrid_prf_salt` is a UUID v4 opaque `wallet_user.id`; INSERT with non-existent `holder_id` → FK violation; PII-like values rejected (AC-07, NFR-S-537-03).
 
 ### Added - 2026-06-16
 

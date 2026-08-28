@@ -4,13 +4,14 @@ plugins {
     id 'io.spring.dependency-management' version '1.1.7'
     id 'jacoco'
     id 'checkstyle'
-    id 'org.owasp.dependencycheck' version '12.2.0'
+    id 'org.sonarqube' version '7.2.2.6593'
     id 'com.github.ben-manes.versions' version '0.53.0'
     id 'se.patrikerdes.use-latest-versions' version '0.2.19'
+    id 'org.cyclonedx.bom' version '2.2.0'
 }
 
 group = 'com.eudistack'
-version = '1.9.0'
+version = '1.13.1'
 ext['netty.version'] = '4.1.132.Final'
 
 java {
@@ -89,6 +90,27 @@ dependencies {
 }
 
 // --- Quality & CI ---
+
+cyclonedxBom {
+    includeConfigs = ['runtimeClasspath']
+    schemaVersion = '1.6'
+    destination = project.file('build/reports/sbom')
+    outputName = 'sbom'
+    outputFormat = 'json'
+    includeBomSerialNumber = false
+    includeLicenseText = false
+}
+
+sonar {
+    properties {
+        property 'sonar.projectKey', 'in2workspace_eudistack-core-wallet-ebw'
+        property 'sonar.organization', 'in2workspace'
+        property 'sonar.host.url', 'https://sonarcloud.io'
+        property 'sonar.sources', 'src/main/java,src/main/resources'
+        property 'sonar.exclusions', 'src/main/resources/**/*.sql'
+        property 'sonar.coverage.jacoco.xmlReportPaths', 'build/reports/jacoco/test/jacocoTestReport.xml'
+    }
+}
 
 checkstyle {
     toolVersion = '10.16.0'

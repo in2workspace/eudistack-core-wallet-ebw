@@ -6,11 +6,20 @@ import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitResponse;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEventAssertions;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
+import com.eudistack.ebw.keymanager.domain.port.HybridKeyManagerTelemetryPort;
+import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.TraceContext;
+import io.micrometer.tracing.Tracer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
@@ -23,6 +32,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -52,15 +62,24 @@ class EnrollHolderUseCaseTest {
     private static final String IV_B64   = Base64.getUrlEncoder().withoutPadding().encodeToString(IV_BYTES);
     private static final String TAG_B64  = Base64.getUrlEncoder().withoutPadding().encodeToString(TAG_BYTES);
     private static final String CNF_JWK  = "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"abc\",\"y\":\"def\"}";
+    private static final String TRACE_ID = "trace-id-1";
 
     @Mock private PrfSaltUseCase prfSaltUseCase;
     @Mock private WrappedKeyHandleRepository repository;
+    @Mock private HybridKeyManagerTelemetryPort telemetry;
+    @Mock private KeyAuditPort auditPort;
+    @Mock private Tracer tracer;
+    @Mock private Span span;
+    @Mock private TraceContext traceContext;
 
-    private EnrollHolderUseCase useCase;
+    @InjectMocks private EnrollHolderUseCase useCase;
 
     @BeforeEach
     void setUp() {
-        useCase = new EnrollHolderUseCase(prfSaltUseCase, repository);
+        lenient().when(auditPort.emit(any())).thenReturn(Mono.empty());
+        lenient().when(tracer.currentSpan()).thenReturn(span);
+        lenient().when(span.context()).thenReturn(traceContext);
+        lenient().when(traceContext.traceId()).thenReturn(TRACE_ID);
     }
 
     // ------------------------------------------------------------------ init
@@ -102,7 +121,7 @@ class EnrollHolderUseCaseTest {
         when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.empty()));
         when(repository.insert(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(useCase.commit(HOLDER, validCommitRequest()))
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
                 .assertNext(response -> assertThat(response.credentialId()).isEqualTo(CRED_ID))
                 .verifyComplete();
 
@@ -116,7 +135,7 @@ class EnrollHolderUseCaseTest {
         when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.empty()));
         when(repository.insert(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(useCase.commit(HOLDER, validCommitRequest()))
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
                 .assertNext(r -> assertThat(r.credentialId()).isEqualTo(CRED_ID))
                 .verifyComplete();
 
@@ -133,7 +152,7 @@ class EnrollHolderUseCaseTest {
         WrappedKeyHandle existing = existingHandle(BLOB_BYTES, IV_BYTES, TAG_BYTES);
         when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.of(existing)));
 
-        StepVerifier.create(useCase.commit(HOLDER, validCommitRequest()))
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
                 .assertNext(response -> assertThat(response.credentialId()).isEqualTo(CRED_ID))
                 .verifyComplete();
 
@@ -147,7 +166,7 @@ class EnrollHolderUseCaseTest {
         WrappedKeyHandle existing = existingHandle(differentBlob, IV_BYTES, TAG_BYTES);
         when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.of(existing)));
 
-        StepVerifier.create(useCase.commit(HOLDER, validCommitRequest()))
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
                 .expectError(OnboardingStateException.class)
                 .verify();
 
@@ -161,7 +180,7 @@ class EnrollHolderUseCaseTest {
         byte[] shortBlob = new byte[47];
         String shortBlobB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(shortBlob);
 
-        StepVerifier.create(useCase.commit(HOLDER,
+        StepVerifier.create(useCase.commit(TENANT, HOLDER,
                 new EnrollHolderCommitRequest(CRED_ID, shortBlobB64, IV_B64, TAG_B64,
                         "HKDF-SHA-256", 1, CNF_JWK)))
                 .expectError(InvalidCommitException.class)
@@ -175,7 +194,7 @@ class EnrollHolderUseCaseTest {
         byte[] wrongIv = new byte[11];
         String wrongIvB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(wrongIv);
 
-        StepVerifier.create(useCase.commit(HOLDER,
+        StepVerifier.create(useCase.commit(TENANT, HOLDER,
                 new EnrollHolderCommitRequest(CRED_ID, BLOB_B64, wrongIvB64, TAG_B64,
                         "HKDF-SHA-256", 1, CNF_JWK)))
                 .expectError(InvalidCommitException.class)
@@ -187,7 +206,7 @@ class EnrollHolderUseCaseTest {
         byte[] wrongTag = new byte[15];
         String wrongTagB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(wrongTag);
 
-        StepVerifier.create(useCase.commit(HOLDER,
+        StepVerifier.create(useCase.commit(TENANT, HOLDER,
                 new EnrollHolderCommitRequest(CRED_ID, BLOB_B64, IV_B64, wrongTagB64,
                         "HKDF-SHA-256", 1, CNF_JWK)))
                 .expectError(InvalidCommitException.class)
@@ -199,10 +218,133 @@ class EnrollHolderUseCaseTest {
 
     @Test
     void commit_invalidBase64url_throwsInvalidCommitException() {
-        StepVerifier.create(useCase.commit(HOLDER,
+        StepVerifier.create(useCase.commit(TENANT, HOLDER,
                 new EnrollHolderCommitRequest(CRED_ID, "not-valid-base64!!!", IV_B64, TAG_B64,
                         "HKDF-SHA-256", 1, CNF_JWK)))
                 .expectError(InvalidCommitException.class)
+                .verify();
+    }
+
+    // --------------------------------------------------------------- commit: audit (F2 — NIS2 non-repudiation)
+
+    @Test
+    void commit_newHandle_emitsWrapCompletedAuditEvent() {
+        when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.empty()));
+        when(repository.insert(any())).thenReturn(Mono.empty());
+        when(auditPort.emit(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
+                .assertNext(r -> assertThat(r.credentialId()).isEqualTo(CRED_ID))
+                .verifyComplete();
+
+        ArgumentCaptor<KeyAuditEvent> captor = ArgumentCaptor.forClass(KeyAuditEvent.class);
+        verify(auditPort).emit(captor.capture());
+        KeyAuditEvent emitted = captor.getValue();
+
+        assertThat(emitted.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.WRAP_COMPLETED);
+        assertThat(emitted.tenantId()).isEqualTo(TENANT);
+        assertThat(emitted.holderId()).isEqualTo(HOLDER);
+        assertThat(emitted.credentialId()).isEqualTo(CRED_ID);
+        assertThat(emitted.correlationId()).isEqualTo(TRACE_ID);
+        KeyAuditEventAssertions.assertNoSensitiveData(emitted);
+    }
+
+    @Test
+    void commit_newHandle_whenNoActiveSpan_usesRandomCorrelationId() {
+        when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.empty()));
+        when(repository.insert(any())).thenReturn(Mono.empty());
+        when(auditPort.emit(any())).thenReturn(Mono.empty());
+        when(tracer.currentSpan()).thenReturn(null);
+
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
+                .assertNext(r -> assertThat(r.credentialId()).isEqualTo(CRED_ID))
+                .verifyComplete();
+
+        ArgumentCaptor<KeyAuditEvent> captor = ArgumentCaptor.forClass(KeyAuditEvent.class);
+        verify(auditPort).emit(captor.capture());
+        assertThat(captor.getValue().correlationId()).isNotBlank();
+    }
+
+    @Test
+    void commit_idempotentReplay_doesNotEmitAuditEvent() {
+        WrappedKeyHandle existing = existingHandle(BLOB_BYTES, IV_BYTES, TAG_BYTES);
+        when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.of(existing)));
+
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
+                .assertNext(r -> assertThat(r.replay()).isTrue())
+                .verifyComplete();
+
+        verify(auditPort, never()).emit(any());
+    }
+
+    @Test
+    void commit_auditFailure_doesNotPropagateError() {
+        when(repository.findBy(HOLDER, CRED_ID)).thenReturn(Mono.just(Optional.empty()));
+        when(repository.insert(any())).thenReturn(Mono.empty());
+        when(auditPort.emit(any())).thenReturn(Mono.error(new RuntimeException("cloudwatch unavailable")));
+
+        StepVerifier.create(useCase.commit(TENANT, HOLDER, validCommitRequest()))
+                .assertNext(r -> assertThat(r.credentialId()).isEqualTo(CRED_ID))
+                .verifyComplete();
+    }
+
+    // --------------------------------------------------------------- recordConsent (US-06)
+
+    @Test
+    void recordConsent_givenValidArgs_emitsConstraintAcceptedAuditEvent() {
+        when(auditPort.emit(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(useCase.recordConsent(TENANT, HOLDER))
+                .verifyComplete();
+
+        ArgumentCaptor<KeyAuditEvent> captor = ArgumentCaptor.forClass(KeyAuditEvent.class);
+        verify(auditPort).emit(captor.capture());
+        KeyAuditEvent emitted = captor.getValue();
+
+        assertThat(emitted.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.CONSTRAINT_ACCEPTED);
+        assertThat(emitted.tenantId()).isEqualTo(TENANT);
+        assertThat(emitted.holderId()).isEqualTo(HOLDER);
+        assertThat(emitted.credentialId()).isNull();
+        assertThat(emitted.correlationId()).isEqualTo(TRACE_ID);
+        KeyAuditEventAssertions.assertNoSensitiveData(emitted);
+    }
+
+    @Test
+    void recordConsent_auditFailure_propagatesError() {
+        when(auditPort.emit(any())).thenReturn(Mono.error(new RuntimeException("cloudwatch unavailable")));
+
+        StepVerifier.create(useCase.recordConsent(TENANT, HOLDER))
+                .expectError(RuntimeException.class)
+                .verify();
+    }
+
+    // --------------------------------------------------------------- recordPrfUnsupported (US-08)
+
+    @Test
+    void recordPrfUnsupported_givenValidArgs_emitsPrfUnsupportedAuditEvent() {
+        when(auditPort.emit(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(useCase.recordPrfUnsupported(TENANT, HOLDER))
+                .verifyComplete();
+
+        ArgumentCaptor<KeyAuditEvent> captor = ArgumentCaptor.forClass(KeyAuditEvent.class);
+        verify(auditPort).emit(captor.capture());
+        KeyAuditEvent emitted = captor.getValue();
+
+        assertThat(emitted.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED);
+        assertThat(emitted.tenantId()).isEqualTo(TENANT);
+        assertThat(emitted.holderId()).isEqualTo(HOLDER);
+        assertThat(emitted.credentialId()).isNull();
+        assertThat(emitted.correlationId()).isEqualTo(TRACE_ID);
+        KeyAuditEventAssertions.assertNoSensitiveData(emitted);
+    }
+
+    @Test
+    void recordPrfUnsupported_auditFailure_propagatesError() {
+        when(auditPort.emit(any())).thenReturn(Mono.error(new RuntimeException("cloudwatch unavailable")));
+
+        StepVerifier.create(useCase.recordPrfUnsupported(TENANT, HOLDER))
+                .expectError(RuntimeException.class)
                 .verify();
     }
 
