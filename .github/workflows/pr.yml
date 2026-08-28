@@ -50,10 +50,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '25'
@@ -101,7 +101,7 @@ jobs:
         run: echo "date=$(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
 
       - name: Cache Trivy vulnerability DB
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/trivy
           key: ${{ runner.os }}-trivy-db-${{ steps.date.outputs.date }}
@@ -164,7 +164,7 @@ jobs:
           --health-retries 10
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # SKIP_TESTS=true: the `build` job (above) already ran the full test suite
       # for the quality gate — re-running tests inside the Docker build here would
@@ -236,3 +236,50 @@ jobs:
           artifact_name: 'zap-report'
           fail_action: false
           allow_issue_writing: false
+
+      # The `zap-report` artifact is a ZIP with 90-day retention, so reading it
+      # means downloading it first. Dumping ZAP's markdown report into the job
+      # summary makes it readable on the run page itself, which is what a PR
+      # actually needs. A published HTML report with history belongs to the
+      # nightly authenticated DAST (see the delivery-cycle quality gates), not
+      # to this gate. action-baseline writes report_md.md to GITHUB_WORKSPACE.
+      - name: Publish ZAP report in the job summary
+        if: always()
+        run: |
+          if [ -f report_md.md ]; then
+            {
+              echo '## ZAP DAST Baseline'
+              echo
+              cat report_md.md
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo '## ZAP DAST Baseline'
+              echo
+              echo 'The scan produced no markdown report — check the step above.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # High/Critical gate. `fail_action: false` above deliberately keeps Low and
+      # Informational findings from failing anything — on a passive baseline they
+      # are noise. Anything at riskcode >= 3 fails the job instead: that is what
+      # turns the run red and triggers GitHub's failure notification. ZAP's risk
+      # scale tops out at 3 (High) today, so >= 3 also covers a future Critical.
+      - name: Fail on High/Critical findings
+        if: always()
+        run: |
+          if [ ! -f report_json.json ]; then
+            echo "::warning::No ZAP JSON report to evaluate."
+            exit 0
+          fi
+          high=$(jq '[.site[]?.alerts[]? | select(((.riskcode // "0") | tonumber) >= 3)] | length' report_json.json)
+          echo "High/Critical alerts: ${high}"
+          if [ "${high}" -gt 0 ]; then
+            {
+              echo
+              echo "### Blocking: ${high} High/Critical finding(s)"
+              jq -r '.site[]?.alerts[]? | select(((.riskcode // "0") | tonumber) >= 3) | "- \(.riskdesc) — \(.name) (\(.count) instance(s))"' report_json.json
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::ZAP reported ${high} High/Critical alert(s)."
+            exit 1
+          fi

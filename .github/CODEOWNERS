@@ -1,0 +1,11 @@
+* @in2workspace/kizunaops
+
+# License gate (EUD-220). These rules MUST stay at the end of the file:
+# GitHub applies the LAST matching pattern, so a catch-all below them would
+# silently cancel them. Since the shared canonical policy was dropped, this is
+# the only control preventing a pull request from widening the policy at the
+# same time as it introduces the dependency the policy would have blocked.
+/.github/license-policy.json        @in2workspace/devops-lead
+/.github/license-exceptions.json    @in2workspace/devops-lead
+/.github/scripts/license-gate.mjs   @in2workspace/devops-lead
+/.github/workflows/license-gate.yml @in2workspace/devops-lead

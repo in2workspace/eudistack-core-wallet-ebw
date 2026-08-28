@@ -26,12 +26,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '25'
@@ -63,10 +63,10 @@ jobs:
       ENVIRONMENT: stg
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '25'
@@ -126,6 +126,16 @@ jobs:
           docker push "${ECR_LATEST}"
           docker push "${ECR_VERSION}"
           docker push "${ECR_SHA}"
+
+      - name: Generate CycloneDX SBOM
+        run: ./gradlew cyclonedxBom
+
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-v${{ env.VERSION }}
+          path: build/reports/sbom/sbom.json
+          retention-days: 90
   cd-stg:
     name: Deploy to Staging
     needs: ci
