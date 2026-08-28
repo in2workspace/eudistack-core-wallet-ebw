@@ -12,10 +12,13 @@
     "EPL-2.0",
     "EPL-1.0",
     "LGPL-2.1",
+    "LGPL-2.1-only",
     "GPL-2.0-with-classpath-exception",
     "Python-2.0",
     "CC0-1.0",
     "LicenseRef-PublicDomain"
   ],
-  "gatedScopes": ["runtime"]
+  "gatedScopes": [
+    "runtime"
+  ]
 }
