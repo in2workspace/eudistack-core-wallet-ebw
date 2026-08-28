@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configuración de actualizaciones de seguridad para `gradle`, `github-actions` y las imágenes base de Docker, alineada con `eudistack-core-issuer`. Complementa el escaneo Trivy que ya corre en `pr.yml`: Trivy detecta, Dependabot propone el arreglo.
 
 
+### Changed - 2026-06-25
+- Updated Netty to 4.1.132.Final to address CVE-2026-33870.
+- Updated Bouncy Castle (bcprov-jdk18on and bcpkix-jdk18on) to version 1.84 to address CVE-2026-0636.
+
 #### [1.13.0] - 2026-07-24
 
 ### Added
