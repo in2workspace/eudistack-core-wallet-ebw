@@ -5,12 +5,14 @@ plugins {
     id 'jacoco'
     id 'checkstyle'
     id 'org.sonarqube' version '7.2.2.6593'
-    id 'com.github.ben-manes.versions' version '0.53.0'
+    id 'com.github.ben-manes.versions' version '0.61.0'
     id 'se.patrikerdes.use-latest-versions' version '0.2.19'
+    id 'org.cyclonedx.bom' version '2.2.0'
 }
 
 group = 'com.eudistack'
-version = '1.13.0'
+version = '1.13.2'
+ext['netty.version'] = '4.1.132.Final'
 
 java {
     toolchain {
@@ -61,8 +63,8 @@ dependencies {
     implementation 'software.amazon.awssdk:cloudwatchlogs:2.31.78'
 
     // --- Cryptography ---
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
-    implementation 'org.bouncycastle:bcpkix-jdk18on:1.80'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.85'
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.85'
 
     // --- Monitoring & Telemetry ---
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
@@ -88,6 +90,16 @@ dependencies {
 }
 
 // --- Quality & CI ---
+
+cyclonedxBom {
+    includeConfigs = ['runtimeClasspath']
+    schemaVersion = '1.6'
+    destination = project.file('build/reports/sbom')
+    outputName = 'sbom'
+    outputFormat = 'json'
+    includeBomSerialNumber = false
+    includeLicenseText = false
+}
 
 sonar {
     properties {
