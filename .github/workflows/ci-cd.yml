@@ -131,7 +131,7 @@ jobs:
         run: ./gradlew cyclonedxBom
 
       - name: Upload SBOM Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-v${{ env.VERSION }}
           path: build/reports/sbom/sbom.json
