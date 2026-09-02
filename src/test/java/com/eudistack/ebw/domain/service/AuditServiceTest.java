@@ -28,6 +28,7 @@ class AuditServiceTest {
 
     @Test
     void record_validEvent_savesAuditEntry() {
+       
         // Arrange
         var entityId = UUID.randomUUID();
         var actorId = UUID.randomUUID();
