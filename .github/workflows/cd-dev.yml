@@ -112,11 +112,6 @@ jobs:
           docker push "${ECR_VERSION}"
           docker push "${ECR_SHA}"
 
-<<<<<<< HEAD:.github/workflows/cd-dev.yml
-  cd-dev:
-    name: Deploy to Dev
-    needs: build
-=======
       - name: Generate CycloneDX SBOM
         run: ./gradlew cyclonedxBom
 
@@ -126,10 +121,9 @@ jobs:
           name: sbom-v${{ env.VERSION }}
           path: build/reports/sbom/sbom.json
           retention-days: 90
-  cd-stg:
-    name: Deploy to Staging
+  cd-dev:
+    name: Deploy to Development
     needs: ci
->>>>>>> main:.github/workflows/ci-cd.yml
     runs-on: ubuntu-latest
     env:
       ENVIRONMENT: dev
