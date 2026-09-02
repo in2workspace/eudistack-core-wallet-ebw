@@ -146,7 +146,7 @@ jobs:
     runs-on: ubuntu-latest
     # Gated by the `production` GitHub Environment's required reviewers
     # (Tech Lead), configured in repo Settings > Environments.
-    environment: production
+    environment: pro
     env:
       FROM_ENV: stg
       ENVIRONMENT: pro
