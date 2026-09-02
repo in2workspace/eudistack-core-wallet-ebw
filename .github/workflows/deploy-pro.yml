@@ -139,32 +139,7 @@ jobs:
 
           echo "### ✅ Deployment successful" >> $GITHUB_STEP_SUMMARY
 
-<<<<<<< HEAD
-      # Idempotent: the release is normally already published by release.yml;
-      # this only fires when re-promoting via this manual fallback.
       - name: Publish GitHub Release (if missing)
-=======
-      - name: Download SBOM Artifact from CI run
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="v${{ env.VERSION }}"
-          echo "Downloading SBOM artifact for ${TAG} (SHA: ${{ env.SHA }})..."
-          gh run download --repo "${{ github.repository }}" --commit "${{ env.SHA }}" --name "sbom-${TAG}" --dir ./sbom-artifact || \
-          gh run download --repo "${{ github.repository }}" --name "sbom-${TAG}" --dir ./sbom-artifact
-
-      - name: Validate the published SBOM
-        run: node .github/scripts/license-gate.mjs --sbom-path ./sbom-artifact/sbom.json --expect-version ${{ env.VERSION }}
-
-      - name: Prepare SBOM Release Asset
-        run: |
-          set -euo pipefail
-          TAG="v${{ env.VERSION }}"
-          cp ./sbom-artifact/sbom.json "./sbom-${TAG}.cdx.json"
-
-      - name: Publish GitHub Release
->>>>>>> main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
