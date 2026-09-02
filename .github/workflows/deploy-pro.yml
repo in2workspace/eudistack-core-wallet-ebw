@@ -32,7 +32,7 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - name: Configure AWS credentials (${{ env.FROM_ENV }})
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
@@ -62,7 +62,7 @@ jobs:
           docker pull "${STG_IMAGE}"
 
       - name: Configure AWS credentials (Production)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PRO }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PRO }}
@@ -139,9 +139,32 @@ jobs:
 
           echo "### ✅ Deployment successful" >> $GITHUB_STEP_SUMMARY
 
+<<<<<<< HEAD
       # Idempotent: the release is normally already published by release.yml;
       # this only fires when re-promoting via this manual fallback.
       - name: Publish GitHub Release (if missing)
+=======
+      - name: Download SBOM Artifact from CI run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ env.VERSION }}"
+          echo "Downloading SBOM artifact for ${TAG} (SHA: ${{ env.SHA }})..."
+          gh run download --repo "${{ github.repository }}" --commit "${{ env.SHA }}" --name "sbom-${TAG}" --dir ./sbom-artifact || \
+          gh run download --repo "${{ github.repository }}" --name "sbom-${TAG}" --dir ./sbom-artifact
+
+      - name: Validate the published SBOM
+        run: node .github/scripts/license-gate.mjs --sbom-path ./sbom-artifact/sbom.json --expect-version ${{ env.VERSION }}
+
+      - name: Prepare SBOM Release Asset
+        run: |
+          set -euo pipefail
+          TAG="v${{ env.VERSION }}"
+          cp ./sbom-artifact/sbom.json "./sbom-${TAG}.cdx.json"
+
+      - name: Publish GitHub Release
+>>>>>>> main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -152,7 +175,8 @@ jobs:
             exit 0
           fi
           gh release create "${TAG}" \
+            "./sbom-${TAG}.cdx.json#CycloneDX SBOM (${TAG})" \
             --repo "${{ github.repository }}" \
             --title "${TAG}" \
             --generate-notes
-          echo "### 🏷️ GitHub Release published: ${TAG}" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏷️ GitHub Release published: ${TAG} with attached SBOM" >> $GITHUB_STEP_SUMMARY
