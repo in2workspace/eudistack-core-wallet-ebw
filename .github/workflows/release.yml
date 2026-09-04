@@ -18,7 +18,7 @@ permissions:
 jobs:
   build:
     name: Build > Tag > Push (STG artifact)
-    if: github.ref_type == 'branch' && startsWith(github.ref_name, 'release-')
+    if: github.ref_type == 'branch' && startsWith(github.ref_name, 'release/v.')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.metadata.outputs.version }}
