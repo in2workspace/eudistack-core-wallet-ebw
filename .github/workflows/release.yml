@@ -4,7 +4,9 @@ name: release
 # deploys it to STG, then promotes the *same* artifact to PROD once a
 # Tech Lead approves the `production` environment.
 on:
-  create
+  push:
+    branches:
+      - 'release/v*'
 
 env:
   PROJECT_NAME: eudistack
@@ -18,7 +20,7 @@ permissions:
 jobs:
   build:
     name: Build > Tag > Push (STG artifact)
-    if: github.ref_type == 'branch' && startsWith(github.ref_name, 'release/v.')
+    if: startsWith(github.ref_name, 'release/v')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.metadata.outputs.version }}
@@ -42,7 +44,7 @@ jobs:
       - name: Get Project Metadata
         id: metadata
         run: |
-          VERSION=$(./gradlew -q properties | grep '^version:' | awk '{print $2}')
+          VERSION="${GITHUB_REF_NAME#release/}"
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
@@ -51,7 +53,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="v${{ env.VERSION }}"
+          TAG="${{ env.VERSION }}"
           if gh release view "${TAG}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
             echo "::error::Release ${TAG} already exists. Bump the version before cutting the release branch."
             exit 1
@@ -78,7 +80,7 @@ jobs:
 
           ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ env.ENVIRONMENT }}"
           ECR_LATEST="${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
-          ECR_VERSION="${ECR_REGISTRY}/${ECR_REPOSITORY}:v${{ env.VERSION }}-rc-${{ github.sha }}"
+          ECR_VERSION="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ env.VERSION }}-rc-${{ github.sha }}"
           ECR_SHA="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ github.sha }}"
 
           docker build --build-arg SKIP_TESTS=true -t "${ECR_IMAGE}" .
@@ -174,12 +176,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:v${{ env.VERSION }}"
+          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:${{ env.VERSION }}"
           echo "Pulling staging image: ${STG_IMAGE}"
           docker pull "${STG_IMAGE}"
 
           echo "### 🎯 Production deployment" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version:** v${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Source image:** ${STG_IMAGE}" >> $GITHUB_STEP_SUMMARY
           echo "- **Approved by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
 
@@ -203,10 +205,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:v${{ env.VERSION }}"
+          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:${{ env.VERSION }}"
           PRO_IMAGE="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:${{ env.ENVIRONMENT }}"
           PRO_LATEST="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:latest"
-          PRO_VERSION="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:v${{ env.VERSION }}"
+          PRO_VERSION="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:${{ env.VERSION }}"
           PRO_SHA="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:${{ github.sha }}"
 
           echo "Tagging for production..."
@@ -266,7 +268,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="v${{ env.VERSION }}"
+          TAG="${{ env.VERSION }}"
           gh release create "${TAG}" \
             --repo "${{ github.repository }}" \
             --title "${TAG}" \
