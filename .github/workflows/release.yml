@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.metadata.outputs.version }}
+    environment: stg
     env:
       ENVIRONMENT: stg
     steps:
@@ -77,7 +78,7 @@ jobs:
 
           ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ env.ENVIRONMENT }}"
           ECR_LATEST="${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
-          ECR_VERSION="${ECR_REGISTRY}/${ECR_REPOSITORY}:v${{ env.VERSION }}"
+          ECR_VERSION="${ECR_REGISTRY}/${ECR_REPOSITORY}:v${{ env.VERSION }}-rc-${{ github.sha }}"
           ECR_SHA="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ github.sha }}"
 
           docker build --build-arg SKIP_TESTS=true -t "${ECR_IMAGE}" .
@@ -94,6 +95,7 @@ jobs:
     name: Deploy to Staging
     needs: build
     runs-on: ubuntu-latest
+    environment: stg
     env:
       ENVIRONMENT: stg
     steps:
