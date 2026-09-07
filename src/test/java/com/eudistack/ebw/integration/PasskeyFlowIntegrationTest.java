@@ -6,6 +6,7 @@ import org.springframework.test.annotation.DirtiesContext;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -204,6 +205,106 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
         assertThat(passkeyData.get("activeSessions")).isEqualTo(1);
     }
 
+    /**
+     * Regression test for the "Mis dispositivos" session-attribution bug: a device that
+     * ALREADY has a passkey and does a full re-auth (email+OTP again, e.g. after closing
+     * and reopening the app with no stored refresh token) gets a brand-new session that
+     * is not attributed to any passkey until the client explicitly confirms it. Before
+     * this fix there was no way to attribute it at all; the session stayed invisible
+     * ("No active sessions") even though it was live.
+     */
+    @Test
+    void confirmSession_returningDeviceFullReauth_attributesNewSessionWithoutLosingTheFirst() {
+        var email = "passkey-confirm-reauth@example.com";
+        var credentialId = "cred-confirm-reauth";
+
+        // First ever login on this device: passkey created and linked to that session.
+        var firstLogin = authenticateUser(email);
+        var passkeyId = createPasskeyLinkedToSession(firstLogin.accessToken(), credentialId, "My PC",
+                firstLogin.refreshToken());
+        assertThat(activeSessionsOf(firstLogin.accessToken(), passkeyId)).isEqualTo(1L);
+
+        // Device "closes and reopens" without a stored refresh token: full email+OTP
+        // re-auth issues a brand-new, still-unattributed session for the SAME account.
+        var secondLogin = authenticateUser(email);
+        assertThat(activeSessionsOf(secondLogin.accessToken(), passkeyId))
+                .as("the new session must not be counted until confirmed")
+                .isEqualTo(1L);
+
+        // The device recognizes its own passkey locally and confirms the new session.
+        webClient.post().uri("/api/v1/auth/passkeys/{id}/confirm-session", passkeyId)
+                .headers(h -> h.setBearerAuth(secondLogin.accessToken()))
+                .bodyValue(Map.of("refreshToken", secondLogin.refreshToken()))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        assertThat(activeSessionsOf(secondLogin.accessToken(), passkeyId))
+                .as("both the original and the re-authenticated session must now count")
+                .isEqualTo(2L);
+    }
+
+    /**
+     * Regression test for E-03 / the "compañero ve el inverso" report: two devices with
+     * concurrently unattributed sessions (both logged in, neither has confirmed yet) must
+     * NOT have their sessions cross-attributed when each device later confirms its own
+     * passkey. The old `linkOrphanTokensToPasskey` swept ALL of a user's unlinked sessions
+     * by user id alone, so whichever device confirmed first could steal the other's session.
+     */
+    @Test
+    void confirmSession_twoDevicesWithConcurrentOrphanSessions_eachKeepsOnlyItsOwnSession() {
+        var email = "passkey-confirm-concurrent@example.com";
+
+        // Both devices log in before either confirms anything (concurrent orphan sessions).
+        var deviceA = authenticateUser(email);
+        var deviceB = authenticateUser(email);
+
+        var passkeyA = createPasskey(deviceA.accessToken(), "cred-concurrent-a", "Laura's Laptop");
+        var passkeyB = createPasskey(deviceB.accessToken(), "cred-concurrent-b", "Laura's iPhone");
+
+        webClient.post().uri("/api/v1/auth/passkeys/{id}/confirm-session", passkeyA)
+                .headers(h -> h.setBearerAuth(deviceA.accessToken()))
+                .bodyValue(Map.of("refreshToken", deviceA.refreshToken()))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        webClient.post().uri("/api/v1/auth/passkeys/{id}/confirm-session", passkeyB)
+                .headers(h -> h.setBearerAuth(deviceB.accessToken()))
+                .bodyValue(Map.of("refreshToken", deviceB.refreshToken()))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        assertThat(activeSessionsOf(deviceA.accessToken(), passkeyA))
+                .as("device A's passkey must only count device A's session")
+                .isEqualTo(1L);
+        assertThat(activeSessionsOf(deviceB.accessToken(), passkeyB))
+                .as("device B's passkey must only count device B's session")
+                .isEqualTo(1L);
+    }
+
+    @Test
+    void confirmSession_refreshTokenBelongsToAnotherUser_returns401() {
+        var user1 = authenticateUser("passkey-confirm-user1@example.com");
+        var user2 = authenticateUser("passkey-confirm-user2@example.com");
+        var passkeyId = createPasskey(user1.accessToken(), "cred-confirm-isolation", "User1 Device");
+
+        webClient.post().uri("/api/v1/auth/passkeys/{id}/confirm-session", passkeyId)
+                .headers(h -> h.setBearerAuth(user1.accessToken()))
+                .bodyValue(Map.of("refreshToken", user2.refreshToken()))
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void confirmSession_unknownPasskeyId_returns404() {
+        var auth = authenticateUser("passkey-confirm-unknown@example.com");
+
+        webClient.post().uri("/api/v1/auth/passkeys/{id}/confirm-session", UUID.randomUUID())
+                .headers(h -> h.setBearerAuth(auth.accessToken()))
+                .bodyValue(Map.of("refreshToken", auth.refreshToken()))
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
     // --- Helpers ---
 
     private record AuthTokens(String accessToken, String refreshToken) {}
@@ -237,5 +338,39 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
                 .returnResult().getResponseBody();
 
         return (String) passkey.get("id");
+    }
+
+    @SuppressWarnings("unchecked")
+    private String createPasskeyLinkedToSession(String accessToken, String credentialId, String displayName,
+                                                String refreshToken) {
+        var passkey = webClient.post().uri("/api/v1/auth/passkeys")
+                .headers(h -> h.setBearerAuth(accessToken))
+                .bodyValue(Map.of(
+                        "credentialId", credentialId,
+                        "displayName", displayName,
+                        "refreshToken", refreshToken))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(Map.class)
+                .returnResult().getResponseBody();
+
+        return (String) passkey.get("id");
+    }
+
+    @SuppressWarnings("unchecked")
+    private long activeSessionsOf(String accessToken, String passkeyId) {
+        var rawList = webClient.get().uri("/api/v1/auth/passkeys")
+                .headers(h -> h.setBearerAuth(accessToken))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(List.class)
+                .returnResult().getResponseBody();
+
+        List<Map<String, Object>> list = (List<Map<String, Object>>) rawList;
+        return list.stream()
+                .filter(p -> passkeyId.equals(p.get("id")))
+                .findFirst()
+                .map(p -> ((Number) p.get("activeSessions")).longValue())
+                .orElseThrow(() -> new AssertionError("Passkey " + passkeyId + " not found in list"));
     }
 }
