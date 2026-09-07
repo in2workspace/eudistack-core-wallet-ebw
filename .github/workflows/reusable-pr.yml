@@ -30,9 +30,6 @@ on:
         required: true
         type: string
     secrets:
-      github_token:
-        description: GitHub token supplied by the calling workflow
-        required: true
       SONAR_TOKEN:
         description: SonarCloud authentication token
         required: true
@@ -101,7 +98,7 @@ jobs:
         uses: madrapps/jacoco-report@7c362aca34caf958e7b1c03464bd8781db9f8da7 # v1.7.1
         with:
           paths: ${{ github.workspace }}/build/reports/jacoco/test/jacocoTestReport.xml
-          token: ${{ secrets.github_token }}
+          token: ${{ github.token }}
           min-coverage-overall: ${{ env.JACOCO_MIN_COVERAGE_OVERALL }}
           min-coverage-changed-files: ${{ env.JACOCO_MIN_COVERAGE_CHANGED_FILES }}
           update-comment: true
@@ -115,7 +112,7 @@ jobs:
 
       - name: SonarCloud Scan
         env:
-          GITHUB_TOKEN: ${{ secrets.github_token }}
+          GITHUB_TOKEN: ${{ github.token }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./gradlew sonar --info
 

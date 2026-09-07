@@ -56,9 +56,6 @@ on:
         type: string
         default: '30'
     secrets:
-      github_token:
-        description: GitHub token supplied by the calling workflow
-        required: true
       AWS_ACCESS_KEY_ID_STG:
         description: AWS access key for the staging account
         required: true
@@ -159,7 +156,7 @@ jobs:
           path: release-evidence
           repository: ${{ github.repository }}
           run-id: ${{ inputs.release_run_id }}
-          github-token: ${{ secrets.github_token }}
+          github-token: ${{ github.token }}
 
       - name: Verify release evidence
         env:
@@ -197,7 +194,7 @@ jobs:
       - name: Verify version binding and pull validated STG digest
         env:
           ECR_REGISTRY_STG: ${{ steps.ecr-stg.outputs.registry }}
-          GH_TOKEN: ${{ secrets.github_token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           STG_REPOSITORY="${PROJECT_NAME}-${FROM_ENV}-ecr-${REGION_CODE}-${APP_NAME}"
@@ -369,7 +366,7 @@ jobs:
 
       - name: Publish GitHub Release if missing
         env:
-          GH_TOKEN: ${{ secrets.github_token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v${VERSION}"
           if ! gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then

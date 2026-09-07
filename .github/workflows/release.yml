@@ -24,7 +24,6 @@ jobs:
       production_concurrency_group: ${{ vars.PRODUCTION_CONCURRENCY_GROUP || format('{0}-production', github.repository) }}
       production_monitor_minutes: ${{ vars.PRO_MONITOR_MINUTES || '30' }}
     secrets:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       AWS_ACCESS_KEY_ID_STG: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
       AWS_SECRET_ACCESS_KEY_STG: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}

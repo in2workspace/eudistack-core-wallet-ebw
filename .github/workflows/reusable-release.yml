@@ -54,9 +54,6 @@ on:
         type: string
         default: '25'
     secrets:
-      github_token:
-        description: GitHub token supplied by the calling workflow
-        required: true
       SONAR_TOKEN:
         description: SonarCloud authentication token
         required: true
@@ -151,11 +148,11 @@ jobs:
             exit 1
           fi
         env:
-          GH_TOKEN: ${{ secrets.github_token }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Build, unit tests, integration tests and SonarCloud
         env:
-          GITHUB_TOKEN: ${{ secrets.github_token }}
+          GITHUB_TOKEN: ${{ github.token }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./gradlew build integrationTest cyclonedxBom sonar --info
 
@@ -319,7 +316,7 @@ jobs:
 
       - name: Reject superseded release candidate
         env:
-          GH_TOKEN: ${{ secrets.github_token }}
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
@@ -550,7 +547,7 @@ jobs:
 
       - name: Reject superseded production candidate
         env:
-          GH_TOKEN: ${{ secrets.github_token }}
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
@@ -732,7 +729,7 @@ jobs:
 
       - name: Publish GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.github_token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "v${VERSION}" \
             --repo "${GITHUB_REPOSITORY}" \

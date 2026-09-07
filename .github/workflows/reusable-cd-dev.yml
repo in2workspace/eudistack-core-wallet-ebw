@@ -30,9 +30,6 @@ on:
         type: string
         default: '25'
     secrets:
-      github_token:
-        description: GitHub token supplied by the calling workflow
-        required: true
       SONAR_TOKEN:
         description: SonarCloud authentication token
         required: true
@@ -96,7 +93,7 @@ jobs:
 
       - name: Build, test and run SonarCloud
         env:
-          GITHUB_TOKEN: ${{ secrets.github_token }}
+          GITHUB_TOKEN: ${{ github.token }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./gradlew build integrationTest sonar --info
 
