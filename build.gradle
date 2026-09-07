@@ -63,8 +63,8 @@ dependencies {
     implementation 'software.amazon.awssdk:cloudwatchlogs:2.31.78'
 
     // --- Cryptography ---
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.85'
-    implementation 'org.bouncycastle:bcpkix-jdk18on:1.85'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.85.2'
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.85.2'
 
     // --- Monitoring & Telemetry ---
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
