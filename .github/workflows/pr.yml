@@ -18,7 +18,7 @@ jobs:
     with:
       container_image: 'wallet-ebw-service'
       container_name: 'wallet-ebw-service'
-      smoke_url: 'http://localhost:8080/business-wallet/health'
+      smoke_url: 'http://localhost:8080/business-wallet/health/readiness'
       zap_target_url: 'http://localhost:8080/business-wallet'
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
