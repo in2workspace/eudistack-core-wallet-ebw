@@ -359,15 +359,15 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
 
     @SuppressWarnings("unchecked")
     private long activeSessionsOf(String accessToken, String passkeyId) {
-        var list = webClient.get().uri("/api/v1/auth/passkeys")
+        var rawList = webClient.get().uri("/api/v1/auth/passkeys")
                 .headers(h -> h.setBearerAuth(accessToken))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(List.class)
                 .returnResult().getResponseBody();
 
+        List<Map<String, Object>> list = (List<Map<String, Object>>) rawList;
         return list.stream()
-                .map(p -> (Map<String, Object>) p)
                 .filter(p -> passkeyId.equals(p.get("id")))
                 .findFirst()
                 .map(p -> ((Number) p.get("activeSessions")).longValue())
