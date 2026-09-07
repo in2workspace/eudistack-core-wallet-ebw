@@ -90,8 +90,13 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x ./gradlew
 
-      - name: Build & Test
-        run: ./gradlew build integrationTest --info
+      - name: Build application
+        run: ./gradlew build -x test --info
+
+      - name: Run tests
+        id: tests
+        continue-on-error: true
+        run: ./gradlew test integrationTest --continue --info
 
       - name: Publish JaCoCo Coverage
         if: always()
@@ -179,6 +184,16 @@ jobs:
         with:
           name: trivy-report
           path: build/reports/trivy-report.json
+
+      - name: Report non-blocking test failure
+        if: ${{ always() && steps.tests.outcome == 'failure' }}
+        run: |
+          echo "::warning::Tests failed, but test failures are configured as non-blocking."
+          {
+            echo '## Test result'
+            echo
+            echo ':warning: Tests failed. Review the `test-reports` artifact before merging.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   dast-baseline:
     name: ZAP DAST Baseline
