@@ -119,4 +119,18 @@ public class AuthTokenService {
     public Mono<Void> revokeAllByPasskey(UUID passkeyId) {
         return refreshTokenRepository.revokeByPasskeyId(passkeyId);
     }
+
+    /**
+     * Attributes one specific session (identified by its raw refresh token) to a passkey.
+     * Scoped to a single token hash rather than "all of this user's unlinked sessions":
+     * two devices can each hold an unlinked session at the same time, and attributing by
+     * user id alone would let whichever device confirms first steal the other's session.
+     */
+    public Mono<Void> linkSessionToPasskey(String rawRefreshToken, UUID userId, UUID passkeyId) {
+        var tokenHash = hashProvider.sha256(rawRefreshToken);
+        return refreshTokenRepository.findByTokenHash(tokenHash)
+                .filter(token -> token.getUserId().equals(userId))
+                .switchIfEmpty(Mono.error(new InvalidTokenException()))
+                .flatMap(token -> refreshTokenRepository.updatePasskeyIdByTokenHash(tokenHash, passkeyId));
+    }
 }
