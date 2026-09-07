@@ -26,8 +26,4 @@ public interface SpringRefreshTokenRepository extends ReactiveCrudRepository<Ref
     @Modifying
     @Query("UPDATE refresh_token SET passkey_id = :passkeyId WHERE token_hash = :tokenHash AND revoked = false")
     Mono<Void> updatePasskeyIdByTokenHash(String tokenHash, UUID passkeyId);
-
-    @Modifying
-    @Query("UPDATE refresh_token SET passkey_id = :passkeyId WHERE user_id = :userId AND passkey_id IS NULL AND revoked = false")
-    Mono<Void> linkOrphanTokensToPasskey(UUID userId, UUID passkeyId);
 }

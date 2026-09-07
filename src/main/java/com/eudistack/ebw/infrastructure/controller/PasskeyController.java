@@ -1,6 +1,7 @@
 package com.eudistack.ebw.infrastructure.controller;
 
 import com.eudistack.ebw.application.workflow.*;
+import com.eudistack.ebw.infrastructure.controller.dto.ConfirmSessionRequest;
 import com.eudistack.ebw.infrastructure.controller.dto.PasskeyResponse;
 import com.eudistack.ebw.infrastructure.controller.dto.RegisterPasskeyRequest;
 import com.eudistack.ebw.infrastructure.controller.dto.UpdatePasskeyRequest;
@@ -24,17 +25,20 @@ public class PasskeyController {
     private final UpdatePasskeyWorkflow updatePasskeyWorkflow;
     private final DeletePasskeyWorkflow deletePasskeyWorkflow;
     private final RevokePasskeySessionsWorkflow revokePasskeySessionsWorkflow;
+    private final ConfirmPasskeySessionWorkflow confirmPasskeySessionWorkflow;
 
     public PasskeyController(RegisterPasskeyWorkflow registerPasskeyWorkflow,
                              ListPasskeysWorkflow listPasskeysWorkflow,
                              UpdatePasskeyWorkflow updatePasskeyWorkflow,
                              DeletePasskeyWorkflow deletePasskeyWorkflow,
-                             RevokePasskeySessionsWorkflow revokePasskeySessionsWorkflow) {
+                             RevokePasskeySessionsWorkflow revokePasskeySessionsWorkflow,
+                             ConfirmPasskeySessionWorkflow confirmPasskeySessionWorkflow) {
         this.registerPasskeyWorkflow = registerPasskeyWorkflow;
         this.listPasskeysWorkflow = listPasskeysWorkflow;
         this.updatePasskeyWorkflow = updatePasskeyWorkflow;
         this.deletePasskeyWorkflow = deletePasskeyWorkflow;
         this.revokePasskeySessionsWorkflow = revokePasskeySessionsWorkflow;
+        this.confirmPasskeySessionWorkflow = confirmPasskeySessionWorkflow;
     }
 
     @PostMapping
@@ -43,7 +47,7 @@ public class PasskeyController {
                                           JwtAuthenticationToken auth) {
         return registerPasskeyWorkflow.registerPasskey(
                         auth.getUserId(), request.credentialId(), request.displayName(),
-                        request.userAgent())
+                        request.userAgent(), request.refreshToken())
                 .map(PasskeyResponse::from);
     }
 
@@ -72,5 +76,13 @@ public class PasskeyController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> revokeSessions(@PathVariable UUID id, JwtAuthenticationToken auth) {
         return revokePasskeySessionsWorkflow.revokeSessions(auth.getUserId(), id);
+    }
+
+    @PostMapping("/{id}/confirm-session")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Mono<Void> confirmSession(@PathVariable UUID id,
+                                     @Valid @RequestBody ConfirmSessionRequest request,
+                                     JwtAuthenticationToken auth) {
+        return confirmPasskeySessionWorkflow.confirmSession(auth.getUserId(), id, request.refreshToken());
     }
 }

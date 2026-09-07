@@ -2,10 +2,9 @@ package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.domain.model.UserPasskey;
 import com.eudistack.ebw.domain.model.exception.DuplicatePasskeyException;
-import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.service.AuditService;
-import com.eudistack.ebw.domain.spi.HashProvider;
+import com.eudistack.ebw.domain.service.AuthTokenService;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -16,22 +15,26 @@ import java.util.UUID;
 public class RegisterPasskeyWorkflow {
 
     private final UserPasskeyRepository passkeyRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
     private final AuditService auditService;
-    private final HashProvider hashProvider;
+    private final AuthTokenService authTokenService;
 
     public RegisterPasskeyWorkflow(UserPasskeyRepository passkeyRepository,
-                                   RefreshTokenRepository refreshTokenRepository,
                                    AuditService auditService,
-                                   HashProvider hashProvider) {
+                                   AuthTokenService authTokenService) {
         this.passkeyRepository = passkeyRepository;
-        this.refreshTokenRepository = refreshTokenRepository;
         this.auditService = auditService;
-        this.hashProvider = hashProvider;
+        this.authTokenService = authTokenService;
     }
 
+    /**
+     * @param refreshToken the caller's current session, if the client wants it attributed to
+     *                     the new passkey right away (EUD-104 devices list). Optional: linking
+     *                     is best-effort and never fails passkey creation itself — a stale or
+     *                     already-rotated token here just leaves the session unattributed,
+     *                     same as if the client hadn't sent one.
+     */
     public Mono<UserPasskey> registerPasskey(UUID userId, String credentialId, String displayName,
-                                             String userAgent) {
+                                             String userAgent, String refreshToken) {
         return passkeyRepository.findByUserIdAndCredentialId(userId, credentialId)
                 .flatMap(existing -> Mono.<UserPasskey>error(new DuplicatePasskeyException()))
                 .switchIfEmpty(Mono.defer(() -> {
@@ -43,8 +46,16 @@ public class RegisterPasskeyWorkflow {
                                                     "PASSKEY_CREATED",
                                                     userId,
                                                     Map.of("display_name", displayName))
-                                            .then(refreshTokenRepository.linkOrphanTokensToPasskey(userId, savedPasskey.getId()))
+                                            .then(linkSessionIfPresent(userId, refreshToken, savedPasskey.getId()))
                                             .thenReturn(savedPasskey));
                 }));
+    }
+
+    private Mono<Void> linkSessionIfPresent(UUID userId, String refreshToken, UUID passkeyId) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return Mono.empty();
+        }
+        return authTokenService.linkSessionToPasskey(refreshToken, userId, passkeyId)
+                .onErrorResume(e -> Mono.empty());
     }
 }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **EUD-104 — device sessions in "My devices" not matching real logins**: a returning device that already had a passkey never told the backend which session its WebAuthn assertion belonged to (that verification is entirely client-side), so the refresh token `verify-email` had just issued stayed unattributed forever; and the one place that *did* attribute a session — `RegisterPasskeyWorkflow`'s old `linkOrphanTokensToPasskey` — reassigned every one of a user's unlinked sessions by user id alone, so two devices logging in around the same time could steal each other's session. Both the "returning device shows no active sessions" and "second device steals the first one's session" reports trace back to this single mechanism. Replaced with precise, per-session attribution: `AuthTokenService.linkSessionToPasskey()` links exactly one refresh token (by its hash) to one passkey, exposed via a new `POST /api/v1/auth/passkeys/{id}/confirm-session` (called right after a WebAuthn assertion) and an optional `refreshToken` on `POST /api/v1/auth/passkeys` (called right after creating a new passkey). Linking is best-effort — a stale or already-rotated token never fails passkey creation or login itself, it just leaves that one session out of the devices list.
+
 ### Changed
 
 - **EUD-38 — allowlist de licencias unificada**: `.github/license-policy.json` es ahora la transcripción íntegra de `conv-quality-security-gates.md` §16.1, idéntica en los trece repositorios con gate. Añade `LGPL-2.1-only`, la grafía SPDX vigente del mismo permiso que `LGPL-2.1`, que ya estaba admitido: `logback` 1.5.34 la declara así y el gate la bloqueaba por la grafía, no por la licencia.
