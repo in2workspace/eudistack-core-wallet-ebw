@@ -5,6 +5,12 @@ on:
     branches:
       - main
       - 'release/v*'
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
     types: [opened, synchronize, reopened, edited]
 
 env:
