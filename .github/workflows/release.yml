@@ -49,17 +49,16 @@ jobs:
         id: release-policy
         run: |
           set -euo pipefail
-          VERSION="$(./gradlew -q properties | awk '/^version:/ {print $2}')"
-          EXPECTED_BRANCH="release/v${VERSION}"
-          if [[ "${GITHUB_REF_NAME}" != "${EXPECTED_BRANCH}" ]]; then
-            echo "::error::Branch ${GITHUB_REF_NAME} does not match build.gradle version ${VERSION}."
+          VERSION="${GITHUB_REF_NAME#release/}"
+          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Branch ${GITHUB_REF_NAME} must use release/vX.Y.Z format."
             exit 1
           fi
 
           git fetch --no-tags origin main
           MERGE_BASE="$(git merge-base origin/main HEAD)"
           PREPARE_COMMIT="$(git log --format='%H%x09%s' \
-            | awk -F '\t' -v message="chore(release): prepare v${VERSION}" \
+            | awk -F '\t' -v message="chore(release): prepare ${VERSION}" \
               '$2 == message {print $1; exit}')"
           if [[ -n "${PREPARE_COMMIT}" ]]; then
             CORRECTIONS="$(git rev-list --count "${PREPARE_COMMIT}..HEAD")"
@@ -71,8 +70,8 @@ jobs:
             exit 1
           fi
 
-          if gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
-            echo "::error::Release v${VERSION} already exists. Cut a new MINOR release."
+          if gh release view "${VERSION}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            echo "::error::Release ${VERSION} already exists. Cut a new MINOR release."
             exit 1
           fi
         env:
@@ -126,10 +125,10 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           set -euo pipefail
-          VERSION="$(./gradlew -q properties | awk '/^version:/ {print $2}')"
+          VERSION="${GITHUB_REF_NAME#release/}"
           SHORT_SHA="${GITHUB_SHA::12}"
           IMAGE="${ECR_REGISTRY}/${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          RC_TAG="v${VERSION}-rc-${SHORT_SHA}"
+          RC_TAG="${VERSION}-rc-${SHORT_SHA}"
           {
             echo "version=${VERSION}"
             echo "image=${IMAGE}"
@@ -259,7 +258,7 @@ jobs:
     name: Deploy and validate STG
     needs: [build, migration-rehearsal]
     runs-on: ubuntu-latest
-    environment: staging
+    environment: stg
     concurrency:
       group: staging-wallet-ebw
       cancel-in-progress: false
@@ -291,8 +290,8 @@ jobs:
             echo "::error::A newer release candidate (${CURRENT_SHA}) supersedes ${GITHUB_SHA}."
             exit 1
           fi
-          if gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
-            echo "::error::Release v${VERSION} already exists."
+          if gh release view "${VERSION}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            echo "::error::Release ${VERSION} already exists."
             exit 1
           fi
 
@@ -445,29 +444,11 @@ jobs:
       - name: Publish readiness summary
         run: cat release-readiness.md >> "${GITHUB_STEP_SUMMARY}"
 
-  product-approval:
-    name: Product production approval
-    needs: release-readiness
-    runs-on: ubuntu-latest
-    environment: production-product-approval
-    steps:
-      - name: Record product approval
-        run: echo "Product approval recorded."
-
-  technical-approval:
-    name: Technical production approval
-    needs: release-readiness
-    runs-on: ubuntu-latest
-    environment: production-technical-approval
-    steps:
-      - name: Record technical approval
-        run: echo "Technical approval recorded."
-
   deploy-pro:
     name: Promote digest, deploy and monitor PRD
-    needs: [build, product-approval, technical-approval]
+    needs: [build]
     runs-on: ubuntu-latest
-    environment: production
+    environment: pro
     concurrency:
       group: production-wallet-ebw
       cancel-in-progress: false
@@ -502,8 +483,8 @@ jobs:
             echo "::error::A newer release candidate (${CURRENT_SHA}) supersedes ${GITHUB_SHA}."
             exit 1
           fi
-          if gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
-            echo "::error::Release v${VERSION} already exists."
+          if gh release view "${VERSION}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            echo "::error::Release ${VERSION} already exists."
             exit 1
           fi
 
@@ -562,7 +543,7 @@ jobs:
           VERSION_DIGEST="$(aws ecr describe-images \
             --repository-name "${REPOSITORY}" \
             --filter tagStatus=TAGGED \
-            --query "imageDetails[?contains(imageTags, 'v${VERSION}')].imageDigest | [0]" \
+            --query "imageDetails[?contains(imageTags, '${VERSION}')].imageDigest | [0]" \
             --output text \
             --region "${{ secrets.AWS_REGION }}")"
           if [[ "${VERSION_DIGEST}" == "None" ]]; then
@@ -646,17 +627,17 @@ jobs:
           SOURCE_IMAGE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
         run: |
           PRO_IMAGE="${ECR_REGISTRY_PRO}/${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          docker tag "${SOURCE_IMAGE}" "${PRO_IMAGE}:v${VERSION}"
-          docker push "${PRO_IMAGE}:v${VERSION}"
+          docker tag "${SOURCE_IMAGE}" "${PRO_IMAGE}:${VERSION}"
+          docker push "${PRO_IMAGE}:${VERSION}"
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v${VERSION}" \
+          gh release create "${VERSION}" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
-            --title "v${VERSION}" \
+            --title "${VERSION}" \
             --generate-notes \
             sbom.cdx.json \
             release-readiness.md
@@ -678,12 +659,12 @@ jobs:
           done
           if [[ -n "${PREVIOUS_VERSION_DIGEST}" ]]; then
             docker pull "${PRO_IMAGE}@${PREVIOUS_VERSION_DIGEST}"
-            docker tag "${PRO_IMAGE}@${PREVIOUS_VERSION_DIGEST}" "${PRO_IMAGE}:v${VERSION}"
-            docker push "${PRO_IMAGE}:v${VERSION}"
+            docker tag "${PRO_IMAGE}@${PREVIOUS_VERSION_DIGEST}" "${PRO_IMAGE}:${VERSION}"
+            docker push "${PRO_IMAGE}:${VERSION}"
           else
             aws ecr batch-delete-image \
               --repository-name "${PRO_REPOSITORY}" \
-              --image-ids imageTag="v${VERSION}" \
+              --image-ids imageTag="${VERSION}" \
               --region "${{ secrets.AWS_REGION }}" \
               --no-cli-pager > /dev/null
           fi
@@ -740,6 +721,6 @@ jobs:
               --repo "${GITHUB_REPOSITORY}" \
               --base main \
               --head "${GITHUB_REF_NAME}" \
-              --title "chore(release): back-merge v${VERSION}" \
+              --title "chore(release): back-merge ${VERSION}" \
               --body "Back-merge of the production release branch after successful promotion."
           fi
