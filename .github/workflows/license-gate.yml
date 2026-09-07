@@ -1,9 +1,15 @@
-name: License Gate
+name: license-gate
 
 on:
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
 
 permissions:
   contents: read
