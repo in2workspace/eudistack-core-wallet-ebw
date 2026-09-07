@@ -32,7 +32,6 @@ jobs:
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       image: ${{ steps.metadata.outputs.image }}
-      version: ${{ steps.metadata.outputs.version }}
       version_tag: ${{ steps.metadata.outputs.version_tag }}
     env:
       ENVIRONMENT: dev
@@ -81,12 +80,10 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           set -euo pipefail
-          VERSION="$(./gradlew -q properties | awk '/^version:/ {print $2}')"
           SHORT_SHA="${GITHUB_SHA::12}"
           IMAGE="${ECR_REGISTRY}/${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          VERSION_TAG="v${VERSION}-dev-${SHORT_SHA}"
+          VERSION_TAG="dev-${SHORT_SHA}"
           {
-            echo "version=${VERSION}"
             echo "image=${IMAGE}"
             echo "version_tag=${VERSION_TAG}"
             echo "tags<<EOF"
@@ -214,7 +211,6 @@ jobs:
         run: |
           {
             echo "### DEV deployment"
-            echo "- Version: ${{ needs.build.outputs.version }}"
             echo "- Tag: ${{ needs.build.outputs.version_tag }}"
             echo "- Digest: ${{ needs.build.outputs.digest }}"
           } >> "${GITHUB_STEP_SUMMARY}"
