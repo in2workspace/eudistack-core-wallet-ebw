@@ -19,6 +19,7 @@ import static org.mockito.Mockito.when;
 /**
  * Unit test for {@link R2dbcWalletProfileReadAdapter}.
  *
+ * Unit tests for the R2dbcWalletProfileReadAdapter class.
  * <p>Covers the adapter's contract in full isolation — no Spring context,
  * no database. {@link SpringTenantWalletProfileRepository} is replaced by a
  * Mockito mock so every scenario is exercised without network I/O.
