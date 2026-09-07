@@ -1,0 +1,220 @@
+name: cd-dev
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+
+env:
+  PROJECT_NAME: eudistack
+  APP_NAME: wallet-ebw
+  REGION_CODE: ew1
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: cd-dev
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, scan and publish DEV artifact
+    runs-on: ubuntu-latest
+    environment: development
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.metadata.outputs.image }}
+      version: ${{ steps.metadata.outputs.version }}
+      version_tag: ${{ steps.metadata.outputs.version_tag }}
+    env:
+      ENVIRONMENT: dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Build, test and run SonarCloud
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./gradlew build sonar --info
+
+      - name: SonarCloud quality gate
+        uses: sonarsource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          scanMetadataReportFile: build/sonar/report-task.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve image metadata
+        id: metadata
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          VERSION="$(./gradlew -q properties | awk '/^version:/ {print $2}')"
+          SHORT_SHA="${GITHUB_SHA::12}"
+          IMAGE="${ECR_REGISTRY}/${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
+          VERSION_TAG="v${VERSION}-dev-${SHORT_SHA}"
+          {
+            echo "version=${VERSION}"
+            echo "image=${IMAGE}"
+            echo "version_tag=${VERSION_TAG}"
+            echo "tags<<EOF"
+            echo "${IMAGE}:${VERSION_TAG}"
+            echo "${IMAGE}:${GITHUB_SHA}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push immutable DEV image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: SKIP_TESTS=true
+          tags: ${{ steps.metadata.outputs.tags }}
+          provenance: false
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.metadata.outputs.image }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: false
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-dev-${{ github.sha }}
+          path: sbom.cdx.json
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image and attach SBOM
+        env:
+          IMAGE: ${{ steps.metadata.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+          cosign attest --yes \
+            --type cyclonedx \
+            --predicate sbom.cdx.json \
+            "${IMAGE}@${DIGEST}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.metadata.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  deploy:
+    name: Deploy and smoke-test DEV
+    needs: build
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      ENVIRONMENT: dev
+      BASE_URL: ${{ vars.DEV_BASE_URL }}
+    steps:
+      - name: Checkout deployment checks
+        uses: actions/checkout@v4
+
+      - name: Require DEV endpoint
+        run: |
+          if [[ -z "${BASE_URL}" ]]; then
+            echo "::error::Configure DEV_BASE_URL in the development GitHub Environment."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Publish validated DEV deployment tags
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
+          MANIFEST="$(aws ecr batch-get-image \
+            --repository-name "${REPOSITORY}" \
+            --image-ids imageDigest="${DIGEST}" \
+            --query 'images[0].imageManifest' \
+            --output text \
+            --region "${{ secrets.AWS_REGION }}")"
+          for tag in "${ENVIRONMENT}" latest; do
+            aws ecr put-image \
+              --repository-name "${REPOSITORY}" \
+              --image-tag "${tag}" \
+              --image-manifest "${MANIFEST}" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --no-cli-pager > /dev/null
+          done
+
+      - name: Force new ECS deployment
+        run: |
+          set -euo pipefail
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
+          SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
+          aws ecs update-service \
+            --cluster "${CLUSTER}" \
+            --service "${SERVICE}" \
+            --force-new-deployment \
+            --region "${{ secrets.AWS_REGION }}" \
+            --no-cli-pager
+          aws ecs wait services-stable \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --no-cli-pager
+
+      - name: Run DEV smoke test
+        run: bash .github/scripts/smoke.sh "${BASE_URL}"
+
+      - name: Publish deployment summary
+        run: |
+          {
+            echo "### DEV deployment"
+            echo "- Version: ${{ needs.build.outputs.version }}"
+            echo "- Tag: ${{ needs.build.outputs.version_tag }}"
+            echo "- Digest: ${{ needs.build.outputs.digest }}"
+          } >> "${GITHUB_STEP_SUMMARY}"

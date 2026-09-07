@@ -1,0 +1,93 @@
+name: cut-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer release version, without the leading v
+        required: true
+        type: string
+      source_ref:
+        description: main for a regular release, or an existing vX.Y.Z tag for a production hotfix
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  create-release-branch:
+    name: Approve and create release branch
+    runs-on: ubuntu-latest
+    environment: release-go-no-go
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Validate release version
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must use X.Y.Z format."
+            exit 1
+          fi
+          PROJECT_VERSION="$(./gradlew -q properties | awk '/^version:/ {print $2}')"
+          if [[ "${SOURCE_REF}" == "main" && "${VERSION}" != "${PROJECT_VERSION}" ]]; then
+            echo "::error::Requested version ${VERSION} does not match build.gradle version ${PROJECT_VERSION}."
+            exit 1
+          fi
+          if [[ "${SOURCE_REF}" != "main" ]]; then
+            if [[ ! "${SOURCE_REF}" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "::error::Production hotfix source_ref must be an existing vX.Y.Z release tag."
+              exit 1
+            fi
+            IFS=. read -r target_major target_minor target_patch <<< "${VERSION}"
+            source_major="${BASH_REMATCH[1]}"
+            source_minor="${BASH_REMATCH[2]}"
+            if (( target_major != source_major || target_minor != source_minor + 1 || target_patch != 0 )); then
+              echo "::error::A production hotfix must bump MINOR from ${SOURCE_REF} to ${source_major}.$((source_minor + 1)).0."
+              exit 1
+            fi
+          fi
+          if git ls-remote --exit-code --heads origin "release/v${VERSION}" > /dev/null 2>&1; then
+            echo "::error::release/v${VERSION} already exists."
+            exit 1
+          fi
+          if gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            echo "::error::Release v${VERSION} already exists."
+            exit 1
+          fi
+
+      - name: Create release branch
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          git switch -c "release/v${VERSION}"
+          if [[ "${SOURCE_REF}" != "main" ]]; then
+            sed -i -E "s/^version = '[^']+'/version = '${VERSION}'/" build.gradle
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add build.gradle
+            git commit -m "chore(release): prepare v${VERSION}"
+          fi
+          git push origin "HEAD:refs/heads/release/v${VERSION}"

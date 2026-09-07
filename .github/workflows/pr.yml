@@ -3,6 +3,11 @@ name: pr-to-main
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
     types: [opened, synchronize, reopened]
 
 env:
