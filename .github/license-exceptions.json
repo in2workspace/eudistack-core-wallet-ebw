@@ -1,0 +1,5 @@
+{
+  "$comment": "Approved license exceptions. Each record requires purl (version-pinned), license, reason, approved_by, approved_on, expires_on (max 180 days) and ticket. Protected by .github/CODEOWNERS. Free-text license names that map to an allowed SPDX id are handled by LICENSE_NAME_NORMALIZATION in the evaluator, NOT here.",
+  "exceptions": [
+  ]
+}
