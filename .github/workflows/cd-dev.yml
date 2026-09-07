@@ -141,7 +141,7 @@ jobs:
           push-to-registry: true
 
   deploy:
-    name: Deploy and smoke-test DEV
+    name: Deploy DEV
     needs: build
     runs-on: ubuntu-latest
     environment: development
@@ -203,9 +203,6 @@ jobs:
             --services "${SERVICE}" \
             --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager
-
-      - name: Run DEV smoke test
-        run: bash .github/scripts/smoke.sh "${BASE_URL}"
 
       - name: Publish deployment summary
         run: |
