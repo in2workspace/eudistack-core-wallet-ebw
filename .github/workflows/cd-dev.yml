@@ -28,7 +28,7 @@ jobs:
   build:
     name: Build, scan and publish DEV artifact
     runs-on: ubuntu-latest
-    environment: development
+    environment: dev
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       image: ${{ steps.metadata.outputs.image }}
@@ -144,7 +144,7 @@ jobs:
     name: Deploy DEV
     needs: build
     runs-on: ubuntu-latest
-    environment: development
+    environment: dev
     env:
       ENVIRONMENT: dev
       BASE_URL: ${{ vars.DEV_BASE_URL }}

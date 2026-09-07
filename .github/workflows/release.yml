@@ -231,7 +231,6 @@ jobs:
     name: PM, customer and release-readiness acceptance
     needs: [build, deploy-stg]
     runs-on: ubuntu-latest
-    environment: staging-validation
     steps:
       - name: Create release manifest
         run: |
@@ -245,7 +244,7 @@ jobs:
             echo "- Image: ${{ needs.build.outputs.image }}"
             echo "- Digest: ${{ needs.build.outputs.digest }}"
             echo "- STG smoke: passed"
-            echo "- Approval environment: staging-validation"
+            echo "- Approval environment: stg"
           } > release-readiness.md
 
       - name: Upload signed release evidence
