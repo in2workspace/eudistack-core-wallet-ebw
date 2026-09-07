@@ -106,7 +106,7 @@ jobs:
       MONITOR_MINUTES: ${{ inputs.production_monitor_minutes }}
     steps:
       - name: Checkout deployment checks
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Validate inputs and production endpoint
         run: |
@@ -142,7 +142,7 @@ jobs:
           fi
 
       - name: Configure AWS credentials for STG
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
@@ -150,10 +150,10 @@ jobs:
 
       - name: Login to STG ECR
         id: ecr-stg
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
 
       - name: Download release-readiness evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-evidence-${{ inputs.version }}
           path: release-evidence
@@ -192,7 +192,7 @@ jobs:
             ' release-evidence/release-evidence.json > /dev/null
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       - name: Verify version binding and pull validated STG digest
         env:
@@ -225,7 +225,7 @@ jobs:
           fi
           STG_IMAGE="${ECR_REGISTRY_STG}/${STG_REPOSITORY}@${DIGEST}"
           cosign verify \
-            --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@.*" \
+            --certificate-identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/reusable-release.yml@refs/heads/release/v${VERSION}" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             "${STG_IMAGE}"
           docker pull "${STG_IMAGE}"
@@ -240,7 +240,7 @@ jobs:
           echo "STG_IMAGE=${STG_IMAGE}" >> "${GITHUB_ENV}"
 
       - name: Configure AWS credentials for production
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PRO }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PRO }}
@@ -248,7 +248,7 @@ jobs:
 
       - name: Login to production ECR
         id: ecr-pro
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
 
       - name: Capture current production digest
         id: current

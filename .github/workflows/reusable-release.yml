@@ -101,12 +101,12 @@ jobs:
       ENVIRONMENT: ${{ inputs.staging_environment }}
     steps:
       - name: Checkout release branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: ${{ inputs.java_version }}
@@ -168,7 +168,7 @@ jobs:
           scanMetadataReportFile: build/sonar/report-task.txt
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
 
@@ -191,7 +191,7 @@ jobs:
           trivyignores: config/trivy/.trivyignore
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
@@ -199,7 +199,7 @@ jobs:
 
       - name: Login to Amazon ECR
         id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
 
       - name: Capture current STG rollback point
         id: previous-stg
@@ -238,11 +238,11 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build and push RC image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
@@ -261,7 +261,7 @@ jobs:
           trivyignores: config/trivy/.trivyignore
 
       - name: Generate CycloneDX SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           image: ${{ steps.metadata.outputs.image }}@${{ steps.build.outputs.digest }}
           format: cyclonedx-json
@@ -269,13 +269,13 @@ jobs:
           upload-artifact: false
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-${{ steps.metadata.outputs.rc_tag }}
           path: sbom.cdx.json
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       - name: Sign image and attach SBOM
         env:
@@ -289,7 +289,7 @@ jobs:
             "${IMAGE}@${DIGEST}"
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ${{ steps.metadata.outputs.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -308,7 +308,7 @@ jobs:
       SMOKE_URL: ${{ inputs.staging_smoke_url }}
     steps:
       - name: Checkout deployment checks
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Require STG smoke endpoint
         run: |
@@ -335,7 +335,7 @@ jobs:
           fi
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
@@ -478,7 +478,7 @@ jobs:
           } > release-readiness.md
 
       - name: Upload release evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-evidence-${{ needs.build.outputs.version }}
           path: |
@@ -486,7 +486,7 @@ jobs:
             release-evidence.json
 
       - name: Attest release evidence
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: |
             release-readiness.md
@@ -511,10 +511,10 @@ jobs:
       VERSION: ${{ needs.build.outputs.version }}
     steps:
       - name: Checkout deployment checks
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Download release-readiness evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-evidence-${{ needs.build.outputs.version }}
 
@@ -574,7 +574,7 @@ jobs:
           fi
 
       - name: Configure AWS credentials for STG
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
@@ -582,10 +582,10 @@ jobs:
 
       - name: Login to STG ECR
         id: ecr-stg
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       - name: Verify RC signature
         env:
@@ -593,7 +593,7 @@ jobs:
           DIGEST: ${{ needs.build.outputs.digest }}
         run: |
           cosign verify \
-            --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@.*" \
+            --certificate-identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/reusable-release.yml@refs/heads/release/v${VERSION}" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             "${IMAGE}@${DIGEST}"
 
@@ -601,7 +601,7 @@ jobs:
         run: docker pull "${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}"
 
       - name: Configure AWS credentials for production
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PRO }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PRO }}
@@ -609,7 +609,7 @@ jobs:
 
       - name: Login to production ECR
         id: ecr-pro
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
 
       - name: Capture current production rollback point
         id: current
@@ -681,7 +681,7 @@ jobs:
           fi
 
       - name: Download SBOM
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: sbom-${{ needs.build.outputs.rc_tag }}
 
