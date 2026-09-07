@@ -33,7 +33,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
                 .expectBody()
                 .jsonPath("$.message").isNotEmpty();
 
-        // Step 2: Verify email with captured OTP
+        // Step 2: Verify mail with captured OTP
         var otp = capturedOtps.get(email);
         assertThat(otp).isNotNull();
 
