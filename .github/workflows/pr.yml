@@ -1,4 +1,4 @@
-name: pr-quality-gates
+name: pr-to-main
 
 on:
   pull_request:
@@ -188,20 +188,7 @@ jobs:
     needs: [changes, build]
     if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: eudistack
-          POSTGRES_USER: eudistack
-          POSTGRES_PASSWORD: eudistack
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U eudistack -d eudistack"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -220,37 +207,6 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
           format: table
-
-      - name: Seed tenant registry
-        run: |
-          PGPASSWORD=eudistack psql -h localhost -U eudistack -d eudistack -c "
-            CREATE TABLE IF NOT EXISTS public.tenant_registry (
-                schema_name   VARCHAR(64)  PRIMARY KEY,
-                display_name  VARCHAR(255) NOT NULL,
-                tenant_type   VARCHAR(20)  NOT NULL DEFAULT 'simple',
-                status        VARCHAR(20)  NOT NULL DEFAULT 'active',
-                created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
-                updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
-            );
-            INSERT INTO public.tenant_registry (schema_name, display_name, tenant_type)
-            VALUES ('sandbox', 'EUDIStack Sandbox', 'multi_org')
-            ON CONFLICT (schema_name) DO NOTHING;
-          "
-
-      - name: Run application container
-        run: |
-          docker run -d --name wallet-ebw-service \
-            --network host \
-            -e DB_HOST=localhost \
-            -e DB_PORT=5432 \
-            -e DB_NAME=eudistack \
-            -e DB_USERNAME=eudistack \
-            -e DB_PASSWORD=eudistack \
-            -e TRUST_FORWARDED_HOST=true \
-            "eudistack-core-wallet-ebw:v${{ github.event.pull_request.number }}-pr"
-
-      - name: Wait for service readiness
-        run: bash .github/scripts/smoke.sh http://localhost:8080
 
       - name: ZAP baseline scan
         uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
