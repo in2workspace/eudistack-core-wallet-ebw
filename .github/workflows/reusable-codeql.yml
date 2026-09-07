@@ -1,0 +1,65 @@
+name: reusable-codeql
+
+on:
+  workflow_call:
+    inputs:
+      java_version:
+        description: Java version used to build the application
+        required: false
+        type: string
+        default: '25'
+      languages:
+        description: CodeQL languages to analyze
+        required: false
+        type: string
+        default: java-kotlin
+      queries:
+        description: CodeQL query suite
+        required: false
+        type: string
+        default: security-extended
+      build_command:
+        description: Command used to build the application for CodeQL
+        required: false
+        type: string
+        default: ./gradlew build -x test -x checkstyleMain -x checkstyleTest
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (java)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: ${{ inputs.java_version }}
+          cache: 'gradle'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ inputs.languages }}
+          queries: ${{ inputs.queries }}
+
+      - name: Make Gradlew Executable
+        run: chmod +x ./gradlew
+
+      - name: Build
+        run: ${{ inputs.build_command }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:java-kotlin'

@@ -8,22 +8,17 @@ on:
         required: true
         type: string
       digest:
-        description: Exact STG image digest from release-readiness evidence (sha256:...)
+        description: Exact STG image digest from release evidence (sha256:...)
         required: true
         type: string
       source_sha:
-        description: Exact 40-character commit SHA from release-readiness evidence
+        description: Exact 40-character commit SHA from release evidence
         required: true
         type: string
       release_run_id:
         description: Release workflow run ID containing the attested release evidence
         required: true
         type: string
-
-env:
-  PROJECT_NAME: ${{ vars.PROJECT_NAME }}
-  APP_NAME: ${{ vars.APP_NAME }}
-  REGION_CODE: ${{ vars.REGION_CODE }}
 
 permissions:
   actions: read
@@ -32,293 +27,22 @@ permissions:
 
 jobs:
   deploy:
-    name: Re-promote validated digest to production
-    runs-on: ubuntu-latest
-    environment: pro
-    concurrency:
-      group: ${{ vars.PRODUCTION_CONCURRENCY_GROUP || format('{0}-production', github.repository) }}
-      cancel-in-progress: false
-    outputs:
-      previous_digest: ${{ steps.current.outputs.digest }}
-    env:
-      FROM_ENV: stg
-      ENVIRONMENT: pro
-      VERSION: ${{ inputs.version }}
-      DIGEST: ${{ inputs.digest }}
-      SOURCE_SHA: ${{ inputs.source_sha }}
-      RELEASE_RUN_ID: ${{ inputs.release_run_id }}
-      SMOKE_URL: ${{ vars.SMOKE_URL }}
-      MONITOR_MINUTES: ${{ vars.PRO_MONITOR_MINUTES || '30' }}
-    steps:
-      - name: Checkout deployment checks
-        uses: actions/checkout@v4
-
-      - name: Validate inputs and production endpoint
-        run: |
-          for variable in PROJECT_NAME APP_NAME REGION_CODE; do
-            if [[ -z "${!variable}" ]]; then
-              echo "::error::Configure the ${variable} repository variable."
-              exit 1
-            fi
-          done
-          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::version must use X.Y.Z format."
-            exit 1
-          fi
-          if [[ ! "${DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-            echo "::error::digest must be a sha256 image digest."
-            exit 1
-          fi
-          if [[ ! "${SOURCE_SHA}" =~ ^[a-f0-9]{40}$ ]]; then
-            echo "::error::source_sha must be a full 40-character commit SHA."
-            exit 1
-          fi
-          if [[ ! "${RELEASE_RUN_ID}" =~ ^[0-9]+$ ]]; then
-            echo "::error::release_run_id must be a numeric workflow run ID."
-            exit 1
-          fi
-          if [[ -z "${SMOKE_URL}" ]]; then
-            echo "::error::Configure SMOKE_URL in the ${ENVIRONMENT} GitHub Environment."
-            exit 1
-          fi
-          if [[ ! "${MONITOR_MINUTES}" =~ ^[1-9][0-9]*$ ]] || (( MONITOR_MINUTES > 60 )); then
-            echo "::error::PRO_MONITOR_MINUTES must be an integer from 1 to 60."
-            exit 1
-          fi
-
-      - name: Configure AWS credentials for STG
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Login to STG ECR
-        id: ecr-stg
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Download release-readiness evidence
-        uses: actions/download-artifact@v4
-        with:
-          name: release-evidence-${{ inputs.version }}
-          path: release-evidence
-          repository: ${{ github.repository }}
-          run-id: ${{ inputs.release_run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify release evidence
-        env:
-          ECR_REGISTRY_STG: ${{ steps.ecr-stg.outputs.registry }}
-        run: |
-          set -euo pipefail
-          EXPECTED_IMAGE="${ECR_REGISTRY_STG}/${PROJECT_NAME}-${FROM_ENV}-ecr-${REGION_CODE}-${APP_NAME}"
-          jq -e \
-            --arg version "${VERSION}" \
-            --arg component "${APP_NAME}" \
-            --arg repository "${GITHUB_REPOSITORY}" \
-            --arg commit "${SOURCE_SHA}" \
-            --arg image "${EXPECTED_IMAGE}" \
-            --arg digest "${DIGEST}" \
-            '
-              .schemaVersion == 1
-              and .version == $version
-              and .component.name == $component
-              and .component.repository == $repository
-              and .component.commit == $commit
-              and .component.image == $image
-              and .component.digest == $digest
-              and .validation.environment == "stg"
-              and .validation.smoke == "passed"
-              and .validation.rollbackRehearsal == "passed"
-            ' release-evidence/release-evidence.json > /dev/null
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
-
-      - name: Verify version binding and pull validated STG digest
-        env:
-          ECR_REGISTRY_STG: ${{ steps.ecr-stg.outputs.registry }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          STG_REPOSITORY="${PROJECT_NAME}-${FROM_ENV}-ecr-${REGION_CODE}-${APP_NAME}"
-          TAGS="$(aws ecr describe-images \
-            --repository-name "${STG_REPOSITORY}" \
-            --image-ids imageDigest="${DIGEST}" \
-            --query 'imageDetails[0].imageTags' \
-            --output text \
-            --region "${{ secrets.AWS_REGION }}")"
-          EXPECTED_RC_TAG="v${VERSION}-rc-${SOURCE_SHA:0:12}"
-          FOUND_RC_TAG=false
-          FOUND_SOURCE_SHA=false
-          for tag in ${TAGS}; do
-            [[ "${tag}" == "${EXPECTED_RC_TAG}" ]] && FOUND_RC_TAG=true
-            [[ "${tag}" == "${SOURCE_SHA}" ]] && FOUND_SOURCE_SHA=true
-          done
-          if [[ "${FOUND_RC_TAG}" != true || "${FOUND_SOURCE_SHA}" != true ]]; then
-            echo "::error::Digest ${DIGEST} is not bound to ${EXPECTED_RC_TAG} and ${SOURCE_SHA}."
-            exit 1
-          fi
-          RELEASE_BRANCH_SHA="$(git ls-remote --heads origin "refs/heads/release/v${VERSION}" | awk '{print $1}')"
-          if [[ -n "${RELEASE_BRANCH_SHA}" && "${RELEASE_BRANCH_SHA}" != "${SOURCE_SHA}" ]]; then
-            echo "::error::release/v${VERSION} now points to ${RELEASE_BRANCH_SHA}, not ${SOURCE_SHA}."
-            exit 1
-          fi
-          STG_IMAGE="${ECR_REGISTRY_STG}/${STG_REPOSITORY}@${DIGEST}"
-          cosign verify \
-            --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@.*" \
-            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-            "${STG_IMAGE}"
-          docker pull "${STG_IMAGE}"
-          if gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
-            git fetch --force origin "refs/tags/v${VERSION}:refs/tags/v${VERSION}"
-            RELEASE_SHA="$(git rev-list -n 1 "v${VERSION}")"
-            if [[ "${RELEASE_SHA}" != "${SOURCE_SHA}" ]]; then
-              echo "::error::Existing release v${VERSION} targets ${RELEASE_SHA}, not ${SOURCE_SHA}."
-              exit 1
-            fi
-          fi
-          echo "STG_IMAGE=${STG_IMAGE}" >> "${GITHUB_ENV}"
-
-      - name: Configure AWS credentials for production
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PRO }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PRO }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Login to production ECR
-        id: ecr-pro
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Capture current production digest
-        id: current
-        run: |
-          set -euo pipefail
-          PRO_REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          PREVIOUS_DIGEST="$(aws ecr describe-images \
-            --repository-name "${PRO_REPOSITORY}" \
-            --filter tagStatus=TAGGED \
-            --query "imageDetails[?contains(imageTags, '${ENVIRONMENT}')].imageDigest | [0]" \
-            --output text \
-            --region "${{ secrets.AWS_REGION }}")"
-          if [[ "${PREVIOUS_DIGEST}" == "None" ]]; then
-            PREVIOUS_DIGEST=""
-          fi
-          if [[ -z "${PREVIOUS_DIGEST}" ]]; then
-            echo "::error::No current production digest exists; automatic rollback cannot be guaranteed."
-            exit 1
-          fi
-          PREVIOUS_VERSION_DIGEST="$(aws ecr describe-images \
-            --repository-name "${PRO_REPOSITORY}" \
-            --filter tagStatus=TAGGED \
-            --query "imageDetails[?contains(imageTags, 'v${VERSION}')].imageDigest | [0]" \
-            --output text \
-            --region "${{ secrets.AWS_REGION }}")"
-          if [[ "${PREVIOUS_VERSION_DIGEST}" == "None" ]]; then
-            PREVIOUS_VERSION_DIGEST=""
-          fi
-          {
-            echo "digest=${PREVIOUS_DIGEST}"
-            echo "version_digest=${PREVIOUS_VERSION_DIGEST}"
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: Promote exact digest
-        env:
-          ECR_REGISTRY_PRO: ${{ steps.ecr-pro.outputs.registry }}
-        run: |
-          set -euo pipefail
-          PRO_REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          PRO_IMAGE="${ECR_REGISTRY_PRO}/${PRO_REPOSITORY}"
-          for tag in "${ENVIRONMENT}" latest; do
-            docker tag "${STG_IMAGE}" "${PRO_IMAGE}:${tag}"
-            docker push "${PRO_IMAGE}:${tag}"
-          done
-
-      - name: Force new ECS deployment
-        run: |
-          set -euo pipefail
-          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
-          SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
-          aws ecs update-service \
-            --cluster "${CLUSTER}" \
-            --service "${SERVICE}" \
-            --force-new-deployment \
-            --region "${{ secrets.AWS_REGION }}" \
-            --no-cli-pager
-          aws ecs wait services-stable \
-            --cluster "${CLUSTER}" \
-            --services "${SERVICE}" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --no-cli-pager
-
-      - name: Run production smoke test
-        run: bash .github/scripts/smoke.sh "${SMOKE_URL}"
-
-      - name: Monitor production readiness
-        run: |
-          set -euo pipefail
-          for minute in $(seq 1 "${MONITOR_MINUTES}"); do
-            sleep 60
-            echo "Production readiness check ${minute}/${MONITOR_MINUTES}"
-            bash .github/scripts/smoke.sh "${SMOKE_URL}"
-          done
-
-      - name: Roll back failed production deployment
-        if: ${{ (failure() || cancelled()) && steps.current.outputs.digest != '' }}
-        env:
-          PREVIOUS_DIGEST: ${{ steps.current.outputs.digest }}
-        run: |
-          set -euo pipefail
-          PRO_REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          MANIFEST="$(aws ecr batch-get-image \
-            --repository-name "${PRO_REPOSITORY}" \
-            --image-ids imageDigest="${PREVIOUS_DIGEST}" \
-            --query 'images[0].imageManifest' \
-            --output text \
-            --region "${{ secrets.AWS_REGION }}")"
-          for tag in "${ENVIRONMENT}" latest; do
-            aws ecr put-image \
-              --repository-name "${PRO_REPOSITORY}" \
-              --image-tag "${tag}" \
-              --image-manifest "${MANIFEST}" \
-              --region "${{ secrets.AWS_REGION }}" \
-              --no-cli-pager > /dev/null
-          done
-          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
-          SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
-          aws ecs update-service \
-            --cluster "${CLUSTER}" \
-            --service "${SERVICE}" \
-            --force-new-deployment \
-            --region "${{ secrets.AWS_REGION }}" \
-            --no-cli-pager
-          aws ecs wait services-stable \
-            --cluster "${CLUSTER}" \
-            --services "${SERVICE}" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --no-cli-pager
-          bash .github/scripts/smoke.sh "${SMOKE_URL}"
-
-      - name: Publish validated version tag
-        env:
-          ECR_REGISTRY_PRO: ${{ steps.ecr-pro.outputs.registry }}
-        run: |
-          PRO_IMAGE="${ECR_REGISTRY_PRO}/${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          docker tag "${STG_IMAGE}" "${PRO_IMAGE}:v${VERSION}"
-          docker push "${PRO_IMAGE}:v${VERSION}"
-
-      - name: Publish GitHub Release if missing
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${VERSION}"
-          if ! gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
-            gh release create "${TAG}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --target "${SOURCE_SHA}" \
-              --title "${TAG}" \
-              --generate-notes \
-              release-evidence/release-readiness.md \
-              release-evidence/release-evidence.json
-          fi
+    uses: ./.github/workflows/reusable-deploy-pro.yml
+    with:
+      version: ${{ inputs.version }}
+      digest: ${{ inputs.digest }}
+      source_sha: ${{ inputs.source_sha }}
+      release_run_id: ${{ inputs.release_run_id }}
+      project_name: 'eudistack'
+      app_name: 'wallet-ebw'
+      region_code: 'ew1'
+      production_smoke_url: 'https://sandbox.eudistack.net/business-wallet/health'
+      production_concurrency_group: ${{ vars.PRODUCTION_CONCURRENCY_GROUP || format('{0}-production', github.repository) }}
+      production_monitor_minutes: ${{ vars.PRO_MONITOR_MINUTES || '30' }}
+    secrets:
+      github_token: ${{ secrets.GITHUB_TOKEN }}
+      AWS_ACCESS_KEY_ID_STG: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
+      AWS_SECRET_ACCESS_KEY_STG: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
+      AWS_ACCESS_KEY_ID_PRO: ${{ secrets.AWS_ACCESS_KEY_ID_PRO }}
+      AWS_SECRET_ACCESS_KEY_PRO: ${{ secrets.AWS_SECRET_ACCESS_KEY_PRO }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}

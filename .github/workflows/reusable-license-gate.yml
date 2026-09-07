@@ -1,0 +1,89 @@
+name: reusable-license-gate
+
+on:
+  workflow_call:
+    inputs:
+      java_version:
+        description: Java version used to generate the SBOM
+        required: false
+        type: string
+        default: '25'
+      node_version:
+        description: Node.js version used by the license evaluator
+        required: false
+        type: string
+        default: '22'
+      sbom_command:
+        description: Command used to generate the CycloneDX SBOM
+        required: false
+        type: string
+        default: ./gradlew cyclonedxBom
+      sbom_path:
+        description: Generated CycloneDX SBOM path
+        required: false
+        type: string
+        default: build/reports/sbom/sbom.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect license-relevant changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            relevant:
+              - '!**/*.md'
+              - '!.github/**'
+              - '!docs/**'
+              - '!LICENSE'
+              - '!.gitignore'
+
+  license-gate:
+    name: License Compliance Check
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: ${{ inputs.java_version }}
+          cache: 'gradle'
+
+      - name: Make Gradlew Executable
+        run: chmod +x ./gradlew
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Verify the license gate itself
+        run: node --test .github/scripts/license-gate.test.mjs
+
+      - name: Generate CycloneDX SBOM
+        run: ${{ inputs.sbom_command }}
+
+      - name: Evaluate licenses
+        run: node .github/scripts/license-gate.mjs --sbom-path "${{ inputs.sbom_path }}"
