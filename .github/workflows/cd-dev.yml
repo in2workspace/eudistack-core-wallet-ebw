@@ -1,6 +1,5 @@
 name: cd-dev
 
-# TBD flow: every merge to main is automatically deployed to DEV.
 on:
   push:
     branches: [main]
@@ -18,66 +17,52 @@ env:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: cd-dev
+  cancel-in-progress: true
 
 jobs:
-  sonar:
-    name: SonarCloud Scan
+  build:
+    name: Build, scan and publish DEV artifact
     runs-on: ubuntu-latest
+    environment: development
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.metadata.outputs.image }}
+      version: ${{ steps.metadata.outputs.version }}
+      version_tag: ${{ steps.metadata.outputs.version_tag }}
+    env:
+      ENVIRONMENT: dev
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '25'
-          cache: 'gradle'
+          cache: gradle
 
-      - name: Make Gradlew Executable
+      - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build, Test & SonarCloud Scan
+      - name: Build, test and run SonarCloud
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./gradlew build sonar --info
 
-      - name: SonarCloud Quality Gate
+      - name: SonarCloud quality gate
         uses: sonarsource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           scanMetadataReportFile: build/sonar/report-task.txt
-
-  build:
-    name: Build > Tag > Push
-    needs: sonar
-    runs-on: ubuntu-latest
-    env:
-      ENVIRONMENT: dev
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '25'
-          cache: 'gradle'
-
-      - name: Make Gradlew Executable
-        run: chmod +x ./gradlew
-
-      - name: Get Project Metadata
-        id: metadata
-        run: |
-          VERSION=$(./gradlew -q properties | grep '^version:' | awk '{print $2}')
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -90,35 +75,102 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Docker Image
+      - name: Resolve image metadata
+        id: metadata
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecr-${{ env.REGION_CODE }}-${{ env.APP_NAME }}
         run: |
           set -euo pipefail
+          VERSION="$(./gradlew -q properties | awk '/^version:/ {print $2}')"
+          SHORT_SHA="${GITHUB_SHA::12}"
+          IMAGE="${ECR_REGISTRY}/${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
+          VERSION_TAG="v${VERSION}-dev-${SHORT_SHA}"
+          {
+            echo "version=${VERSION}"
+            echo "image=${IMAGE}"
+            echo "version_tag=${VERSION_TAG}"
+            echo "tags<<EOF"
+            echo "${IMAGE}:${VERSION_TAG}"
+            echo "${IMAGE}:${GITHUB_SHA}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
 
-          ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ env.ENVIRONMENT }}"
-          ECR_LATEST="${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
-          ECR_VERSION="${ECR_REGISTRY}/${ECR_REPOSITORY}:v${{ env.VERSION }}"
-          ECR_SHA="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ github.sha }}"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-          docker build --build-arg SKIP_TESTS=true -t "${ECR_IMAGE}" .
-          docker tag "${ECR_IMAGE}" "${ECR_LATEST}"
-          docker tag "${ECR_IMAGE}" "${ECR_VERSION}"
-          docker tag "${ECR_IMAGE}" "${ECR_SHA}"
+      - name: Build and push immutable DEV image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: SKIP_TESTS=true
+          tags: ${{ steps.metadata.outputs.tags }}
+          provenance: false
 
-          docker push "${ECR_IMAGE}"
-          docker push "${ECR_LATEST}"
-          docker push "${ECR_VERSION}"
-          docker push "${ECR_SHA}"
+      - name: Scan published container image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.metadata.outputs.image }}@${{ steps.build.outputs.digest }}
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          format: table
 
-  cd-dev:
-    name: Deploy to Dev
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.metadata.outputs.image }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: false
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-dev-${{ github.sha }}
+          path: sbom.cdx.json
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image and attach SBOM
+        env:
+          IMAGE: ${{ steps.metadata.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+          cosign attest --yes \
+            --type cyclonedx \
+            --predicate sbom.cdx.json \
+            "${IMAGE}@${DIGEST}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.metadata.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  deploy:
+    name: Deploy and smoke-test DEV
     needs: build
     runs-on: ubuntu-latest
+    environment: development
     env:
       ENVIRONMENT: dev
+      BASE_URL: ${{ vars.DEV_BASE_URL }}
     steps:
+      - name: Checkout deployment checks
+        uses: actions/checkout@v4
+
+      - name: Require DEV endpoint
+        run: |
+          if [[ -z "${BASE_URL}" ]]; then
+            echo "::error::Configure DEV_BASE_URL in the development GitHub Environment."
+            exit 1
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -126,38 +178,52 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Publish validated DEV deployment tags
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
+          MANIFEST="$(aws ecr batch-get-image \
+            --repository-name "${REPOSITORY}" \
+            --image-ids imageDigest="${DIGEST}" \
+            --query 'images[0].imageManifest' \
+            --output text \
+            --region "${{ secrets.AWS_REGION }}")"
+          for tag in "${ENVIRONMENT}" latest; do
+            aws ecr put-image \
+              --repository-name "${REPOSITORY}" \
+              --image-tag "${tag}" \
+              --image-manifest "${MANIFEST}" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --no-cli-pager > /dev/null
+          done
+
       - name: Force new ECS deployment
         run: |
           set -euo pipefail
-          CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}"
-          SERVICE="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}-${{ env.APP_NAME }}-service"
-
-          echo "Deploying ${SERVICE} on cluster ${CLUSTER}..."
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
+          SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
           aws ecs update-service \
             --cluster "${CLUSTER}" \
             --service "${SERVICE}" \
             --force-new-deployment \
             --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager
-
-          echo "### 🚀 Deployment triggered" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cluster:** ${CLUSTER}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Service:** ${SERVICE}" >> $GITHUB_STEP_SUMMARY
-
-      - name: Wait for deployment stability
-        run: |
-          set -euo pipefail
-          CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}"
-          SERVICE="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}-${{ env.APP_NAME }}-service"
-
-          echo "Waiting for service stability (timeout: 10 min)..."
           aws ecs wait services-stable \
             --cluster "${CLUSTER}" \
             --services "${SERVICE}" \
             --region "${{ secrets.AWS_REGION }}" \
-            --no-cli-pager || {
-              echo "::warning::Service did not stabilize within timeout"
-              exit 1
-            }
+            --no-cli-pager
 
-          echo "### ✅ Deployment successful" >> $GITHUB_STEP_SUMMARY
+      - name: Run DEV smoke test
+        run: bash .github/scripts/smoke.sh "${BASE_URL}"
+
+      - name: Publish deployment summary
+        run: |
+          {
+            echo "### DEV deployment"
+            echo "- Version: ${{ needs.build.outputs.version }}"
+            echo "- Tag: ${{ needs.build.outputs.version_tag }}"
+            echo "- Digest: ${{ needs.build.outputs.digest }}"
+          } >> "${GITHUB_STEP_SUMMARY}"
