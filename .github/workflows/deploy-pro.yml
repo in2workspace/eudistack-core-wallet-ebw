@@ -15,13 +15,18 @@ on:
         description: Exact 40-character commit SHA from release-readiness evidence
         required: true
         type: string
+      release_run_id:
+        description: Release workflow run ID containing the attested release evidence
+        required: true
+        type: string
 
 env:
-  PROJECT_NAME: eudistack
-  APP_NAME: wallet-ebw
-  REGION_CODE: ew1
+  PROJECT_NAME: ${{ vars.PROJECT_NAME }}
+  APP_NAME: ${{ vars.APP_NAME }}
+  REGION_CODE: ${{ vars.REGION_CODE }}
 
 permissions:
+  actions: read
   contents: write
   id-token: write
 
@@ -41,13 +46,21 @@ jobs:
       VERSION: ${{ inputs.version }}
       DIGEST: ${{ inputs.digest }}
       SOURCE_SHA: ${{ inputs.source_sha }}
-      BASE_URL: ${{ vars.PRO_BASE_URL }}
+      RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+      SMOKE_URL: ${{ vars.SMOKE_URL }}
+      MONITOR_MINUTES: ${{ vars.PRO_MONITOR_MINUTES || '30' }}
     steps:
       - name: Checkout deployment checks
         uses: actions/checkout@v4
 
       - name: Validate inputs and production endpoint
         run: |
+          for variable in PROJECT_NAME APP_NAME REGION_CODE; do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::Configure the ${variable} repository variable."
+              exit 1
+            fi
+          done
           if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::version must use X.Y.Z format."
             exit 1
@@ -60,8 +73,16 @@ jobs:
             echo "::error::source_sha must be a full 40-character commit SHA."
             exit 1
           fi
-          if [[ -z "${BASE_URL}" ]]; then
-            echo "::error::Configure PRO_BASE_URL in the production GitHub Environment."
+          if [[ ! "${RELEASE_RUN_ID}" =~ ^[0-9]+$ ]]; then
+            echo "::error::release_run_id must be a numeric workflow run ID."
+            exit 1
+          fi
+          if [[ -z "${SMOKE_URL}" ]]; then
+            echo "::error::Configure SMOKE_URL in the ${ENVIRONMENT} GitHub Environment."
+            exit 1
+          fi
+          if [[ ! "${MONITOR_MINUTES}" =~ ^[1-9][0-9]*$ ]] || (( MONITOR_MINUTES > 60 )); then
+            echo "::error::PRO_MONITOR_MINUTES must be an integer from 1 to 60."
             exit 1
           fi
 
@@ -75,6 +96,41 @@ jobs:
       - name: Login to STG ECR
         id: ecr-stg
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Download release-readiness evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: release-evidence-${{ inputs.version }}
+          path: release-evidence
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.release_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release evidence
+        env:
+          ECR_REGISTRY_STG: ${{ steps.ecr-stg.outputs.registry }}
+        run: |
+          set -euo pipefail
+          EXPECTED_IMAGE="${ECR_REGISTRY_STG}/${PROJECT_NAME}-${FROM_ENV}-ecr-${REGION_CODE}-${APP_NAME}"
+          jq -e \
+            --arg version "${VERSION}" \
+            --arg component "${APP_NAME}" \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg commit "${SOURCE_SHA}" \
+            --arg image "${EXPECTED_IMAGE}" \
+            --arg digest "${DIGEST}" \
+            '
+              .schemaVersion == 1
+              and .version == $version
+              and .component.name == $component
+              and .component.repository == $repository
+              and .component.commit == $commit
+              and .component.image == $image
+              and .component.digest == $digest
+              and .validation.environment == "stg"
+              and .validation.smoke == "passed"
+              and .validation.rollbackRehearsal == "passed"
+            ' release-evidence/release-evidence.json > /dev/null
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
@@ -149,6 +205,10 @@ jobs:
           if [[ "${PREVIOUS_DIGEST}" == "None" ]]; then
             PREVIOUS_DIGEST=""
           fi
+          if [[ -z "${PREVIOUS_DIGEST}" ]]; then
+            echo "::error::No current production digest exists; automatic rollback cannot be guaranteed."
+            exit 1
+          fi
           PREVIOUS_VERSION_DIGEST="$(aws ecr describe-images \
             --repository-name "${PRO_REPOSITORY}" \
             --filter tagStatus=TAGGED \
@@ -192,6 +252,54 @@ jobs:
             --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager
 
+      - name: Run production smoke test
+        run: bash .github/scripts/smoke.sh "${SMOKE_URL}"
+
+      - name: Monitor production readiness
+        run: |
+          set -euo pipefail
+          for minute in $(seq 1 "${MONITOR_MINUTES}"); do
+            sleep 60
+            echo "Production readiness check ${minute}/${MONITOR_MINUTES}"
+            bash .github/scripts/smoke.sh "${SMOKE_URL}"
+          done
+
+      - name: Roll back failed production deployment
+        if: ${{ (failure() || cancelled()) && steps.current.outputs.digest != '' }}
+        env:
+          PREVIOUS_DIGEST: ${{ steps.current.outputs.digest }}
+        run: |
+          set -euo pipefail
+          PRO_REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
+          MANIFEST="$(aws ecr batch-get-image \
+            --repository-name "${PRO_REPOSITORY}" \
+            --image-ids imageDigest="${PREVIOUS_DIGEST}" \
+            --query 'images[0].imageManifest' \
+            --output text \
+            --region "${{ secrets.AWS_REGION }}")"
+          for tag in "${ENVIRONMENT}" latest; do
+            aws ecr put-image \
+              --repository-name "${PRO_REPOSITORY}" \
+              --image-tag "${tag}" \
+              --image-manifest "${MANIFEST}" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --no-cli-pager > /dev/null
+          done
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
+          SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
+          aws ecs update-service \
+            --cluster "${CLUSTER}" \
+            --service "${SERVICE}" \
+            --force-new-deployment \
+            --region "${{ secrets.AWS_REGION }}" \
+            --no-cli-pager
+          aws ecs wait services-stable \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --no-cli-pager
+          bash .github/scripts/smoke.sh "${SMOKE_URL}"
+
       - name: Publish validated version tag
         env:
           ECR_REGISTRY_PRO: ${{ steps.ecr-pro.outputs.registry }}
@@ -210,5 +318,7 @@ jobs:
               --repo "${GITHUB_REPOSITORY}" \
               --target "${SOURCE_SHA}" \
               --title "${TAG}" \
-              --generate-notes
+              --generate-notes \
+              release-evidence/release-readiness.md \
+              release-evidence/release-evidence.json
           fi

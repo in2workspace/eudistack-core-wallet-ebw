@@ -5,8 +5,7 @@
  * Self-contained: zero third-party dependencies, runs on the Node.js already
  * present on GitHub-hosted runners. This file is VENDORED into every repository
  * under `.github/scripts/license-gate.mjs`; it is never consumed across
- * repositories. The reference copy lives in `eudistack-platform-dev` under
- * `templates/license-gate/` — see `docs/_shared/guides/license-gate-and-sbom.md`.
+ * repositories.
  *
  * Policy source of truth: `conv-quality-security-gates.md` §16.1, transcribed
  * into the repository-local `.github/license-policy.json` and protected by

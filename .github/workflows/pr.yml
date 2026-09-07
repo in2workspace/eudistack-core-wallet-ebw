@@ -2,7 +2,9 @@ name: pr-to-main
 
 on:
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - 'release/v*'
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -18,7 +20,6 @@ permissions:
   contents: read
   checks: write
   pull-requests: write
-  packages: write
 
 concurrency:
   group: ci-${{ github.head_ref }}
@@ -68,7 +69,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build & Test
-        run: ./gradlew build --info
+        run: ./gradlew build integrationTest --info
 
       - name: Publish JaCoCo Coverage
         if: always()
@@ -151,8 +152,11 @@ jobs:
     needs: [changes, build]
     if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
-    # G2 (conv-infrastructure-testing.md §6.3): passive scan, non-blocking.
-    # WARN-level findings are surfaced only via the uploaded HTML report.
+    env:
+      CONTAINER_IMAGE: ${{ vars.CI_CONTAINER_IMAGE }}
+      CONTAINER_NAME: ${{ vars.CI_CONTAINER_NAME }}
+      SMOKE_URL: ${{ vars.CI_SMOKE_URL }}
+      ZAP_TARGET_URL: ${{ vars.CI_ZAP_TARGET_URL }}
     services:
       postgres:
         image: postgres:17-alpine
@@ -171,12 +175,21 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v7
 
+      - name: Validate DAST configuration
+        run: |
+          for variable in CONTAINER_IMAGE CONTAINER_NAME SMOKE_URL ZAP_TARGET_URL; do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::Configure the CI_${variable} repository variable."
+              exit 1
+            fi
+          done
+
       # SKIP_TESTS=true: the `build` job (above) already ran the full test suite
       # for the quality gate — re-running tests inside the Docker build here would
       # duplicate that work and risks failing this job on a test issue unrelated
       # to DAST (e.g. a test needing infra this container's build stage lacks).
       - name: Build Docker image
-        run: docker build --build-arg SKIP_TESTS=true -t eudistack-core-wallet-ebw:pr .
+        run: docker build --build-arg SKIP_TESTS=true -t "${CONTAINER_IMAGE}" .
 
       - name: Seed tenant_registry (sandbox)
         run: |
@@ -196,7 +209,7 @@ jobs:
 
       - name: Run container
         run: |
-          docker run -d --name wallet-ebw-service \
+          docker run -d --name "${CONTAINER_NAME}" \
             --network host \
             -e DB_HOST=localhost \
             -e DB_PORT=5432 \
@@ -204,7 +217,7 @@ jobs:
             -e DB_USERNAME=eudistack \
             -e DB_PASSWORD=eudistack \
             -e TRUST_FORWARDED_HOST=true \
-            eudistack-core-wallet-ebw:pr
+            "${CONTAINER_IMAGE}"
 
       # Polls the readiness group, not the aggregate /health: the aggregate
       # includes SmtpHealthIndicator, which reports DOWN whenever no SMTP
@@ -214,19 +227,12 @@ jobs:
       # for pool membership, deliberately excluding smtp.
       - name: Wait for service health
         run: |
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8080/business-wallet/health/readiness; then exit 0; fi
-            sleep 2
-          done
-          echo "Service did not become healthy in time"
-          docker logs wallet-ebw-service
-          exit 1
+          if ! bash .github/scripts/smoke.sh "${SMOKE_URL}"; then
+            docker logs "${CONTAINER_NAME}"
+            exit 1
+          fi
 
-      # Rules file: dev-tools/testing/zap/zap-baseline.conf (this repo), vendored
-      # from eudistack-platform-dev's dev-tools/testing/baseline/zap/zap-baseline.conf
-      # (single source of truth per convention §5.3) — copied here to avoid a
-      # cross-repo read token. Update the source there, then re-copy here.
-      #
+      # Repository-local ZAP baseline rules keep this workflow self-contained.
       # TRUST_FORWARDED_HOST=true (above) + ZAP_AUTH_HEADER make X-Tenant: sandbox
       # actually resolve: TenantDomainWebFilter ignores X-Tenant entirely unless
       # ebw.security.trust-forwarded-host is enabled (default false).
@@ -236,7 +242,7 @@ jobs:
           ZAP_AUTH_HEADER: X-Tenant
           ZAP_AUTH_HEADER_VALUE: sandbox
         with:
-          target: 'http://localhost:8080/business-wallet'
+          target: ${{ env.ZAP_TARGET_URL }}
           rules_file_name: 'dev-tools/testing/zap/zap-baseline.conf'
           artifact_name: 'zap-report'
           fail_action: false
@@ -273,9 +279,17 @@ jobs:
       - name: Fail on High/Critical findings
         if: always()
         run: |
-          if [ ! -f report_json.json ]; then
-            echo "::warning::No ZAP JSON report to evaluate."
-            exit 0
+          if [ ! -s report_json.json ]; then
+            echo "::error::ZAP JSON report is missing or empty."
+            exit 1
+          fi
+          if ! jq -e '
+            type == "object"
+            and (.site | type == "array" and length > 0)
+            and all(.site[]?; (.alerts | type == "array"))
+          ' report_json.json > /dev/null; then
+            echo "::error::ZAP JSON report is malformed or has an unexpected schema."
+            exit 1
           fi
           high=$(jq '[.site[]?.alerts[]? | select(((.riskcode // "0") | tonumber) >= 3)] | length' report_json.json)
           echo "High/Critical alerts: ${high}"

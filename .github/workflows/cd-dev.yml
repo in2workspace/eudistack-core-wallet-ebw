@@ -11,9 +11,9 @@ on:
       - '.gitignore'
 
 env:
-  PROJECT_NAME: eudistack
-  APP_NAME: wallet-ebw
-  REGION_CODE: ew1
+  PROJECT_NAME: ${{ vars.PROJECT_NAME }}
+  APP_NAME: ${{ vars.APP_NAME }}
+  REGION_CODE: ${{ vars.REGION_CODE }}
 
 permissions:
   contents: read
@@ -49,11 +49,20 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Validate deployment configuration
+        run: |
+          for variable in PROJECT_NAME APP_NAME REGION_CODE; do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::Configure the ${variable} repository variable."
+              exit 1
+            fi
+          done
+
       - name: Build, test and run SonarCloud
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: ./gradlew build sonar --info
+        run: ./gradlew build integrationTest sonar --info
 
       - name: SonarCloud quality gate
         uses: sonarsource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
@@ -105,6 +114,16 @@ jobs:
           tags: ${{ steps.metadata.outputs.tags }}
           provenance: false
 
+      - name: Scan DEV container image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.metadata.outputs.image }}@${{ steps.build.outputs.digest }}
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          format: table
+          trivyignores: config/trivy/.trivyignore
+
       - name: Generate CycloneDX SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -147,15 +166,15 @@ jobs:
     environment: dev
     env:
       ENVIRONMENT: dev
-      BASE_URL: ${{ vars.DEV_BASE_URL }}
+      SMOKE_URL: ${{ vars.SMOKE_URL }}
     steps:
       - name: Checkout deployment checks
         uses: actions/checkout@v4
 
-      - name: Require DEV endpoint
+      - name: Require DEV smoke endpoint
         run: |
-          if [[ -z "${BASE_URL}" ]]; then
-            echo "::error::Configure DEV_BASE_URL in the development GitHub Environment."
+          if [[ -z "${SMOKE_URL}" ]]; then
+            echo "::error::Configure SMOKE_URL in the ${ENVIRONMENT} GitHub Environment."
             exit 1
           fi
 
@@ -203,6 +222,9 @@ jobs:
             --services "${SERVICE}" \
             --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager
+
+      - name: Run DEV smoke test
+        run: bash .github/scripts/smoke.sh "${SMOKE_URL}"
 
       - name: Publish deployment summary
         run: |
