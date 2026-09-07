@@ -33,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The HTTP surface cannot trigger a duplicate insert (ids are server-generated via
  * {@link WalletCredential#create}), so this must be covered at the port level.
+ *
  */
 class CredentialRepositoryInsertUpdateIntegrationTest extends IntegrationTestBase {
 
