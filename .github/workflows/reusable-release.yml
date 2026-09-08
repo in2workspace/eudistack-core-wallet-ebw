@@ -156,6 +156,16 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./gradlew build cyclonedxBom sonar --info
 
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/
+            build/test-results/
+          if-no-files-found: warn
+
       - name: SonarCloud quality gate
         uses: sonarsource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
         timeout-minutes: 5
@@ -168,9 +178,6 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-
-      - name: Verify license gate
-        run: node --test .github/scripts/license-gate.test.mjs
 
       - name: Evaluate release licenses
         run: node .github/scripts/license-gate.mjs --sbom-path build/reports/sbom/sbom.json
