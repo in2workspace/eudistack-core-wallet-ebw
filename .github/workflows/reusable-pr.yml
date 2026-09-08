@@ -90,13 +90,11 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x ./gradlew
 
-      - name: Build application
-        run: ./gradlew build -x test --info
-
-      - name: Run tests
-        id: tests
-        continue-on-error: true
-        run: ./gradlew test integrationTest --continue --info
+      - name: Build, test and run SonarCloud
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./gradlew build sonar --info
 
       - name: Publish JaCoCo Coverage
         if: always()
@@ -125,12 +123,6 @@ jobs:
         with:
           name: jacoco-report
           path: build/jacocoHtml/
-
-      - name: SonarCloud Scan
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: ./gradlew sonar --info
 
       - name: SonarCloud Quality Gate
         uses: sonarsource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
@@ -184,16 +176,6 @@ jobs:
         with:
           name: trivy-report
           path: build/reports/trivy-report.json
-
-      - name: Report non-blocking test failure
-        if: ${{ always() && steps.tests.outcome == 'failure' }}
-        run: |
-          echo "::warning::Tests failed, but test failures are configured as non-blocking."
-          {
-            echo '## Test result'
-            echo
-            echo ':warning: Tests failed. Review the `test-reports` artifact before merging.'
-          } >> "$GITHUB_STEP_SUMMARY"
 
   dast-baseline:
     name: ZAP DAST Baseline
