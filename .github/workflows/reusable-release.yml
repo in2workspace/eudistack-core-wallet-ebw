@@ -365,14 +365,6 @@ jobs:
       - name: Run STG smoke test
         run: bash .github/scripts/smoke.sh "${SMOKE_URL}"
 
-  release-readiness:
-    name: PM, customer and release-readiness acceptance
-    needs: [build, deploy-stg]
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.staging_environment }}
-    env:
-      ENVIRONMENT: ${{ inputs.staging_environment }}
-    steps:
       - name: Create release evidence
         run: |
           GENERATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -435,7 +427,7 @@ jobs:
 
   deploy-pro:
     name: Promote digest, deploy and monitor PRD
-    needs: [build, release-readiness]
+    needs: [build, deploy-stg]
     runs-on: ubuntu-latest
     environment: ${{ inputs.production_environment }}
     concurrency:
