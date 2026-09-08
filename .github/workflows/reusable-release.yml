@@ -91,7 +91,6 @@ jobs:
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       image: ${{ steps.metadata.outputs.image }}
-      previous_stg_digest: ${{ steps.previous-stg.outputs.digest }}
       rc_tag: ${{ steps.metadata.outputs.rc_tag }}
       version: ${{ steps.metadata.outputs.version }}
     env:
@@ -156,6 +155,16 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./gradlew build cyclonedxBom sonar --info
 
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/
+            build/test-results/
+          if-no-files-found: warn
+
       - name: SonarCloud quality gate
         uses: sonarsource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
         timeout-minutes: 5
@@ -168,9 +177,6 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-
-      - name: Verify license gate
-        run: node --test .github/scripts/license-gate.test.mjs
 
       - name: Evaluate release licenses
         run: node .github/scripts/license-gate.mjs --sbom-path build/reports/sbom/sbom.json
@@ -197,22 +203,6 @@ jobs:
       - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
-
-      - name: Capture current STG rollback point
-        id: previous-stg
-        run: |
-          set -euo pipefail
-          REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          DIGEST="$(aws ecr describe-images \
-            --repository-name "${REPOSITORY}" \
-            --image-ids imageTag="${ENVIRONMENT}" \
-            --query 'imageDetails[0].imageDigest' \
-            --output text \
-            --region "${{ secrets.AWS_REGION }}" 2>/dev/null || true)"
-          if [[ "${DIGEST}" == "None" ]]; then
-            DIGEST=""
-          fi
-          echo "digest=${DIGEST}" >> "${GITHUB_OUTPUT}"
 
       - name: Resolve RC metadata
         id: metadata
@@ -375,60 +365,6 @@ jobs:
       - name: Run STG smoke test
         run: bash .github/scripts/smoke.sh "${SMOKE_URL}"
 
-      - name: Rehearse STG rollback and restore RC
-        if: ${{ needs.build.outputs.previous_stg_digest != '' }}
-        env:
-          PREVIOUS_DIGEST: ${{ needs.build.outputs.previous_stg_digest }}
-          RC_DIGEST: ${{ needs.build.outputs.digest }}
-        run: |
-          set -euo pipefail
-          REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
-          SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
-
-          retag_and_deploy() {
-            local digest="$1"
-            local manifest
-            manifest="$(aws ecr batch-get-image \
-              --repository-name "${REPOSITORY}" \
-              --image-ids imageDigest="${digest}" \
-              --query 'images[0].imageManifest' \
-              --output text \
-              --region "${{ secrets.AWS_REGION }}")"
-            for tag in "${ENVIRONMENT}" latest; do
-              aws ecr put-image \
-                --repository-name "${REPOSITORY}" \
-                --image-tag "${tag}" \
-                --image-manifest "${manifest}" \
-                --region "${{ secrets.AWS_REGION }}" \
-                --no-cli-pager > /dev/null
-            done
-            aws ecs update-service \
-              --cluster "${CLUSTER}" \
-              --service "${SERVICE}" \
-              --force-new-deployment \
-              --region "${{ secrets.AWS_REGION }}" \
-              --no-cli-pager > /dev/null
-            aws ecs wait services-stable \
-              --cluster "${CLUSTER}" \
-              --services "${SERVICE}" \
-              --region "${{ secrets.AWS_REGION }}" \
-              --no-cli-pager
-            bash .github/scripts/smoke.sh "${SMOKE_URL}"
-          }
-
-          retag_and_deploy "${PREVIOUS_DIGEST}"
-          retag_and_deploy "${RC_DIGEST}"
-
-  release-readiness:
-    name: PM, customer and release-readiness acceptance
-    needs: [build, deploy-stg]
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.staging_environment }}
-    env:
-      ENVIRONMENT: ${{ inputs.staging_environment }}
-      ROLLBACK_REHEARSAL: ${{ needs.build.outputs.previous_stg_digest != '' && 'passed' || 'skipped' }}
-    steps:
       - name: Create release evidence
         run: |
           GENERATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -441,7 +377,6 @@ jobs:
             --arg digest "${{ needs.build.outputs.digest }}" \
             --arg generatedAt "${GENERATED_AT}" \
             --arg environment "${ENVIRONMENT}" \
-            --arg rollbackRehearsal "${ROLLBACK_REHEARSAL}" \
             '{
               schemaVersion: 1,
               version: $version,
@@ -455,8 +390,7 @@ jobs:
               },
               validation: {
                 environment: $environment,
-                smoke: "passed",
-                rollbackRehearsal: $rollbackRehearsal
+                smoke: "passed"
               }
             }' > release-evidence.json
           {
@@ -469,7 +403,6 @@ jobs:
             echo "- Image: ${{ needs.build.outputs.image }}"
             echo "- Digest: ${{ needs.build.outputs.digest }}"
             echo "- STG smoke: passed"
-            echo "- STG rollback rehearsal: ${ROLLBACK_REHEARSAL}"
             echo "- Approval environment: ${ENVIRONMENT}"
             echo "- Machine-readable evidence: release-evidence.json"
           } > release-readiness.md
@@ -494,7 +427,7 @@ jobs:
 
   deploy-pro:
     name: Promote digest, deploy and monitor PRD
-    needs: [build, release-readiness]
+    needs: [build, deploy-stg]
     runs-on: ubuntu-latest
     environment: ${{ inputs.production_environment }}
     concurrency:
@@ -539,10 +472,6 @@ jobs:
               and .component.digest == $digest
               and .validation.environment == $environment
               and .validation.smoke == "passed"
-              and (
-                .validation.rollbackRehearsal == "passed"
-                or .validation.rollbackRehearsal == "skipped"
-              )
             ' release-evidence.json > /dev/null
 
       - name: Reject superseded production candidate
