@@ -64,7 +64,6 @@ jobs:
     environment: ${{ inputs.environment }}
     outputs:
       digest: ${{ steps.build.outputs.digest }}
-      image: ${{ steps.metadata.outputs.image }}
       version_tag: ${{ steps.metadata.outputs.version_tag }}
     env:
       ENVIRONMENT: ${{ inputs.environment }}
