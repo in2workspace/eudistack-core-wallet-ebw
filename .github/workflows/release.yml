@@ -1,0 +1,32 @@
+name: release
+
+on:
+  push:
+    branches:
+      - 'release/v*'
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/reusable-release.yml
+    with:
+      project_name: 'eudistack'
+      app_name: 'wallet-ebw'
+      region_code: 'ew1'
+      staging_smoke_url: 'https://sandbox.stg.eudistack.net/business-wallet/health'
+      production_smoke_url: 'https://sandbox.eudistack.net/business-wallet/health'
+      staging_concurrency_group: ${{ vars.STAGING_CONCURRENCY_GROUP || format('{0}-staging', github.repository) }}
+      production_concurrency_group: ${{ vars.PRODUCTION_CONCURRENCY_GROUP || format('{0}-production', github.repository) }}
+      production_monitor_minutes: ${{ vars.PRO_MONITOR_MINUTES || '30' }}
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      AWS_ACCESS_KEY_ID_STG: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
+      AWS_SECRET_ACCESS_KEY_STG: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
+      AWS_ACCESS_KEY_ID_PRO: ${{ secrets.AWS_ACCESS_KEY_ID_PRO }}
+      AWS_SECRET_ACCESS_KEY_PRO: ${{ secrets.AWS_SECRET_ACCESS_KEY_PRO }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}

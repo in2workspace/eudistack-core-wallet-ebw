@@ -1,0 +1,30 @@
+name: cd-dev
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-cd-dev.yml
+    with:
+      project_name: 'eudistack'
+      app_name: 'wallet-ebw'
+      region_code: 'ew1'
+      smoke_url: 'https://sandbox.dev.eudistack.net/business-wallet/health'
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      AWS_ACCESS_KEY_ID_DEV: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+      AWS_SECRET_ACCESS_KEY_DEV: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
