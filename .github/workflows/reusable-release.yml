@@ -150,39 +150,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Build application
-        run: ./gradlew build -x test --info
-
-      - name: Run tests
-        id: tests
-        continue-on-error: true
-        run: ./gradlew test integrationTest --continue --info
-
-      - name: Upload test reports
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: test-reports
-          path: |
-            build/reports/tests/
-            build/test-results/
-          if-no-files-found: warn
-
-      - name: Report non-blocking test failure
-        if: ${{ always() && steps.tests.outcome == 'failure' }}
-        run: |
-          echo "::warning::Tests failed, but test failures are configured as non-blocking."
-          {
-            echo '## Test result'
-            echo
-            echo ':warning: Tests failed. Review the `test-reports` artifact before promoting this release.'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Generate SBOM and run SonarCloud
+      - name: Build, test, generate SBOM and run SonarCloud
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: ./gradlew cyclonedxBom sonar --info
+        run: ./gradlew build cyclonedxBom sonar --info
 
       - name: SonarCloud quality gate
         uses: sonarsource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
