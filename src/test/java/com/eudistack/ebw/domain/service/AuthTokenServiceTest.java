@@ -226,7 +226,7 @@ class AuthTokenServiceTest {
 
     @Test
     void linkSessionToPasskey_tokenBelongsToAnotherUser_throwsInvalidTokenException() {
-        // Arrange: the token is real, but it was issued to a different account — this is
+        // Arrange: the token is real, but it was issued to a different account — This is
         // the guard against attributing someone else's session to your own passkey.
         var rawToken = "someone-elses-token";
         var passkeyId = UUID.randomUUID();
