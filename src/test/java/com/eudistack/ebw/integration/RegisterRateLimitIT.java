@@ -37,7 +37,7 @@ class RegisterRateLimitIT extends IntegrationTestBase {
     void register_exceedsPerEmailLimit_returns429_andSendsNoFurtherOtp() {
         var email = "rate-limit-email-" + System.nanoTime() + "@example.com";
 
-        // First two requests are within the limit (register-per-email=2)
+        // First 2 requests are within the limit (register-per-email=2)
         webClient.post().uri("/api/v1/auth/register")
                 .bodyValue(Map.of("email", email))
                 .exchange()
