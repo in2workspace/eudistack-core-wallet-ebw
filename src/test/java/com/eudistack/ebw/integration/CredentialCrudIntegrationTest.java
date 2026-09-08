@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class CredentialCrudIntegrationTest extends IntegrationTestBase {
 
-    // HMAC key for building test credential JWTs (32 bytes)
+    // HMAC key for building JWTs test credentials (32 bytes)
     private static final byte[] TEST_HMAC_KEY = "test-hmac-key-for-credential-jwt".getBytes();
 
     private String accessToken;
