@@ -61,6 +61,53 @@ class RegisterRateLimitIT extends IntegrationTestBase {
     }
 
     @Test
+    void successfulVerification_resetsPerEmailCounter_allowingFurtherLoginCycles() {
+        var email = "rate-limit-reset-" + System.nanoTime() + "@example.com";
+
+        for (int cycle = 0; cycle < 4; cycle++) {
+            webClient.post().uri("/api/v1/auth/register")
+                    .bodyValue(Map.of("email", email))
+                    .exchange()
+                    .expectStatus().isOk();
+
+            webClient.post().uri("/api/v1/auth/verify-email")
+                    .bodyValue(Map.of("email", email, "code", capturedOtps.get(email)))
+                    .exchange()
+                    .expectStatus().isOk();
+        }
+
+        verify(emailSender, times(4)).sendOtp(eq(email), anyString());
+    }
+
+    @Test
+    void unverifiedRequests_stillCountTowardsPerEmailLimit_afterAnEarlierSuccessfulLogin() {
+        var email = "rate-limit-reset-partial-" + System.nanoTime() + "@example.com";
+
+        webClient.post().uri("/api/v1/auth/register")
+                .bodyValue(Map.of("email", email))
+                .exchange()
+                .expectStatus().isOk();
+
+        webClient.post().uri("/api/v1/auth/verify-email")
+                .bodyValue(Map.of("email", email, "code", capturedOtps.get(email)))
+                .exchange()
+                .expectStatus().isOk();
+
+        for (int i = 0; i < 2; i++) {
+            webClient.post().uri("/api/v1/auth/register")
+                    .bodyValue(Map.of("email", email))
+                    .exchange()
+                    .expectStatus().isOk();
+        }
+
+        webClient.post().uri("/api/v1/auth/register")
+                .bodyValue(Map.of("email", email))
+                .exchange()
+                .expectStatus().isEqualTo(429)
+                .expectHeader().exists("Retry-After");
+    }
+
+    @Test
     void register_exceedsPerOriginLimit_returns429_regardlessOfEmail() {
         var origin = "203.0.113.7";
 
