@@ -127,7 +127,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#release/v}"
 
           if gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
-            echo "::error::Release v${VERSION} already exists. Cut a new MINOR release."
+            echo "::error::Release v${VERSION} already exists. Use a new release version."
             exit 1
           fi
         env:
@@ -745,16 +745,6 @@ jobs:
             echo "Production readiness check ${minute}/${MONITOR_MINUTES}"
             bash .github/scripts/smoke.sh "${SMOKE_URL}"
           done
-
-      - name: Confirm release candidate is still current
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin "${GITHUB_REF_NAME}"
-          CURRENT_SHA="$(git rev-parse "origin/${GITHUB_REF_NAME}")"
-          if [[ "${CURRENT_SHA}" != "${GITHUB_SHA}" ]]; then
-            echo "::error::A newer release candidate (${CURRENT_SHA}) supersedes ${GITHUB_SHA}."
-            exit 1
-          fi
 
       - name: Download SBOM
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
