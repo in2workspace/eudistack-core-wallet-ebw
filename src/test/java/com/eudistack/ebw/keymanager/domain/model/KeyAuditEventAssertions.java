@@ -14,11 +14,21 @@ public final class KeyAuditEventAssertions {
     private static final List<String> FORBIDDEN_TERMS =
             List.of("prf", "wrapkey", "salt", "privatekey", "email", "deviceid");
 
+    /**
+     * RFC 7638 JWK thumbprints are SHA-256 encoded as base64url. Any 3–4 letter token
+     * ({@code prf}, {@code salt}, …) can appear as a coincidental substring of a real
+     * thumbprint and is not a leak of key material.
+     */
+    private static final List<String> HASH_FIELDS = List.of("jkt");
+
     private KeyAuditEventAssertions() {
     }
 
     public static void assertNoSensitiveData(KeyAuditEvent event) {
         for (RecordComponent component : KeyAuditEvent.class.getRecordComponents()) {
+            if (HASH_FIELDS.contains(component.getName())) {
+                continue;
+            }
             Object value;
             try {
                 value = component.getAccessor().invoke(event);
