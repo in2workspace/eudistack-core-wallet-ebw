@@ -598,6 +598,11 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
+      - name: Install crane
+        uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b
+        with:
+          version: v0.20.6
+
       - name: Verify RC signature
         env:
           DIGEST: ${{ needs.build.outputs.digest }}
@@ -659,9 +664,10 @@ jobs:
             --output text \
             --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager)"
-          if [[ "${PROMOTED_DIGEST}" == "None" ]]; then
-            docker tag "${STG_IMAGE}@${EXPECTED_DIGEST}" "${PRO_IMAGE}:${GITHUB_SHA}"
-            docker push "${PRO_IMAGE}:${GITHUB_SHA}"
+          if [[ "${PROMOTED_DIGEST}" != "${EXPECTED_DIGEST}" ]]; then
+            crane copy \
+              "${STG_IMAGE}@${EXPECTED_DIGEST}" \
+              "${PRO_IMAGE}:${GITHUB_SHA}"
             PROMOTED_DIGEST="$(aws ecr describe-images \
               --repository-name "${PRO_REPOSITORY}" \
               --image-ids imageTag="${GITHUB_SHA}" \
