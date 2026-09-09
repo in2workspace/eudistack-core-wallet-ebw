@@ -37,7 +37,7 @@ permissions:
 
 jobs:
   deploy:
-    uses: ./.github/workflows/reusable-deploy-pro.yml
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/ecs-api-deploy-pro.yml@fdd7ab2d12465c51612cd05f0e0d7290d3577ca2
     with:
       version: ${{ inputs.version }}
       digest: ${{ inputs.digest }}

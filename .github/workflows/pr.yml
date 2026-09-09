@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   application-ci:
-    uses: ./.github/workflows/reusable-pr.yml
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/ecs-api-pr.yml@fdd7ab2d12465c51612cd05f0e0d7290d3577ca2
     with:
       container_image: 'wallet-ebw-service'
       container_name: 'wallet-ebw-service'
@@ -25,7 +25,7 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   license-compliance:
-    uses: ./.github/workflows/reusable-license-gate.yml
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-license-gate.yml@fdd7ab2d12465c51612cd05f0e0d7290d3577ca2
 
   analyze:
-    uses: ./.github/workflows/reusable-codeql.yml
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-codeql-java.yml@fdd7ab2d12465c51612cd05f0e0d7290d3577ca2
