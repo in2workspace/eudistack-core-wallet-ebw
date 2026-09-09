@@ -14,8 +14,12 @@ permissions:
   contents: read
   id-token: write
   attestations: write
+  security-events: write
 
 jobs:
+  analyze:
+    uses: ./.github/workflows/reusable-codeql.yml
+
   deploy:
     uses: ./.github/workflows/reusable-cd-dev.yml
     with:

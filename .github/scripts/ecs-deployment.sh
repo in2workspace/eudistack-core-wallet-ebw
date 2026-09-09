@@ -19,6 +19,15 @@ validate_digest() {
   [[ "$1" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "Invalid image digest '$1'."
 }
 
+validate_image_reference() {
+  local image="$1"
+  local digest="$2"
+
+  [[ "$image" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] \
+    || fail "Invalid digest-pinned image reference '$image'. Expected repository@sha256:<64 hex characters>."
+  [[ "$image" == *"@$digest" ]] || fail "Image '$image' is not pinned to '$digest'."
+}
+
 validate_version() {
   [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
     || fail "Invalid release version '$1'. Expected X.Y.Z."
@@ -183,7 +192,16 @@ register_task_definition() {
   validate_version "$version"
   validate_digest "$digest"
   [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || fail "Invalid source commit SHA '$source_sha'."
-  [[ "$image" == *"@$digest" ]] || fail "Image '$image' is not pinned to '$digest'."
+  validate_image_reference "$image" "$digest"
+
+  local matching_containers
+  matching_containers="$(
+    jq --arg name "$container_name" \
+      '[.taskDefinition.containerDefinitions[]? | select(.name == $name)] | length' \
+      "$source_json"
+  )"
+  [[ "$matching_containers" == "1" ]] \
+    || fail "Expected exactly one container named '$container_name' in '$source_json'; found $matching_containers."
 
   local register_json
   register_json="$(mktemp)"
@@ -209,6 +227,15 @@ register_task_definition() {
           if .name == $name then .image = $image else . end
         )
     ' "$source_json" > "$register_json"
+
+  jq -e \
+    --arg name "$container_name" \
+    --arg image "$image" \
+    '
+      ([.containerDefinitions[] | select(.name == $name and .image == $image)] | length) == 1
+      and all(.containerDefinitions[]; (.image | type == "string" and length > 0))
+    ' "$register_json" > /dev/null \
+    || fail "Rendered task definition does not contain the expected image or contains an empty container image."
 
   jq \
     --arg version "$version" \

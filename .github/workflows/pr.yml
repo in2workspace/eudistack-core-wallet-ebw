@@ -11,6 +11,7 @@ permissions:
   contents: read
   checks: write
   pull-requests: write
+  security-events: write
 
 jobs:
   application-ci:
@@ -22,3 +23,9 @@ jobs:
       zap_target_url: 'http://localhost:8080/business-wallet'
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  license-compliance:
+    uses: ./.github/workflows/reusable-license-gate.yml
+
+  analyze:
+    uses: ./.github/workflows/reusable-codeql.yml
