@@ -1,18 +1,6 @@
 name: codeql
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - '.github/**'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
-  pull_request:
-    branches:
-      - main
-      - 'release/v*'
   schedule:
     - cron: '0 4 * * 1'
 

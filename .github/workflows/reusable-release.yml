@@ -90,7 +90,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       digest: ${{ steps.build.outputs.digest }}
-      image: ${{ steps.metadata.outputs.image }}
       rc_tag: ${{ steps.metadata.outputs.rc_tag }}
       version: ${{ steps.metadata.outputs.version }}
     env:
@@ -329,6 +328,22 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Login to STG ECR
+        id: ecr-stg
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
+
+      - name: Resolve STG image
+        env:
+          ECR_REGISTRY_STG: ${{ steps.ecr-stg.outputs.registry }}
+        run: |
+          set -euo pipefail
+          STG_REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
+          [[ -n "${ECR_REGISTRY_STG}" ]] || {
+            echo "::error::Amazon ECR login did not return the STG registry."
+            exit 1
+          }
+          echo "STG_IMAGE=${ECR_REGISTRY_STG}/${STG_REPOSITORY}" >> "${GITHUB_ENV}"
+
       - name: Inspect current STG deployment
         id: current-stg
         run: |
@@ -344,13 +359,13 @@ jobs:
       - name: Register digest-pinned STG task definition
         id: register-stg
         env:
-          IMAGE: ${{ needs.build.outputs.image }}
           DIGEST: ${{ needs.build.outputs.digest }}
         run: |
+          set -euo pipefail
           bash .github/scripts/ecs-deployment.sh register \
             current-stg-task-definition.json \
             "${ECS_CONTAINER_NAME}" \
-            "${IMAGE}@${DIGEST}" \
+            "${STG_IMAGE}@${DIGEST}" \
             "${{ needs.build.outputs.version }}" \
             "${GITHUB_SHA}" \
             "${DIGEST}" \
@@ -438,7 +453,7 @@ jobs:
             --arg component "${APP_NAME}" \
             --arg repository "${GITHUB_REPOSITORY}" \
             --arg commit "${GITHUB_SHA}" \
-            --arg image "${{ needs.build.outputs.image }}" \
+            --arg image "${STG_IMAGE}" \
             --arg digest "${{ needs.build.outputs.digest }}" \
             --arg generatedAt "${GENERATED_AT}" \
             --arg environment "${ENVIRONMENT}" \
@@ -470,7 +485,7 @@ jobs:
             echo "- Version: ${{ needs.build.outputs.version }}"
             echo "- RC tag: ${{ needs.build.outputs.rc_tag }}"
             echo "- Commit: ${GITHUB_SHA}"
-            echo "- Image: ${{ needs.build.outputs.image }}"
+            echo "- Image: ${STG_IMAGE}"
             echo "- Digest: ${{ needs.build.outputs.digest }}"
             echo "- STG task definition: ${{ steps.verify-stg.outputs.task_definition_arn }}"
             echo "- Observed STG digest: ${{ steps.verify-stg.outputs.observed_digest }}"
@@ -521,35 +536,6 @@ jobs:
         with:
           name: release-evidence-${{ needs.build.outputs.version }}
 
-      - name: Verify release evidence
-        env:
-          EXPECTED_IMAGE: ${{ needs.build.outputs.image }}
-          EXPECTED_DIGEST: ${{ needs.build.outputs.digest }}
-        run: |
-          set -euo pipefail
-          jq -e \
-            --arg version "${VERSION}" \
-            --arg component "${APP_NAME}" \
-            --arg repository "${GITHUB_REPOSITORY}" \
-            --arg commit "${GITHUB_SHA}" \
-            --arg image "${EXPECTED_IMAGE}" \
-            --arg digest "${EXPECTED_DIGEST}" \
-            --arg environment "${FROM_ENV}" \
-            '
-              .schemaVersion == 2
-              and .version == $version
-              and .component.name == $component
-              and .component.repository == $repository
-              and .component.commit == $commit
-              and .component.image == $image
-              and .component.digest == $digest
-              and .validation.environment == $environment
-              and .validation.smoke == "passed"
-              and .validation.expectedDigest == $digest
-              and .validation.observedDigest == $digest
-              and (.validation.taskDefinitionArn | type == "string" and length > 0)
-            ' release-evidence.json > /dev/null
-
       - name: Reject superseded production candidate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -586,21 +572,58 @@ jobs:
         id: ecr-stg
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
 
+      - name: Resolve and verify STG image evidence
+        env:
+          ECR_REGISTRY_STG: ${{ steps.ecr-stg.outputs.registry }}
+          EXPECTED_DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          STG_REPOSITORY="${PROJECT_NAME}-${FROM_ENV}-ecr-${REGION_CODE}-${APP_NAME}"
+          [[ -n "${ECR_REGISTRY_STG}" ]] || {
+            echo "::error::Amazon ECR login did not return the STG registry."
+            exit 1
+          }
+          STG_IMAGE="${ECR_REGISTRY_STG}/${STG_REPOSITORY}"
+          jq -e \
+            --arg version "${VERSION}" \
+            --arg component "${APP_NAME}" \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg commit "${GITHUB_SHA}" \
+            --arg image "${STG_IMAGE}" \
+            --arg digest "${EXPECTED_DIGEST}" \
+            --arg environment "${FROM_ENV}" \
+            '
+              .schemaVersion == 2
+              and .version == $version
+              and .component.name == $component
+              and .component.repository == $repository
+              and .component.commit == $commit
+              and .component.image == $image
+              and .component.digest == $digest
+              and .validation.environment == $environment
+              and .validation.smoke == "passed"
+              and .validation.expectedDigest == $digest
+              and .validation.observedDigest == $digest
+              and (.validation.taskDefinitionArn | type == "string" and length > 0)
+            ' release-evidence.json > /dev/null
+          echo "STG_IMAGE=${STG_IMAGE}" >> "${GITHUB_ENV}"
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       - name: Verify RC signature
         env:
-          IMAGE: ${{ needs.build.outputs.image }}
           DIGEST: ${{ needs.build.outputs.digest }}
         run: |
           cosign verify \
             --certificate-identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/reusable-release.yml@refs/heads/release/v${VERSION}" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-            "${IMAGE}@${DIGEST}"
+            "${STG_IMAGE}@${DIGEST}"
 
       - name: Pull validated RC by digest
-        run: docker pull "${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}"
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: docker pull "${STG_IMAGE}@${DIGEST}"
 
       - name: Configure AWS credentials for production
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
@@ -637,7 +660,6 @@ jobs:
       - name: Promote validated digest
         env:
           ECR_REGISTRY_PRO: ${{ steps.ecr-pro.outputs.registry }}
-          SOURCE_IMAGE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
           EXPECTED_DIGEST: ${{ needs.build.outputs.digest }}
         run: |
           set -euo pipefail
@@ -651,7 +673,7 @@ jobs:
             --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager)"
           if [[ "${PROMOTED_DIGEST}" == "None" ]]; then
-            docker tag "${SOURCE_IMAGE}" "${PRO_IMAGE}:${GITHUB_SHA}"
+            docker tag "${STG_IMAGE}@${EXPECTED_DIGEST}" "${PRO_IMAGE}:${GITHUB_SHA}"
             docker push "${PRO_IMAGE}:${GITHUB_SHA}"
             PROMOTED_DIGEST="$(aws ecr describe-images \
               --repository-name "${PRO_REPOSITORY}" \
