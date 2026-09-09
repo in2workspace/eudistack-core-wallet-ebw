@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Unit tests for {@link ConsumerOrigin} enum.
  *
- * <p>Covers EUDISTACK-407 FR-60.</p>
+ * <p>Covers EUDISTACK-407 FR-60</p>
  */
 class ConsumerOriginTest {
 
