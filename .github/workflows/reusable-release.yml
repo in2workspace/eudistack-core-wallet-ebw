@@ -288,6 +288,7 @@ jobs:
     environment: ${{ inputs.staging_environment }}
     concurrency:
       group: ${{ inputs.staging_concurrency_group }}
+      queue: max
       cancel-in-progress: false
     env:
       ENVIRONMENT: ${{ inputs.staging_environment }}
@@ -519,6 +520,7 @@ jobs:
     environment: ${{ inputs.production_environment }}
     concurrency:
       group: ${{ inputs.production_concurrency_group }}
+      queue: max
       cancel-in-progress: false
     env:
       FROM_ENV: ${{ inputs.staging_environment }}
