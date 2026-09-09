@@ -28,6 +28,8 @@ public class SecurityConfig {
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
         return http
+                // CSRF disabled: Bearer JWT in Authorization header; no cookie session (SEC-013).
+                // Refresh/logout send the token in the JSON body. Classic CSRF does not apply.
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
