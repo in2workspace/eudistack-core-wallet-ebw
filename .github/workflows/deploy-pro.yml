@@ -19,6 +19,16 @@ on:
         description: Release workflow run ID containing the attested release evidence
         required: true
         type: string
+      allow_downgrade:
+        description: Allow deployment of a version older than the current production version
+        required: false
+        default: false
+        type: boolean
+      downgrade_reason:
+        description: Required audit reason when deploying an older version
+        required: false
+        default: ''
+        type: string
 
 permissions:
   actions: read
@@ -39,6 +49,8 @@ jobs:
       production_smoke_url: 'https://sandbox.eudistack.net/business-wallet/health'
       production_concurrency_group: ${{ vars.PRODUCTION_CONCURRENCY_GROUP || format('{0}-production', github.repository) }}
       production_monitor_minutes: ${{ vars.PRO_MONITOR_MINUTES || '30' }}
+      allow_downgrade: ${{ inputs.allow_downgrade }}
+      downgrade_reason: ${{ inputs.downgrade_reason }}
     secrets:
       AWS_ACCESS_KEY_ID_STG: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
       AWS_SECRET_ACCESS_KEY_STG: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}

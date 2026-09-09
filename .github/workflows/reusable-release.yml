@@ -293,6 +293,7 @@ jobs:
     env:
       ENVIRONMENT: ${{ inputs.staging_environment }}
       SMOKE_URL: ${{ inputs.staging_smoke_url }}
+      ECS_CONTAINER_NAME: ${{ format('{0}-{1}-ecs-{2}-{3}-task', inputs.project_name, inputs.staging_environment, inputs.region_code, inputs.app_name) }}
     steps:
       - name: Checkout deployment checks
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -328,42 +329,106 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Force new ECS deployment
+      - name: Inspect current STG deployment
+        id: current-stg
+        run: |
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
+          SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
+          bash .github/scripts/ecs-deployment.sh inspect \
+            "${CLUSTER}" \
+            "${SERVICE}" \
+            "${ECS_CONTAINER_NAME}" \
+            "${{ secrets.AWS_REGION }}" \
+            current-stg-task-definition.json
+
+      - name: Register digest-pinned STG task definition
+        id: register-stg
         env:
+          IMAGE: ${{ needs.build.outputs.image }}
           DIGEST: ${{ needs.build.outputs.digest }}
         run: |
+          bash .github/scripts/ecs-deployment.sh register \
+            current-stg-task-definition.json \
+            "${ECS_CONTAINER_NAME}" \
+            "${IMAGE}@${DIGEST}" \
+            "${{ needs.build.outputs.version }}" \
+            "${GITHUB_SHA}" \
+            "${DIGEST}" \
+            "${ENVIRONMENT}" \
+            "${GITHUB_RUN_ID}" \
+            "${{ secrets.AWS_REGION }}"
+
+      - name: Deploy digest-pinned STG task definition
+        env:
+          TASK_DEFINITION_ARN: ${{ steps.register-stg.outputs.task_definition_arn }}
+        run: |
           set -euo pipefail
-          REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          MANIFEST="$(aws ecr batch-get-image \
-            --repository-name "${REPOSITORY}" \
-            --image-ids imageDigest="${DIGEST}" \
-            --query 'images[0].imageManifest' \
-            --output text \
-            --region "${{ secrets.AWS_REGION }}")"
-          for tag in "${ENVIRONMENT}" latest; do
-            aws ecr put-image \
-              --repository-name "${REPOSITORY}" \
-              --image-tag "${tag}" \
-              --image-manifest "${MANIFEST}" \
-              --region "${{ secrets.AWS_REGION }}" \
-              --no-cli-pager > /dev/null
-          done
           CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
           SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
           aws ecs update-service \
             --cluster "${CLUSTER}" \
             --service "${SERVICE}" \
-            --force-new-deployment \
-            --region "${{ secrets.AWS_REGION }}" \
-            --no-cli-pager
-          aws ecs wait services-stable \
-            --cluster "${CLUSTER}" \
-            --services "${SERVICE}" \
+            --task-definition "${TASK_DEFINITION_ARN}" \
             --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager
 
+      - name: Verify STG task definition and running digest
+        id: verify-stg
+        env:
+          TASK_DEFINITION_ARN: ${{ steps.register-stg.outputs.task_definition_arn }}
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
+          SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
+          bash .github/scripts/ecs-deployment.sh verify \
+            "${CLUSTER}" \
+            "${SERVICE}" \
+            "${ECS_CONTAINER_NAME}" \
+            "${TASK_DEFINITION_ARN}" \
+            "${DIGEST}" \
+            "${{ needs.build.outputs.version }}" \
+            "${GITHUB_SHA}" \
+            "${{ secrets.AWS_REGION }}"
+
       - name: Run STG smoke test
         run: bash .github/scripts/smoke.sh "${SMOKE_URL}"
+
+      - name: Roll back failed STG deployment
+        if: ${{ (failure() || cancelled()) && steps.current-stg.outputs.task_definition_arn != '' && steps.register-stg.outputs.task_definition_arn != '' }}
+        env:
+          PREVIOUS_TASK_DEFINITION_ARN: ${{ steps.current-stg.outputs.task_definition_arn }}
+          PREVIOUS_DIGEST: ${{ steps.current-stg.outputs.observed_digest }}
+        run: |
+          set -euo pipefail
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
+          SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
+          aws ecs update-service \
+            --cluster "${CLUSTER}" \
+            --service "${SERVICE}" \
+            --task-definition "${PREVIOUS_TASK_DEFINITION_ARN}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --no-cli-pager
+          bash .github/scripts/ecs-deployment.sh verify-runtime \
+            "${CLUSTER}" \
+            "${SERVICE}" \
+            "${ECS_CONTAINER_NAME}" \
+            "${PREVIOUS_TASK_DEFINITION_ARN}" \
+            "${PREVIOUS_DIGEST}" \
+            "${{ secrets.AWS_REGION }}"
+          bash .github/scripts/smoke.sh "${SMOKE_URL}"
+
+      - name: Publish validated STG deployment tags
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
+          bash .github/scripts/set-ecr-tags.sh \
+            "${REPOSITORY}" \
+            "${DIGEST}" \
+            "${{ secrets.AWS_REGION }}" \
+            mutable \
+            "${ENVIRONMENT}" \
+            latest
 
       - name: Create release evidence
         run: |
@@ -377,8 +442,10 @@ jobs:
             --arg digest "${{ needs.build.outputs.digest }}" \
             --arg generatedAt "${GENERATED_AT}" \
             --arg environment "${ENVIRONMENT}" \
+            --arg taskDefinitionArn "${{ steps.verify-stg.outputs.task_definition_arn }}" \
+            --arg observedDigest "${{ steps.verify-stg.outputs.observed_digest }}" \
             '{
-              schemaVersion: 1,
+              schemaVersion: 2,
               version: $version,
               generatedAt: $generatedAt,
               component: {
@@ -390,7 +457,10 @@ jobs:
               },
               validation: {
                 environment: $environment,
-                smoke: "passed"
+                smoke: "passed",
+                taskDefinitionArn: $taskDefinitionArn,
+                expectedDigest: $digest,
+                observedDigest: $observedDigest
               }
             }' > release-evidence.json
           {
@@ -402,6 +472,8 @@ jobs:
             echo "- Commit: ${GITHUB_SHA}"
             echo "- Image: ${{ needs.build.outputs.image }}"
             echo "- Digest: ${{ needs.build.outputs.digest }}"
+            echo "- STG task definition: ${{ steps.verify-stg.outputs.task_definition_arn }}"
+            echo "- Observed STG digest: ${{ steps.verify-stg.outputs.observed_digest }}"
             echo "- STG smoke: passed"
             echo "- Approval environment: ${ENVIRONMENT}"
             echo "- Machine-readable evidence: release-evidence.json"
@@ -439,6 +511,7 @@ jobs:
       SMOKE_URL: ${{ inputs.production_smoke_url }}
       MONITOR_MINUTES: ${{ inputs.production_monitor_minutes }}
       VERSION: ${{ needs.build.outputs.version }}
+      ECS_CONTAINER_NAME: ${{ format('{0}-{1}-ecs-{2}-{3}-task', inputs.project_name, inputs.production_environment, inputs.region_code, inputs.app_name) }}
     steps:
       - name: Checkout deployment checks
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -463,7 +536,7 @@ jobs:
             --arg digest "${EXPECTED_DIGEST}" \
             --arg environment "${FROM_ENV}" \
             '
-              .schemaVersion == 1
+              .schemaVersion == 2
               and .version == $version
               and .component.name == $component
               and .component.repository == $repository
@@ -472,6 +545,9 @@ jobs:
               and .component.digest == $digest
               and .validation.environment == $environment
               and .validation.smoke == "passed"
+              and .validation.expectedDigest == $digest
+              and .validation.observedDigest == $digest
+              and (.validation.taskDefinitionArn | type == "string" and length > 0)
             ' release-evidence.json > /dev/null
 
       - name: Reject superseded production candidate
@@ -537,37 +613,90 @@ jobs:
         id: ecr-pro
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
 
-      - name: Capture current production rollback point
-        id: current
+      - name: Inspect current production deployment
+        id: current-production
         run: |
-          set -euo pipefail
-          PRO_REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          PREVIOUS_DIGEST="$(aws ecr describe-images \
-            --repository-name "${PRO_REPOSITORY}" \
-            --image-ids imageTag="${ENVIRONMENT}" \
-            --query 'imageDetails[0].imageDigest' \
-            --output text \
-            --region "${{ secrets.AWS_REGION }}" 2>/dev/null || true)"
-          if [[ -z "${PREVIOUS_DIGEST}" || "${PREVIOUS_DIGEST}" == "None" ]]; then
-            echo "::error::No current production digest exists; automatic rollback cannot be guaranteed."
-            exit 1
-          fi
-          echo "digest=${PREVIOUS_DIGEST}" >> "${GITHUB_OUTPUT}"
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
+          SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
+          bash .github/scripts/ecs-deployment.sh inspect \
+            "${CLUSTER}" \
+            "${SERVICE}" \
+            "${ECS_CONTAINER_NAME}" \
+            "${{ secrets.AWS_REGION }}" \
+            current-production-task-definition.json
+
+      - name: Enforce production release order
+        env:
+          CURRENT_VERSION: ${{ steps.current-production.outputs.version }}
+        run: |
+          node .github/scripts/compare-release-version.mjs \
+            "${CURRENT_VERSION}" \
+            "${VERSION}" \
+            strict
 
       - name: Promote validated digest
         env:
           ECR_REGISTRY_PRO: ${{ steps.ecr-pro.outputs.registry }}
           SOURCE_IMAGE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          EXPECTED_DIGEST: ${{ needs.build.outputs.digest }}
         run: |
           set -euo pipefail
           PRO_REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
           PRO_IMAGE="${ECR_REGISTRY_PRO}/${PRO_REPOSITORY}"
-          for tag in "${ENVIRONMENT}" latest "${GITHUB_SHA}"; do
-            docker tag "${SOURCE_IMAGE}" "${PRO_IMAGE}:${tag}"
-            docker push "${PRO_IMAGE}:${tag}"
-          done
+          PROMOTED_DIGEST="$(aws ecr batch-get-image \
+            --repository-name "${PRO_REPOSITORY}" \
+            --image-ids imageTag="${GITHUB_SHA}" \
+            --query 'images[0].imageId.imageDigest' \
+            --output text \
+            --region "${{ secrets.AWS_REGION }}" \
+            --no-cli-pager)"
+          if [[ "${PROMOTED_DIGEST}" == "None" ]]; then
+            docker tag "${SOURCE_IMAGE}" "${PRO_IMAGE}:${GITHUB_SHA}"
+            docker push "${PRO_IMAGE}:${GITHUB_SHA}"
+            PROMOTED_DIGEST="$(aws ecr describe-images \
+              --repository-name "${PRO_REPOSITORY}" \
+              --image-ids imageTag="${GITHUB_SHA}" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text \
+              --region "${{ secrets.AWS_REGION }}")"
+          fi
+          if [[ "${PROMOTED_DIGEST}" != "${EXPECTED_DIGEST}" ]]; then
+            echo "::error::Production ECR digest ${PROMOTED_DIGEST} does not match validated STG digest ${EXPECTED_DIGEST}."
+            exit 1
+          fi
+          echo "PRO_IMAGE=${PRO_IMAGE}" >> "${GITHUB_ENV}"
 
-      - name: Force new ECS deployment
+      - name: Validate immutable production version tag
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          PRO_REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
+          bash .github/scripts/set-ecr-tags.sh \
+            "${PRO_REPOSITORY}" \
+            "${DIGEST}" \
+            "${{ secrets.AWS_REGION }}" \
+            check-immutable \
+            "v${VERSION}"
+
+      - name: Register digest-pinned production task definition
+        id: register-production
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          bash .github/scripts/ecs-deployment.sh register \
+            current-production-task-definition.json \
+            "${ECS_CONTAINER_NAME}" \
+            "${PRO_IMAGE}@${DIGEST}" \
+            "${VERSION}" \
+            "${GITHUB_SHA}" \
+            "${DIGEST}" \
+            "${ENVIRONMENT}" \
+            "${GITHUB_RUN_ID}" \
+            "${{ secrets.AWS_REGION }}"
+
+      - name: Deploy digest-pinned production task definition
+        env:
+          TASK_DEFINITION_ARN: ${{ steps.register-production.outputs.task_definition_arn }}
         run: |
           set -euo pipefail
           CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
@@ -575,14 +704,26 @@ jobs:
           aws ecs update-service \
             --cluster "${CLUSTER}" \
             --service "${SERVICE}" \
-            --force-new-deployment \
+            --task-definition "${TASK_DEFINITION_ARN}" \
             --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager
-          aws ecs wait services-stable \
-            --cluster "${CLUSTER}" \
-            --services "${SERVICE}" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --no-cli-pager
+
+      - name: Verify production task definition and running digest
+        env:
+          TASK_DEFINITION_ARN: ${{ steps.register-production.outputs.task_definition_arn }}
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
+          SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
+          bash .github/scripts/ecs-deployment.sh verify \
+            "${CLUSTER}" \
+            "${SERVICE}" \
+            "${ECS_CONTAINER_NAME}" \
+            "${TASK_DEFINITION_ARN}" \
+            "${DIGEST}" \
+            "${VERSION}" \
+            "${GITHUB_SHA}" \
+            "${{ secrets.AWS_REGION }}"
 
       - name: Run production smoke test
         run: bash .github/scripts/smoke.sh "${SMOKE_URL}"
@@ -612,49 +753,47 @@ jobs:
           name: sbom-${{ needs.build.outputs.rc_tag }}
 
       - name: Roll back failed production deployment
-        if: ${{ (failure() || cancelled()) && steps.current.outputs.digest != '' }}
+        if: ${{ (failure() || cancelled()) && steps.current-production.outputs.task_definition_arn != '' && steps.register-production.outputs.task_definition_arn != '' }}
         env:
-          PREVIOUS_DIGEST: ${{ steps.current.outputs.digest }}
+          PREVIOUS_TASK_DEFINITION_ARN: ${{ steps.current-production.outputs.task_definition_arn }}
+          PREVIOUS_DIGEST: ${{ steps.current-production.outputs.observed_digest }}
         run: |
           set -euo pipefail
-          PRO_REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          MANIFEST="$(aws ecr batch-get-image \
-            --repository-name "${PRO_REPOSITORY}" \
-            --image-ids imageDigest="${PREVIOUS_DIGEST}" \
-            --query 'images[0].imageManifest' \
-            --output text \
-            --region "${{ secrets.AWS_REGION }}")"
-          for tag in "${ENVIRONMENT}" latest; do
-            aws ecr put-image \
-              --repository-name "${PRO_REPOSITORY}" \
-              --image-tag "${tag}" \
-              --image-manifest "${MANIFEST}" \
-              --region "${{ secrets.AWS_REGION }}" \
-              --no-cli-pager > /dev/null
-          done
           CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}"
           SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-ecs-${REGION_CODE}-${APP_NAME}-service"
           aws ecs update-service \
             --cluster "${CLUSTER}" \
             --service "${SERVICE}" \
-            --force-new-deployment \
+            --task-definition "${PREVIOUS_TASK_DEFINITION_ARN}" \
             --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager
-          aws ecs wait services-stable \
-            --cluster "${CLUSTER}" \
-            --services "${SERVICE}" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --no-cli-pager
+          bash .github/scripts/ecs-deployment.sh verify-runtime \
+            "${CLUSTER}" \
+            "${SERVICE}" \
+            "${ECS_CONTAINER_NAME}" \
+            "${PREVIOUS_TASK_DEFINITION_ARN}" \
+            "${PREVIOUS_DIGEST}" \
+            "${{ secrets.AWS_REGION }}"
           bash .github/scripts/smoke.sh "${SMOKE_URL}"
 
-      - name: Publish validated version tag
+      - name: Publish validated production tags
         env:
-          ECR_REGISTRY_PRO: ${{ steps.ecr-pro.outputs.registry }}
-          SOURCE_IMAGE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          DIGEST: ${{ needs.build.outputs.digest }}
         run: |
-          PRO_IMAGE="${ECR_REGISTRY_PRO}/${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
-          docker tag "${SOURCE_IMAGE}" "${PRO_IMAGE}:v${VERSION}"
-          docker push "${PRO_IMAGE}:v${VERSION}"
+          PRO_REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
+          bash .github/scripts/set-ecr-tags.sh \
+            "${PRO_REPOSITORY}" \
+            "${DIGEST}" \
+            "${{ secrets.AWS_REGION }}" \
+            immutable \
+            "v${VERSION}"
+          bash .github/scripts/set-ecr-tags.sh \
+            "${PRO_REPOSITORY}" \
+            "${DIGEST}" \
+            "${{ secrets.AWS_REGION }}" \
+            mutable \
+            "${ENVIRONMENT}" \
+            latest
 
       - name: Publish GitHub Release
         env:
