@@ -96,7 +96,7 @@ jobs:
       ENVIRONMENT: ${{ inputs.staging_environment }}
     steps:
       - name: Checkout release branch
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -281,7 +281,7 @@ jobs:
       ECS_CONTAINER_NAME: ${{ format('{0}-{1}-ecs-{2}-{3}-task', inputs.project_name, inputs.staging_environment, inputs.region_code, inputs.app_name) }}
     steps:
       - name: Checkout deployment checks
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Require STG smoke endpoint
         run: |
@@ -516,7 +516,7 @@ jobs:
       ECS_CONTAINER_NAME: ${{ format('{0}-{1}-ecs-{2}-{3}-task', inputs.project_name, inputs.production_environment, inputs.region_code, inputs.app_name) }}
     steps:
       - name: Checkout deployment checks
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download release-readiness evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
