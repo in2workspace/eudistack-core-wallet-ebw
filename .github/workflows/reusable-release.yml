@@ -426,6 +426,7 @@ jobs:
             "${REPOSITORY}" \
             "${DIGEST}" \
             "${{ secrets.AWS_REGION }}" \
+            mutable \
             "${ENVIRONMENT}" \
             latest
 
@@ -665,6 +666,18 @@ jobs:
           fi
           echo "PRO_IMAGE=${PRO_IMAGE}" >> "${GITHUB_ENV}"
 
+      - name: Validate immutable production version tag
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          PRO_REPOSITORY="${PROJECT_NAME}-${ENVIRONMENT}-ecr-${REGION_CODE}-${APP_NAME}"
+          bash .github/scripts/set-ecr-tags.sh \
+            "${PRO_REPOSITORY}" \
+            "${DIGEST}" \
+            "${{ secrets.AWS_REGION }}" \
+            check-immutable \
+            "v${VERSION}"
+
       - name: Register digest-pinned production task definition
         id: register-production
         env:
@@ -772,9 +785,15 @@ jobs:
             "${PRO_REPOSITORY}" \
             "${DIGEST}" \
             "${{ secrets.AWS_REGION }}" \
-            "${ENVIRONMENT}" \
-            latest \
+            immutable \
             "v${VERSION}"
+          bash .github/scripts/set-ecr-tags.sh \
+            "${PRO_REPOSITORY}" \
+            "${DIGEST}" \
+            "${{ secrets.AWS_REGION }}" \
+            mutable \
+            "${ENVIRONMENT}" \
+            latest
 
       - name: Publish GitHub Release
         env:

@@ -7,14 +7,18 @@ fail() {
   exit 1
 }
 
-[[ "$#" -ge 4 ]] || fail "Usage: $0 REPOSITORY DIGEST REGION TAG..."
+[[ "$#" -ge 5 ]] \
+  || fail "Usage: $0 REPOSITORY DIGEST REGION mutable|immutable|check-immutable TAG..."
 
 repository="$1"
 digest="$2"
 region="$3"
-shift 3
+mode="$4"
+shift 4
 
 [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "Invalid image digest '$digest'."
+[[ "$mode" == "mutable" || "$mode" == "immutable" || "$mode" == "check-immutable" ]] \
+  || fail "Tag mode must be 'mutable', 'immutable', or 'check-immutable'."
 
 manifest="$(
   aws ecr batch-get-image \
@@ -41,6 +45,13 @@ for tag in "$@"; do
   )"
   if [[ "$current_digest" == "$digest" ]]; then
     echo "ECR tag '$tag' already points to '$digest'; no update is required."
+    continue
+  fi
+  if [[ "$mode" != "mutable" && "$current_digest" != "None" ]]; then
+    fail "Immutable ECR tag '$tag' already points to '$current_digest', not '$digest'."
+  fi
+  if [[ "$mode" == "check-immutable" ]]; then
+    echo "Immutable ECR tag '$tag' is available for digest '$digest'."
     continue
   fi
 
