@@ -10,4 +10,4 @@ permissions:
 
 jobs:
   analyze:
-    uses: ./.github/workflows/reusable-codeql.yml
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-codeql-java.yml@fdd7ab2d12465c51612cd05f0e0d7290d3577ca2
