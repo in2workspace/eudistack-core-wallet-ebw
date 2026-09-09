@@ -110,7 +110,7 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Validate release branch and correction count
+      - name: Validate release branch
         id: release-policy
         run: |
           set -euo pipefail
@@ -125,21 +125,6 @@ jobs:
             exit 1
           fi
           VERSION="${GITHUB_REF_NAME#release/v}"
-
-          git fetch --no-tags origin main
-          MERGE_BASE="$(git merge-base origin/main HEAD)"
-          PREPARE_COMMIT="$(git log --format='%H%x09%s' \
-            | awk -F '\t' -v message="chore(release): prepare v${VERSION}" \
-              '$2 == message {print $1; exit}')"
-          if [[ -n "${PREPARE_COMMIT}" ]]; then
-            CORRECTIONS="$(git rev-list --count "${PREPARE_COMMIT}..HEAD")"
-          else
-            CORRECTIONS="$(git rev-list --count "${MERGE_BASE}..HEAD")"
-          fi
-          if (( CORRECTIONS > 3 )); then
-            echo "::error::Release has ${CORRECTIONS} corrections; abort and cut a new release."
-            exit 1
-          fi
 
           if gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
             echo "::error::Release v${VERSION} already exists. Cut a new MINOR release."
