@@ -26,7 +26,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for the two {@link PasskeyController} endpoints touched by EUD-104
+ * Unit tests for the 2 {@link PasskeyController} endpoints touched by EUD-104
  * (session-to-passkey attribution): {@code register()}'s new {@code refreshToken}
  * pass-through, and the new {@code confirm-session} endpoint. Plain direct method
  * calls rather than {@code WebTestClient} — the HTTP-status contract for these two

@@ -38,6 +38,7 @@ public class VerifyEmailWorkflow {
                 .flatMap(user -> authTokenService.issueTokenPair(user, null)
                         .flatMap(tokenPair -> auditService.record("user", user.getId(),
                                         "USER_AUTHENTICATED", user.getId(), Map.of())
+                                .then(emailRateLimiter.resetForEmail(email))
                                 .thenReturn(tokenPair)));
     }
 
