@@ -75,9 +75,10 @@ public class AuthTokenService {
                 .switchIfEmpty(Mono.error(new InvalidTokenException()))
                 .flatMap(existing -> {
                     if (existing.isRevoked()) {
-                        // Token family compromise detected
-                        return refreshTokenRepository.revokeByUserId(existing.getUserId())
-                                .then(Mono.error(new TokenFamilyCompromisedException()));
+                        var revoke = existing.getPasskeyId() != null
+                                ? refreshTokenRepository.revokeByPasskeyId(existing.getPasskeyId())
+                                : refreshTokenRepository.revokeByUserId(existing.getUserId());
+                        return revoke.then(Mono.error(new TokenFamilyCompromisedException()));
                     }
                     if (existing.isExpired()) {
                         return Mono.error(new InvalidTokenException());
