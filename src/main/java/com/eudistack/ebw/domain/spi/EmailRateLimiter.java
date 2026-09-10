@@ -11,4 +11,6 @@ public interface EmailRateLimiter {
     Mono<Void> checkRegisterRate(String email);
 
     Mono<Void> checkVerifyRate(String email);
+
+    Mono<Void> resetForEmail(String email);
 }

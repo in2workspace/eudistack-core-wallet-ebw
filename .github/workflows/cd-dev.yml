@@ -1,0 +1,34 @@
+name: cd-dev
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  security-events: write
+
+jobs:
+  analyze:
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-codeql-java.yml@fdd7ab2d12465c51612cd05f0e0d7290d3577ca2
+
+  deploy:
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/ecs-api-cd-dev.yml@fdd7ab2d12465c51612cd05f0e0d7290d3577ca2
+    with:
+      project_name: 'eudistack'
+      app_name: 'wallet-ebw'
+      region_code: 'ew1'
+      smoke_url: 'https://sandbox.dev.eudistack.net/business-wallet/health'
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      AWS_ACCESS_KEY_ID_DEV: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+      AWS_SECRET_ACCESS_KEY_DEV: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}

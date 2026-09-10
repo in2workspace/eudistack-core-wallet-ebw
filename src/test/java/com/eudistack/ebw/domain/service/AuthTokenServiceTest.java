@@ -185,4 +185,63 @@ class AuthTokenServiceTest {
         StepVerifier.create(result)
                 .verifyComplete();
     }
+
+    @Test
+    void linkSessionToPasskey_ownedByCaller_updatesPasskeyIdByTokenHash() {
+        // Arrange
+        var rawToken = "session-token";
+        var passkeyId = UUID.randomUUID();
+        var existingToken = RefreshToken.create(testUser.getId(), null, "sha256-hash",
+                Instant.now().plusSeconds(3600));
+        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
+        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(existingToken));
+        when(refreshTokenRepository.updatePasskeyIdByTokenHash("sha256-hash", passkeyId)).thenReturn(Mono.empty());
+
+        // Act
+        var result = authTokenService.linkSessionToPasskey(rawToken, testUser.getId(), passkeyId);
+
+        // Assert
+        StepVerifier.create(result)
+                .verifyComplete();
+        verify(refreshTokenRepository).updatePasskeyIdByTokenHash("sha256-hash", passkeyId);
+    }
+
+    @Test
+    void linkSessionToPasskey_tokenNotFound_throwsInvalidTokenException() {
+        // Arrange
+        var rawToken = "unknown-token";
+        var passkeyId = UUID.randomUUID();
+        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
+        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.empty());
+
+        // Act
+        var result = authTokenService.linkSessionToPasskey(rawToken, testUser.getId(), passkeyId);
+
+        // Assert
+        StepVerifier.create(result)
+                .expectError(InvalidTokenException.class)
+                .verify();
+        verify(refreshTokenRepository, never()).updatePasskeyIdByTokenHash(any(), any());
+    }
+
+    @Test
+    void linkSessionToPasskey_tokenBelongsToAnotherUser_throwsInvalidTokenException() {
+        // Arrange: the token is real, but it was issued to a different account — This is
+        // the guard against attributing someone else's session to your own passkey.
+        var rawToken = "someone-elses-token";
+        var passkeyId = UUID.randomUUID();
+        var otherUsersToken = RefreshToken.create(UUID.randomUUID(), null, "sha256-hash",
+                Instant.now().plusSeconds(3600));
+        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
+        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(otherUsersToken));
+
+        // Act
+        var result = authTokenService.linkSessionToPasskey(rawToken, testUser.getId(), passkeyId);
+
+        // Assert
+        StepVerifier.create(result)
+                .expectError(InvalidTokenException.class)
+                .verify();
+        verify(refreshTokenRepository, never()).updatePasskeyIdByTokenHash(any(), any());
+    }
 }
