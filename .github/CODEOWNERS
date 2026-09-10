@@ -7,5 +7,4 @@
 # same time as it introduces the dependency the policy would have blocked.
 /.github/license-policy.json        @in2workspace/devops-lead
 /.github/license-exceptions.json    @in2workspace/devops-lead
-/.github/scripts/license-gate.mjs   @in2workspace/devops-lead
-/.github/workflows/license-gate.yml @in2workspace/devops-lead
+/.github/workflows/pr.yml           @in2workspace/devops-lead

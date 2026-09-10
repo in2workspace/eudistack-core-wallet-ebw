@@ -34,6 +34,14 @@ public class CaffeineEmailRateLimiter implements EmailRateLimiter {
         return check("verify:email:" + email.toLowerCase(), properties.verifyPerEmail());
     }
 
+    @Override
+    public Mono<Void> resetForEmail(String email) {
+        var normalized = email.toLowerCase();
+        cache.invalidate("register:email:" + normalized);
+        cache.invalidate("verify:email:" + normalized);
+        return Mono.empty();
+    }
+
     private Mono<Void> check(String key, int limit) {
         var counter = cache.get(key, k -> new AtomicInteger(0));
         if (counter.incrementAndGet() > limit) {

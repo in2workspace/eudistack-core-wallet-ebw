@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   release:
-    uses: ./.github/workflows/reusable-release.yml
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/ecs-api-release.yml@fdd7ab2d12465c51612cd05f0e0d7290d3577ca2
     with:
       project_name: 'eudistack'
       app_name: 'wallet-ebw'
