@@ -119,6 +119,29 @@ class AuthTokenServiceTest {
     }
 
     @Test
+    void rotateRefreshToken_revokedTokenWithPasskey_revokesOnlyThatDevice() {
+        // Arrange
+        var rawToken = "reused-token";
+        var passkeyId = UUID.randomUUID();
+        var revokedToken = RefreshToken.create(testUser.getId(), passkeyId, "sha256-hash",
+                Instant.now().plusSeconds(3600));
+        revokedToken.revoke();
+        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
+        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(revokedToken));
+        when(refreshTokenRepository.revokeByPasskeyId(passkeyId)).thenReturn(Mono.empty());
+
+        // Act
+        var result = authTokenService.rotateRefreshToken(rawToken, testUser);
+
+        // Assert
+        StepVerifier.create(result)
+                .expectError(TokenFamilyCompromisedException.class)
+                .verify();
+        verify(refreshTokenRepository).revokeByPasskeyId(passkeyId);
+        verify(refreshTokenRepository, never()).revokeByUserId(any());
+    }
+
+    @Test
     void rotateRefreshToken_expiredToken_throwsInvalidTokenException() {
         // Arrange
         var rawToken = "expired-token";
