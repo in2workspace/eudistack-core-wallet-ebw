@@ -104,7 +104,7 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
                 .exchange()
                 .expectStatus().isNoContent();
 
-        // Refresh with revoked token should fail
+        // Refresh with revoked token should fail.
         webClient.post().uri("/api/v1/auth/refresh")
                 .bodyValue(Map.of("refreshToken", tokens.get("refreshToken")))
                 .exchange()

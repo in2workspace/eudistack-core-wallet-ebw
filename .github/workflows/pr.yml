@@ -15,17 +15,18 @@ permissions:
 
 jobs:
   application-ci:
-    uses: in2workspace/eudistack-devops-workflows/.github/workflows/ecs-api-pr.yml@fdd7ab2d12465c51612cd05f0e0d7290d3577ca2
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/ecs-api-pr.yml@c7b3dd7d705c7450b9c19d0195a69f855ab7c40e
     with:
       container_image: 'wallet-ebw-service'
       container_name: 'wallet-ebw-service'
       smoke_url: 'http://localhost:8080/business-wallet/health/readiness'
-      zap_target_url: 'http://localhost:8080/business-wallet'
+      zap_target_url: 'http://localhost:8080/business-wallet/.well-known/wallet-config-metadata'
+      dast_start_script: 'dev-tools/testing/start-dast-container.sh'
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   license-compliance:
-    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-license-gate.yml@fdd7ab2d12465c51612cd05f0e0d7290d3577ca2
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-license-gate.yml@12ed6fa9090ebd4564c6541b67111ed4466a61b1
 
   analyze:
-    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-codeql-java.yml@fdd7ab2d12465c51612cd05f0e0d7290d3577ca2
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-codeql-java.yml@12ed6fa9090ebd4564c6541b67111ed4466a61b1
