@@ -19,9 +19,9 @@ public class LogoutWorkflow {
     }
 
     public Mono<Void> logout(String rawRefreshToken) {
-        return authTokenService.revokeAllByRefreshToken(rawRefreshToken)
+        return authTokenService.revokeRefreshToken(rawRefreshToken)
                 .flatMap(userId -> auditService.record(
-                        "USER", userId, "LOGOUT", userId, Map.of("type", "global_logout")))
+                        "USER", userId, "LOGOUT", userId, Map.of("type", "device_logout")))
                 .then();
     }
 }

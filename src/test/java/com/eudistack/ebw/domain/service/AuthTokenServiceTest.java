@@ -176,7 +176,7 @@ class AuthTokenServiceTest {
     }
 
     @Test
-    void revokeRefreshToken_existingToken_revokesSuccessfully() {
+    void revokeRefreshToken_existingToken_revokesOnlyThatSessionAndReturnsUserId() {
         // Arrange
         var rawToken = "token-to-revoke";
         var token = RefreshToken.create(testUser.getId(), null, "sha256-hash",
@@ -190,12 +190,15 @@ class AuthTokenServiceTest {
 
         // Assert
         StepVerifier.create(result)
+                .expectNext(testUser.getId())
                 .verifyComplete();
         assertThat(token.isRevoked()).isTrue();
+        verify(refreshTokenRepository, never()).revokeByUserId(any());
+        verify(refreshTokenRepository, never()).revokeByPasskeyId(any());
     }
 
     @Test
-    void revokeRefreshToken_notFound_completesSuccessfully() {
+    void revokeRefreshToken_notFound_completesEmpty() {
         // Arrange
         var rawToken = "unknown-token";
         when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");

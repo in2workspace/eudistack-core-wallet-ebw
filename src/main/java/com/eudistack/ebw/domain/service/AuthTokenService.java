@@ -89,27 +89,18 @@ public class AuthTokenService {
                 });
     }
 
-    public Mono<Void> revokeRefreshToken(String rawToken) {
-        var tokenHash = hashProvider.sha256(rawToken);
-        return refreshTokenRepository.findByTokenHash(tokenHash)
-                .flatMap(token -> {
-                    token.revoke();
-                    return refreshTokenRepository.save(token).then();
-                })
-                .then();
-    }
-
     /**
-     * Global logout: finds the token by hash, revokes ALL tokens for that user.
-     * Returns the userId for audit purposes, or empty if token not found (idempotent).
+     * Per-device logout: finds the token by hash, revokes only that one session.
+     * Returns the userId for audit purposes, or empty if token not found (idempotent) —
+     * other devices' sessions for the same user are left untouched.
      */
-    public Mono<UUID> revokeAllByRefreshToken(String rawToken) {
+    public Mono<UUID> revokeRefreshToken(String rawToken) {
         var tokenHash = hashProvider.sha256(rawToken);
         return refreshTokenRepository.findByTokenHash(tokenHash)
                 .flatMap(token -> {
                     var userId = token.getUserId();
-                    return refreshTokenRepository.revokeByUserId(userId)
-                            .thenReturn(userId);
+                    token.revoke();
+                    return refreshTokenRepository.save(token).thenReturn(userId);
                 });
     }
 

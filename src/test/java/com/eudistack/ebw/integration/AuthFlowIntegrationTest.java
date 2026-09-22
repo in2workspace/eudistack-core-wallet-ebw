@@ -128,6 +128,35 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
                 .expectStatus().isNoContent();
     }
 
+    /**
+     * EUD-104 (Mis dispositivos): logging out from one device must not silently end the
+     * user's other sessions. Two sessions of the same account (simulating PC + mobile) —
+     * logging out of one must leave the other refreshable.
+     */
+    @Test
+    void logout_oneOfTwoSessions_leavesTheOtherSessionActive() {
+        var email = "test-logout-per-device-" + System.nanoTime() + "@example.com";
+        var pcTokens = registerAndVerify(email);
+        var mobileTokens = registerAndVerify(email);
+
+        webClient.post().uri("/api/v1/auth/logout")
+                .bodyValue(Map.of("refreshToken", pcTokens.get("refreshToken")))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        // The device that logged out can no longer refresh.
+        webClient.post().uri("/api/v1/auth/refresh")
+                .bodyValue(Map.of("refreshToken", pcTokens.get("refreshToken")))
+                .exchange()
+                .expectStatus().isUnauthorized();
+
+        // The other device's session is untouched.
+        webClient.post().uri("/api/v1/auth/refresh")
+                .bodyValue(Map.of("refreshToken", mobileTokens.get("refreshToken")))
+                .exchange()
+                .expectStatus().isOk();
+    }
+
     @Test
     void verifyEmail_wrongCode_returns401() {
         var email = "test-wrong-otp@example.com";
