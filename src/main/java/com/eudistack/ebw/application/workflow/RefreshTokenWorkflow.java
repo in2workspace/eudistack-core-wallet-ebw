@@ -33,11 +33,15 @@ public class RefreshTokenWorkflow {
 
     public Mono<AuthTokenPair> refreshToken(String rawToken) {
         var tokenHash = hashProvider.sha256(rawToken);
+        // DEBUG EUD-BUG-refresh-token: temporary diagnostic logging, remove before commit.
+        log.info("DEBUG RefreshTokenWorkflow.refreshToken: ENTRY rawToken={} tokenHash={}", rawToken, tokenHash);
         return refreshTokenRepository.findByTokenHash(tokenHash)
                 .switchIfEmpty(Mono.error(new InvalidTokenException()))
                 .flatMap(existing -> userRepository.findById(existing.getUserId())
                         .switchIfEmpty(Mono.error(new InvalidTokenException()))
                 )
-                .flatMap(user -> authTokenService.rotateRefreshToken(rawToken, user));
+                .flatMap(user -> authTokenService.rotateRefreshToken(rawToken, user))
+                .doOnError(err -> log.warn("DEBUG RefreshTokenWorkflow.refreshToken: FAILED rawToken={} tokenHash={} error={}",
+                        rawToken, tokenHash, err.toString()));
     }
 }

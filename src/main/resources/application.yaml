@@ -40,7 +40,7 @@ server:
 ebw:
   jwt:
     private-key-path: ${JWT_PRIVATE_KEY_PATH:}
-    access-token-ttl: 15m
+    access-token-ttl: 90s # DEBUG EUD-BUG-refresh-token: temporarily shortened from 15m for fast local repro. Revert before commit.
     refresh-token-ttl: 90d
     issuer: ${EBW_JWT_ISSUER:eudistack-ebw}
   otp:

@@ -9,6 +9,8 @@ import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TokenSigner;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
@@ -17,6 +19,9 @@ import java.util.Map;
 import java.util.UUID;
 
 public class AuthTokenService {
+
+    // DEBUG EUD-BUG-refresh-token: temporary diagnostic logging, remove before commit.
+    private static final Logger log = LoggerFactory.getLogger(AuthTokenService.class);
 
     private final TokenSigner tokenSigner;
     private final HashProvider hashProvider;
@@ -61,6 +66,9 @@ public class AuthTokenService {
         var refreshToken = RefreshToken.create(
                 user.getId(), passkeyId, tokenHash, now.plus(refreshTokenTtl));
 
+        log.info("DEBUG issueTokenPair: userId={} passkeyId={} newRawToken={} newTokenHash={}",
+                user.getId(), passkeyId, rawRefreshToken, tokenHash);
+
         return refreshTokenRepository.save(refreshToken)
                 .thenReturn(new AuthTokenPair(accessToken, rawRefreshToken, accessTokenTtl.toSeconds()));
     }
@@ -71,21 +79,41 @@ public class AuthTokenService {
 
     public Mono<AuthTokenPair> rotateRefreshToken(String rawToken, WalletUser user) {
         var tokenHash = hashProvider.sha256(rawToken);
+        log.info("DEBUG rotateRefreshToken: incoming rawToken={} tokenHash={} userId={}",
+                rawToken, tokenHash, user.getId());
         return refreshTokenRepository.findByTokenHash(tokenHash)
-                .switchIfEmpty(Mono.error(new InvalidTokenException()))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("DEBUG rotateRefreshToken: NOT FOUND rawToken={} tokenHash={} userId={}",
+                            rawToken, tokenHash, user.getId());
+                    return Mono.error(new InvalidTokenException());
+                }))
                 .flatMap(existing -> {
+                    log.info("DEBUG rotateRefreshToken: found row rawToken={} tokenHash={} userId={} passkeyId={} " +
+                                    "revoked={} expiresAt={} createdAt={}",
+                            rawToken, tokenHash, existing.getUserId(), existing.getPasskeyId(),
+                            existing.isRevoked(), existing.getExpiresAt(), existing.getCreatedAt());
                     if (existing.isRevoked()) {
+                        log.warn("DEBUG rotateRefreshToken: REUSE DETECTED (token_compromised) rawToken={} " +
+                                        "tokenHash={} userId={} passkeyId={} -> cascading revoke by {}",
+                                rawToken, tokenHash, existing.getUserId(), existing.getPasskeyId(),
+                                existing.getPasskeyId() != null ? "passkeyId" : "userId (ALL DEVICES)");
                         var revoke = existing.getPasskeyId() != null
                                 ? refreshTokenRepository.revokeByPasskeyId(existing.getPasskeyId())
                                 : refreshTokenRepository.revokeByUserId(existing.getUserId());
                         return revoke.then(Mono.error(new TokenFamilyCompromisedException()));
                     }
                     if (existing.isExpired()) {
+                        log.warn("DEBUG rotateRefreshToken: EXPIRED rawToken={} tokenHash={} userId={} expiresAt={}",
+                                rawToken, tokenHash, existing.getUserId(), existing.getExpiresAt());
                         return Mono.error(new InvalidTokenException());
                     }
                     existing.revoke();
                     return refreshTokenRepository.save(existing)
-                            .then(issueTokenPair(user, existing.getPasskeyId()));
+                            .then(issueTokenPair(user, existing.getPasskeyId()))
+                            .doOnNext(pair -> log.info("DEBUG rotateRefreshToken: SUCCESS oldRawToken={} oldTokenHash={} " +
+                                            "userId={} passkeyId={} newRawToken={}",
+                                    rawToken, tokenHash, existing.getUserId(), existing.getPasskeyId(),
+                                    pair.refreshToken()));
                 });
     }
 
@@ -108,16 +136,19 @@ public class AuthTokenService {
         return refreshTokenRepository.findByTokenHash(tokenHash)
                 .flatMap(token -> {
                     var userId = token.getUserId();
+                    log.info("DEBUG revokeAllByRefreshToken: userId={} tokenHash={}", userId, tokenHash);
                     return refreshTokenRepository.revokeByUserId(userId)
                             .thenReturn(userId);
                 });
     }
 
     public Mono<Void> revokeAllByUser(UUID userId) {
+        log.info("DEBUG revokeAllByUser: userId={}", userId);
         return refreshTokenRepository.revokeByUserId(userId);
     }
 
     public Mono<Void> revokeAllByPasskey(UUID passkeyId) {
+        log.info("DEBUG revokeAllByPasskey: passkeyId={}", passkeyId);
         return refreshTokenRepository.revokeByPasskeyId(passkeyId);
     }
 
@@ -129,9 +160,15 @@ public class AuthTokenService {
      */
     public Mono<Void> linkSessionToPasskey(String rawRefreshToken, UUID userId, UUID passkeyId) {
         var tokenHash = hashProvider.sha256(rawRefreshToken);
+        log.info("DEBUG linkSessionToPasskey: rawToken={} tokenHash={} userId={} -> passkeyId={}",
+                rawRefreshToken, tokenHash, userId, passkeyId);
         return refreshTokenRepository.findByTokenHash(tokenHash)
                 .filter(token -> token.getUserId().equals(userId))
-                .switchIfEmpty(Mono.error(new InvalidTokenException()))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("DEBUG linkSessionToPasskey: token not found or owner mismatch, rawToken={} tokenHash={} userId={}",
+                            rawRefreshToken, tokenHash, userId);
+                    return Mono.error(new InvalidTokenException());
+                }))
                 .flatMap(token -> refreshTokenRepository.updatePasskeyIdByTokenHash(tokenHash, passkeyId));
     }
 }
