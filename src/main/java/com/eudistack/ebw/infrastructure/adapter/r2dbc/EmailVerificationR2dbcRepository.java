@@ -18,7 +18,7 @@ public class EmailVerificationR2dbcRepository implements EmailVerificationReposi
 
     @Override
     public Mono<EmailVerification> findLatestUnusedByEmail(String email) {
-        return springRepository.findLatestUnusedByEmail(email).map(VerificationMapper::toDomain);
+        return springRepository.findFirstByUserEmailAndUsedFalseOrderByCreatedAtDesc(email).map(VerificationMapper::toDomain);
     }
 
     @Override

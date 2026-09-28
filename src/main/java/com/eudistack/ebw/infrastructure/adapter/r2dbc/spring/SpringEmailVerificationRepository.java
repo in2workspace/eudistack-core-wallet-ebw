@@ -12,8 +12,7 @@ public interface SpringEmailVerificationRepository extends ReactiveCrudRepositor
 
     // No expiry filter: OtpService must see an expired row to raise OtpExpiredException
     // instead of treating it as "no code" (#1061173).
-    @Query("SELECT * FROM email_verification WHERE user_email = :email AND used = false ORDER BY created_at DESC LIMIT 1")
-    Mono<EmailVerificationEntity> findLatestUnusedByEmail(String email);
+    Mono<EmailVerificationEntity> findFirstByUserEmailAndUsedFalseOrderByCreatedAtDesc(String email);
 
     @Modifying
     @Query("UPDATE email_verification SET used = true WHERE user_email = :email AND used = false")
