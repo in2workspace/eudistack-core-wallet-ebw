@@ -19,7 +19,6 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     // Auth exceptions — OAuth2 format for frontend compatibility
-    // AC-002.2 / AC-002.4: both invalid and expired OTP return the same generic error
     @ExceptionHandler(UserAlreadyRegisteredException.class)
     public ResponseEntity<Map<String, String>> handleUserAlreadyRegistered(UserAlreadyRegisteredException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
@@ -32,10 +31,18 @@ public class GlobalExceptionHandler {
                 .body(Map.of("error", "user_not_found", "message", ex.getMessage()));
     }
 
-    @ExceptionHandler({InvalidOtpException.class, OtpExpiredException.class})
-    public ResponseEntity<Map<String, String>> handleInvalidOrExpiredOtp(Exception ex) {
+    @ExceptionHandler(InvalidOtpException.class)
+    public ResponseEntity<Map<String, String>> handleInvalidOtp(InvalidOtpException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(Map.of("error", "invalid_code", "message", "Invalid or expired verification code"));
+                .body(Map.of("error", "invalid_code", "message", "Invalid verification code"));
+    }
+
+    // Distinct from invalid_code so the wallet can offer a resend without sending the user
+    // back to the email step (#1061173).
+    @ExceptionHandler(OtpExpiredException.class)
+    public ResponseEntity<Map<String, String>> handleExpiredOtp(OtpExpiredException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", "expired_code", "message", "Verification code has expired"));
     }
 
     @ExceptionHandler(TooManyAttemptsException.class)

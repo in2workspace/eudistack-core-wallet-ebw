@@ -71,7 +71,7 @@ class OtpServiceTest {
         // Arrange
         var email = "user@example.com";
         var verification = EmailVerification.create(email, "bcrypt-hash", Instant.now().plusSeconds(600));
-        when(verificationRepository.findActiveByEmail(email)).thenReturn(Mono.just(verification));
+        when(verificationRepository.findLatestUnusedByEmail(email)).thenReturn(Mono.just(verification));
         when(hashProvider.verify("482916", "bcrypt-hash")).thenReturn(Mono.just(true));
         when(verificationRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
@@ -92,7 +92,7 @@ class OtpServiceTest {
         // Arrange
         var email = "user@example.com";
         var verification = EmailVerification.create(email, "bcrypt-hash", Instant.now().plusSeconds(600));
-        when(verificationRepository.findActiveByEmail(email)).thenReturn(Mono.just(verification));
+        when(verificationRepository.findLatestUnusedByEmail(email)).thenReturn(Mono.just(verification));
         when(hashProvider.verify("000000", "bcrypt-hash")).thenReturn(Mono.just(false));
         when(verificationRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
@@ -111,7 +111,7 @@ class OtpServiceTest {
         // Arrange
         var email = "user@example.com";
         var verification = EmailVerification.create(email, "bcrypt-hash", Instant.now().minusSeconds(1));
-        when(verificationRepository.findActiveByEmail(email)).thenReturn(Mono.just(verification));
+        when(verificationRepository.findLatestUnusedByEmail(email)).thenReturn(Mono.just(verification));
 
         // Act
         var result = otpService.verify(email, "482916");
@@ -129,7 +129,7 @@ class OtpServiceTest {
         var verification = new EmailVerification(
                 java.util.UUID.randomUUID(), email, "bcrypt-hash", 5,
                 Instant.now().plusSeconds(600), false, Instant.now());
-        when(verificationRepository.findActiveByEmail(email)).thenReturn(Mono.just(verification));
+        when(verificationRepository.findLatestUnusedByEmail(email)).thenReturn(Mono.just(verification));
 
         // Act
         var result = otpService.verify(email, "482916");
@@ -144,7 +144,7 @@ class OtpServiceTest {
     void verify_noActiveVerification_throwsInvalidOtpException() {
         // Arrange
         var email = "user@example.com";
-        when(verificationRepository.findActiveByEmail(email)).thenReturn(Mono.empty());
+        when(verificationRepository.findLatestUnusedByEmail(email)).thenReturn(Mono.empty());
 
         // Act
         var result = otpService.verify(email, "482916");
@@ -162,7 +162,7 @@ class OtpServiceTest {
         var verification = new EmailVerification(
                 java.util.UUID.randomUUID(), email, "bcrypt-hash", 4,
                 Instant.now().plusSeconds(600), false, Instant.now());
-        when(verificationRepository.findActiveByEmail(email)).thenReturn(Mono.just(verification));
+        when(verificationRepository.findLatestUnusedByEmail(email)).thenReturn(Mono.just(verification));
         when(hashProvider.verify("000000", "bcrypt-hash")).thenReturn(Mono.just(false));
         when(verificationRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 

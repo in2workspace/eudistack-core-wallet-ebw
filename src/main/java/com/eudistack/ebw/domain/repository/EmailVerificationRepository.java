@@ -5,7 +5,7 @@ import reactor.core.publisher.Mono;
 
 public interface EmailVerificationRepository {
 
-    Mono<EmailVerification> findActiveByEmail(String email);
+    Mono<EmailVerification> findLatestUnusedByEmail(String email);
 
     Mono<EmailVerification> save(EmailVerification verification);
 

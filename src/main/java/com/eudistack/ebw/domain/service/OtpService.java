@@ -38,7 +38,7 @@ public class OtpService {
     }
 
     public Mono<EmailVerification> verify(String email, String code) {
-        return verificationRepository.findActiveByEmail(email)
+        return verificationRepository.findLatestUnusedByEmail(email)
                 .switchIfEmpty(Mono.error(new InvalidOtpException()))
                 .flatMap(verification -> {
                     if (verification.isExpired()) {
