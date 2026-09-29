@@ -57,7 +57,7 @@ dependencies {
 
     // --- Serialization ---
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.22.2'
-    implementation 'com.nimbusds:nimbus-jose-jwt:10.9.1'
+    implementation 'com.nimbusds:nimbus-jose-jwt:10.10'
 
     // --- AWS SDK v2 ---
     implementation 'software.amazon.awssdk:cloudwatchlogs:2.31.78'
