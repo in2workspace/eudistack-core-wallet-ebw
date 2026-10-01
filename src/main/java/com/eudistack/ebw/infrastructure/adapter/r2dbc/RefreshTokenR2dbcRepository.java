@@ -24,6 +24,11 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
     }
 
     @Override
+    public Mono<RefreshToken> findById(UUID id) {
+        return springRepository.findById(id).map(RefreshTokenMapper::toDomain);
+    }
+
+    @Override
     public Mono<RefreshToken> save(RefreshToken token) {
         return springRepository.existsById(token.getId())
                 .flatMap(exists -> {
@@ -42,6 +47,11 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
     @Override
     public Mono<Void> revokeByUserId(UUID userId) {
         return springRepository.revokeByUserId(userId);
+    }
+
+    @Override
+    public Mono<Void> revokeOrphanByUserId(UUID userId) {
+        return springRepository.revokeOrphanByUserId(userId);
     }
 
     @Override

@@ -1,5 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.health;
 
+import com.eudistack.ebw.domain.service.SessionRevocationChecker;
+import com.eudistack.ebw.domain.spi.TokenSigner;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import org.junit.jupiter.api.Tag;
@@ -34,6 +36,12 @@ class KeyManagerHealthControllerIT {
 
     @MockitoBean
     ConnectionFactory connectionFactory;
+
+    @MockitoBean
+    SessionRevocationChecker sessionRevocationChecker;
+
+    @MockitoBean
+    TokenSigner tokenSigner;
 
     @Autowired
     WebTestClient webTestClient;

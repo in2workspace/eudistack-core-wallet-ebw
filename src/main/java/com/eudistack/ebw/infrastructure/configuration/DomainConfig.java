@@ -8,6 +8,7 @@ import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.AuthTokenService;
 import com.eudistack.ebw.domain.service.CredentialService;
 import com.eudistack.ebw.domain.service.OtpService;
+import com.eudistack.ebw.domain.service.SessionRevocationChecker;
 import com.eudistack.ebw.domain.service.TenantConfigService;
 import com.eudistack.ebw.domain.spi.EmailSender;
 import com.eudistack.ebw.domain.spi.HashProvider;
@@ -33,13 +34,20 @@ public class DomainConfig {
     }
 
     @Bean
+    public SessionRevocationChecker sessionRevocationChecker(RefreshTokenRepository refreshTokenRepository) {
+        return new SessionRevocationChecker(refreshTokenRepository);
+    }
+
+    @Bean
     public AuthTokenService authTokenService(TokenSigner tokenSigner,
                                              HashProvider hashProvider,
                                              SecureRandomGenerator randomGenerator,
                                              RefreshTokenRepository refreshTokenRepository,
+                                             SessionRevocationChecker sessionRevocationChecker,
                                              JwtProperties jwtProperties) {
         return new AuthTokenService(tokenSigner, hashProvider, randomGenerator, refreshTokenRepository,
-                jwtProperties.accessTokenTtl(), jwtProperties.refreshTokenTtl(), jwtProperties.issuer());
+                sessionRevocationChecker, jwtProperties.accessTokenTtl(), jwtProperties.refreshTokenTtl(),
+                jwtProperties.issuer());
     }
 
     @Bean

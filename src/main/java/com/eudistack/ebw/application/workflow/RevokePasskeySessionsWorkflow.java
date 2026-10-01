@@ -1,9 +1,9 @@
 package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.domain.model.exception.PasskeyNotFoundException;
-import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.service.AuditService;
+import com.eudistack.ebw.domain.service.AuthTokenService;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -14,21 +14,21 @@ import java.util.UUID;
 public class RevokePasskeySessionsWorkflow {
 
     private final UserPasskeyRepository passkeyRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final AuthTokenService authTokenService;
     private final AuditService auditService;
 
     public RevokePasskeySessionsWorkflow(UserPasskeyRepository passkeyRepository,
-                                         RefreshTokenRepository refreshTokenRepository,
+                                         AuthTokenService authTokenService,
                                          AuditService auditService) {
         this.passkeyRepository = passkeyRepository;
-        this.refreshTokenRepository = refreshTokenRepository;
+        this.authTokenService = authTokenService;
         this.auditService = auditService;
     }
 
     public Mono<Void> revokeSessions(UUID userId, UUID passkeyId) {
         return passkeyRepository.findByIdAndUserId(passkeyId, userId)
                 .switchIfEmpty(Mono.error(new PasskeyNotFoundException()))
-                .flatMap(passkey -> refreshTokenRepository.revokeByPasskeyId(passkeyId)
+                .flatMap(passkey -> authTokenService.revokeAllByPasskey(passkeyId)
                         .then(auditService.record("passkey", passkeyId,
                                 "SESSIONS_REVOKED", userId, Map.of())));
     }

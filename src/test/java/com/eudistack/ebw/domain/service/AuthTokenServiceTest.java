@@ -10,6 +10,7 @@ import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -29,6 +30,7 @@ class AuthTokenServiceTest {
     private HashProvider hashProvider;
     private SecureRandomGenerator randomGenerator;
     private RefreshTokenRepository refreshTokenRepository;
+    private SessionRevocationChecker sessionRevocationChecker;
     private AuthTokenService authTokenService;
 
     private WalletUser testUser;
@@ -39,8 +41,10 @@ class AuthTokenServiceTest {
         hashProvider = mock(HashProvider.class);
         randomGenerator = mock(SecureRandomGenerator.class);
         refreshTokenRepository = mock(RefreshTokenRepository.class);
+        sessionRevocationChecker = mock(SessionRevocationChecker.class);
         authTokenService = new AuthTokenService(tokenSigner, hashProvider, randomGenerator,
-                refreshTokenRepository, Duration.ofMinutes(15), Duration.ofDays(7), "eudistack-ebw");
+                refreshTokenRepository, sessionRevocationChecker,
+                Duration.ofMinutes(15), Duration.ofDays(7), "eudistack-ebw");
 
         testUser = WalletUser.create("user@example.com");
     }
@@ -65,6 +69,30 @@ class AuthTokenServiceTest {
                     assertThat(pair.expiresIn()).isEqualTo(900);
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void issueTokenPair_validUser_signsAccessTokenWithSidClaimMatchingRefreshTokenId() {
+        // Arrange
+        when(tokenSigner.sign(anyMap())).thenReturn("jwt-access-token");
+        when(randomGenerator.generateUuid()).thenReturn(UUID.randomUUID());
+        when(hashProvider.sha256(anyString())).thenReturn("sha256-hash");
+        when(refreshTokenRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> claimsCaptor = ArgumentCaptor.forClass(Map.class);
+        ArgumentCaptor<RefreshToken> tokenCaptor = ArgumentCaptor.forClass(RefreshToken.class);
+
+        // Act
+        StepVerifier.create(authTokenService.issueTokenPair(testUser, null))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        // Assert — JwtAuthenticationWebFilter relies on "sid" matching the persisted
+        // refresh-token row's id to reject the access token once that row is revoked.
+        verify(tokenSigner).sign(claimsCaptor.capture());
+        verify(refreshTokenRepository).save(tokenCaptor.capture());
+        assertThat(claimsCaptor.getValue().get("sid")).isEqualTo(tokenCaptor.getValue().getId().toString());
     }
 
     @Test
@@ -98,24 +126,32 @@ class AuthTokenServiceTest {
     }
 
     @Test
-    void rotateRefreshToken_revokedToken_compromiseDetected() {
-        // Arrange
+    void rotateRefreshToken_revokedTokenWithoutPasskey_revokesOnlyOrphanSessionsNotEveryDevice() {
+        // Arrange — a null passkeyId here is NOT proof this token was never attributed
+        // to a device: deleting a passkey nulls it via ON DELETE SET NULL on
+        // refresh_token.passkey_id. Falling back to the unscoped revokeByUserId used to
+        // let a deleted device's own retried refresh wipe out every other, properly
+        // attributed device's session too — see AuthTokenService.rotateRefreshToken.
         var rawToken = "reused-token";
         var revokedToken = RefreshToken.create(testUser.getId(), null, "sha256-hash",
                 Instant.now().plusSeconds(3600));
         revokedToken.revoke();
         when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
         when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(revokedToken));
-        when(refreshTokenRepository.revokeByUserId(testUser.getId())).thenReturn(Mono.empty());
+        when(refreshTokenRepository.revokeOrphanByUserId(testUser.getId())).thenReturn(Mono.empty());
 
         // Act
         var result = authTokenService.rotateRefreshToken(rawToken, testUser);
 
-        // Assert
+        // Assert — only still-unattributed sessions for the user are revoked; devices
+        // with a real passkey are never touched by this branch.
         StepVerifier.create(result)
                 .expectError(TokenFamilyCompromisedException.class)
                 .verify();
-        verify(refreshTokenRepository).revokeByUserId(testUser.getId());
+        verify(refreshTokenRepository).revokeOrphanByUserId(testUser.getId());
+        verify(refreshTokenRepository, never()).revokeByUserId(any());
+        verify(refreshTokenRepository, never()).revokeByPasskeyId(any());
+        verify(sessionRevocationChecker).invalidateAll();
     }
 
     @Test
@@ -139,6 +175,7 @@ class AuthTokenServiceTest {
                 .verify();
         verify(refreshTokenRepository).revokeByPasskeyId(passkeyId);
         verify(refreshTokenRepository, never()).revokeByUserId(any());
+        verify(sessionRevocationChecker).invalidateAll();
     }
 
     @Test
@@ -195,6 +232,7 @@ class AuthTokenServiceTest {
         assertThat(token.isRevoked()).isTrue();
         verify(refreshTokenRepository, never()).revokeByUserId(any());
         verify(refreshTokenRepository, never()).revokeByPasskeyId(any());
+        verify(sessionRevocationChecker).invalidateAll();
     }
 
     @Test
@@ -210,6 +248,33 @@ class AuthTokenServiceTest {
         // Assert
         StepVerifier.create(result)
                 .verifyComplete();
+    }
+
+    @Test
+    void revokeAllByPasskey_delegatesToRepositoryAndInvalidatesSessionCache() {
+        // Arrange
+        var passkeyId = UUID.randomUUID();
+        when(refreshTokenRepository.revokeByPasskeyId(passkeyId)).thenReturn(Mono.empty());
+
+        // Act
+        StepVerifier.create(authTokenService.revokeAllByPasskey(passkeyId)).verifyComplete();
+
+        // Assert
+        verify(refreshTokenRepository).revokeByPasskeyId(passkeyId);
+        verify(sessionRevocationChecker).invalidateAll();
+    }
+
+    @Test
+    void revokeAllByUser_delegatesToRepositoryAndInvalidatesSessionCache() {
+        // Arrange
+        when(refreshTokenRepository.revokeByUserId(testUser.getId())).thenReturn(Mono.empty());
+
+        // Act
+        StepVerifier.create(authTokenService.revokeAllByUser(testUser.getId())).verifyComplete();
+
+        // Assert
+        verify(refreshTokenRepository).revokeByUserId(testUser.getId());
+        verify(sessionRevocationChecker).invalidateAll();
     }
 
     @Test

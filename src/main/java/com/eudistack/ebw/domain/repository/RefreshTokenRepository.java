@@ -9,11 +9,15 @@ public interface RefreshTokenRepository {
 
     Mono<RefreshToken> findByTokenHash(String tokenHash);
 
+    Mono<RefreshToken> findById(UUID id);
+
     Mono<RefreshToken> save(RefreshToken token);
 
     Mono<Void> revokeByPasskeyId(UUID passkeyId);
 
     Mono<Void> revokeByUserId(UUID userId);
+
+    Mono<Void> revokeOrphanByUserId(UUID userId);
 
     Mono<Long> countActiveByPasskeyId(UUID passkeyId);
 
