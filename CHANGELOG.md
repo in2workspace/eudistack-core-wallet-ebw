@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.13.4] - 2026-10-01
+
+### Fixed
+- **#1061173** Al caducar el OTP no se ofrece reenviar el código y hay que volver a registrar el correo. El backend distingue un código caducado (expired_code) de un código incorrecto.
+
 ### Fixed
 
 - **#1061173 — an expired OTP was indistinguishable from a wrong one**: `SpringEmailVerificationRepository.findActiveByEmail` filtered `expires_at > NOW()`, so an expired code was simply "not found" and surfaced as `InvalidOtpException`; the `isExpired()` branch in `OtpService.verify` was unreachable, and `GlobalExceptionHandler` mapped both exceptions to the same 401 `invalid_code` anyway. The lookup is now `findLatestUnusedByEmail` (no expiry filter — `generateAndSend` already marks older codes used, so the latest unused row is always the current one) and `OtpExpiredException` returns 401 `expired_code`, so the wallet can offer a resend without sending the user back to the email step. `invalid_code` keeps its status and shape (message is now "Invalid verification code"). Covered by a new `AuthFlowIntegrationTest` case: expired → `expired_code` → resend → the new code verifies.
