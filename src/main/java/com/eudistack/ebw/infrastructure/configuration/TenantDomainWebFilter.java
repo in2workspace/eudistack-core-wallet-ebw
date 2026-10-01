@@ -63,7 +63,7 @@ public class TenantDomainWebFilter implements WebFilter {
         return chain.filter(exchange);
     }
 
-    String resolveTenant(ServerWebExchange exchange) {
+    public String resolveTenant(ServerWebExchange exchange) {
         if (trustForwardedHost) {
             String xTenant = exchange.getRequest().getHeaders().getFirst(HEADER_X_TENANT);
 

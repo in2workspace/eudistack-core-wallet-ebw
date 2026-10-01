@@ -1,6 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.domain.service.SessionRevocationChecker;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
 import com.eudistack.ebw.infrastructure.adapter.properties.RateLimitProperties;
@@ -83,6 +84,9 @@ class HybridKeyManagerControllerIT {
 
     @MockitoBean
     TokenSigner tokenSigner;
+
+    @MockitoBean
+    SessionRevocationChecker sessionRevocationChecker;
 
     @MockitoBean
     WalletProfileQueryTelemetry walletProfileQueryTelemetry;

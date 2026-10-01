@@ -56,5 +56,20 @@ public class AuthController {
         return logoutWorkflow.logout(request.refreshToken());
     }
 
-
+    /**
+     * No-op liveness check for the caller's own session. Reaching this method at all
+     * means {@code JwtAuthenticationWebFilter} already accepted the access token —
+     * including the session-revocation check — so there is nothing left to do here.
+     * Not in the {@code permitAll} list on purpose: the wallet polls this endpoint in
+     * the background so a revoked session (closed remotely, passkey deleted, device
+     * removed) is caught — and the holder redirected to login — even on an otherwise
+     * idle tab that isn't making any other request for the 401 to surface on.
+     */
+    @GetMapping("/session")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void checkSession() {
+        // Intentionally empty — see the Javadoc above: reaching this method is the
+        // whole check, there is nothing left to do once JwtAuthenticationWebFilter
+        // has already accepted the request.
+    }
 }

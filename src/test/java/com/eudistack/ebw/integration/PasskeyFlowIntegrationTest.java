@@ -95,6 +95,50 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
                 .jsonPath("$.type").isEqualTo("urn:eudistack:error:last-passkey");
     }
 
+    /**
+     * Regression test for the V7 migration (ON DELETE CASCADE instead of SET NULL on
+     * refresh_token.passkey_id): deleting a passkey must not let a retried refresh from
+     * the deleted device escalate into revoking every OTHER device's session too.
+     *
+     * <p>Before the fix, deleting a passkey revoked its refresh_token row and then
+     * orphaned it (passkey_id set to NULL by the old FK behaviour) when the passkey row
+     * itself was deleted. If that device's client retried /refresh before its access
+     * token naturally expired — which our hot-revocation fix makes it do almost
+     * immediately — {@code AuthTokenService.rotateRefreshToken()}'s reuse-detection saw a
+     * revoked token with no passkey_id, treated it as "never attributed to any device",
+     * and fell back to revoking every session for the whole user — wiping out the
+     * completely unrelated device B below.
+     */
+    @Test
+    void deletePasskey_thenDeletedDevicesRefreshRetry_doesNotRevokeOtherDevices() {
+        var email = "passkey-delete-cascade@example.com";
+
+        var deviceA = authenticateUser(email);
+        var passkeyA = createPasskeyLinkedToSession(deviceA.accessToken(), "cred-cascade-a", "Device A",
+                deviceA.refreshToken());
+
+        var deviceB = authenticateUser(email);
+        createPasskeyLinkedToSession(deviceB.accessToken(), "cred-cascade-b", "Device B", deviceB.refreshToken());
+
+        webClient.delete().uri("/api/v1/auth/passkeys/{id}", passkeyA)
+                .headers(h -> h.setBearerAuth(deviceA.accessToken()))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        // Device A's client retries a refresh with its now-revoked token — must get a
+        // plain 401 (the row is gone), never a user-wide compromise revoke.
+        webClient.post().uri("/api/v1/auth/refresh")
+                .bodyValue(Map.of("refreshToken", deviceA.refreshToken()))
+                .exchange()
+                .expectStatus().isUnauthorized();
+
+        // Device B's completely unrelated session must still be alive.
+        webClient.post().uri("/api/v1/auth/refresh")
+                .bodyValue(Map.of("refreshToken", deviceB.refreshToken()))
+                .exchange()
+                .expectStatus().isOk();
+    }
+
     @Test
     void duplicateCredentialId_returns409() {
         var auth = authenticateUser("passkey-dup@example.com");
@@ -134,6 +178,32 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
                 .headers(h -> h.setBearerAuth(auth.accessToken()))
                 .exchange()
                 .expectStatus().isNoContent();
+    }
+
+    /**
+     * The critical fix (session-revocation-not-hot): before it, JwtAuthenticationWebFilter
+     * validated the access token purely by signature+exp, so revoking a device's sessions
+     * only stopped its NEXT refresh — the still-unexpired access token it already held kept
+     * being accepted for up to its full TTL, during which the "revoked" device could still
+     * present/issue credentials. It must now be rejected on the very next request.
+     */
+    @Test
+    void revokeSessions_rejectsTheDevicesAccessTokenImmediately_notOnlyItsNextRefresh() {
+        var auth = authenticateUser("passkey-hot-revoke@example.com");
+        var passkeyId = createPasskeyLinkedToSession(auth.accessToken(), "cred-hot-revoke", "My Laptop",
+                auth.refreshToken());
+
+        webClient.post().uri("/api/v1/auth/passkeys/{id}/revoke-sessions", passkeyId)
+                .headers(h -> h.setBearerAuth(auth.accessToken()))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        // The same still-unexpired access token — not its refresh token, not a new call —
+        // must now be rejected on any authenticated endpoint.
+        webClient.get().uri("/api/v1/auth/passkeys")
+                .headers(h -> h.setBearerAuth(auth.accessToken()))
+                .exchange()
+                .expectStatus().isUnauthorized();
     }
 
     @Test

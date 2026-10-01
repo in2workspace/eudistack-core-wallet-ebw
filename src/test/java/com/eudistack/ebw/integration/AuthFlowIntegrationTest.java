@@ -128,6 +128,99 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
                 .expectStatus().isNoContent();
     }
 
+    /**
+     * EUD-104 (Mis dispositivos): logging out from one device must not silently end the
+     * user's other sessions. Two sessions of the same account (simulating PC + mobile) —
+     * logging out of one must leave the other refreshable.
+     */
+    @Test
+    void logout_oneOfTwoSessions_leavesTheOtherSessionActive() {
+        var email = "test-logout-per-device-" + System.nanoTime() + "@example.com";
+        var pcTokens = registerAndVerify(email);
+        var mobileTokens = registerAndVerify(email);
+
+        webClient.post().uri("/api/v1/auth/logout")
+                .bodyValue(Map.of("refreshToken", pcTokens.get("refreshToken")))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        // The device that logged out can no longer refresh.
+        webClient.post().uri("/api/v1/auth/refresh")
+                .bodyValue(Map.of("refreshToken", pcTokens.get("refreshToken")))
+                .exchange()
+                .expectStatus().isUnauthorized();
+
+        // The other device's session is untouched.
+        webClient.post().uri("/api/v1/auth/refresh")
+                .bodyValue(Map.of("refreshToken", mobileTokens.get("refreshToken")))
+                .exchange()
+                .expectStatus().isOk();
+    }
+
+    /**
+     * The critical fix (session-revocation-not-hot): before it, JwtAuthenticationWebFilter
+     * validated the access token purely by signature+exp, so logging out only stopped the
+     * NEXT refresh — the still-unexpired access token already issued kept being accepted
+     * for up to its full TTL. It must now be rejected on the very next request.
+     */
+    @Test
+    void logout_rejectsTheDevicesAccessTokenImmediately_notOnlyItsNextRefresh() {
+        var email = "test-hot-logout-" + System.nanoTime() + "@example.com";
+        var tokens = registerAndVerify(email);
+        var accessToken = (String) tokens.get("accessToken");
+
+        webClient.post().uri("/api/v1/auth/logout")
+                .bodyValue(Map.of("refreshToken", tokens.get("refreshToken")))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        // The same still-unexpired access token must now be rejected.
+        webClient.get().uri("/api/v1/auth/passkeys")
+                .header("Authorization", "Bearer " + accessToken)
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    /**
+     * GET /session backs the wallet's background polling (an otherwise-idle tab has no
+     * other request for a revoked session to 401 on) — it must behave exactly like any
+     * other authenticated endpoint: reject once the session is gone, not just once the
+     * holder happens to act.
+     */
+    @Test
+    void checkSession_validToken_returns204() {
+        var email = "test-session-check-" + System.nanoTime() + "@example.com";
+        var tokens = registerAndVerify(email);
+
+        webClient.get().uri("/api/v1/auth/session")
+                .header("Authorization", "Bearer " + tokens.get("accessToken"))
+                .exchange()
+                .expectStatus().isNoContent();
+    }
+
+    @Test
+    void checkSession_noToken_returns401() {
+        webClient.get().uri("/api/v1/auth/session")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void checkSession_afterLogout_returns401() {
+        var email = "test-session-check-revoked-" + System.nanoTime() + "@example.com";
+        var tokens = registerAndVerify(email);
+
+        webClient.post().uri("/api/v1/auth/logout")
+                .bodyValue(Map.of("refreshToken", tokens.get("refreshToken")))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        webClient.get().uri("/api/v1/auth/session")
+                .header("Authorization", "Bearer " + tokens.get("accessToken"))
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
     @Test
     void verifyEmail_wrongCode_returns401() {
         var email = "test-wrong-otp@example.com";

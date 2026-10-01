@@ -20,6 +20,17 @@ public interface SpringRefreshTokenRepository extends ReactiveCrudRepository<Ref
     @Query("UPDATE refresh_token SET revoked = true WHERE user_id = :userId AND revoked = false")
     Mono<Void> revokeByUserId(UUID userId);
 
+    /**
+     * Scoped to sessions never attributed to any device (mid email+OTP, before passkey
+     * confirmation) — see AuthTokenService.rotateRefreshToken's reuse-detection. A
+     * passkey_id of NULL here is not just "unconfirmed": it's also what a deleted
+     * passkey leaves behind via refresh_token's ON DELETE SET NULL, so this must never
+     * widen to every session for the user — only the still-unattributed ones.
+     */
+    @Modifying
+    @Query("UPDATE refresh_token SET revoked = true WHERE user_id = :userId AND passkey_id IS NULL AND revoked = false")
+    Mono<Void> revokeOrphanByUserId(UUID userId);
+
     @Query("SELECT COUNT(*) FROM refresh_token WHERE passkey_id = :passkeyId AND revoked = false AND expires_at > NOW()")
     Mono<Long> countActiveByPasskeyId(UUID passkeyId);
 

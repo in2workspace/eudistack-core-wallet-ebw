@@ -2,6 +2,7 @@ package com.eudistack.ebw.domain.service;
 
 import com.eudistack.ebw.domain.model.AuthTokenPair;
 import com.eudistack.ebw.domain.model.RefreshToken;
+import com.eudistack.ebw.domain.model.TokenIssuanceSettings;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.model.exception.TokenFamilyCompromisedException;
@@ -22,6 +23,7 @@ public class AuthTokenService {
     private final HashProvider hashProvider;
     private final SecureRandomGenerator randomGenerator;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final SessionRevocationChecker sessionRevocationChecker;
     private final Duration accessTokenTtl;
     private final Duration refreshTokenTtl;
     private final String issuer;
@@ -30,36 +32,40 @@ public class AuthTokenService {
                             HashProvider hashProvider,
                             SecureRandomGenerator randomGenerator,
                             RefreshTokenRepository refreshTokenRepository,
-                            Duration accessTokenTtl,
-                            Duration refreshTokenTtl,
-                            String issuer) {
+                            SessionRevocationChecker sessionRevocationChecker,
+                            TokenIssuanceSettings tokenIssuanceSettings) {
         this.tokenSigner = tokenSigner;
         this.hashProvider = hashProvider;
         this.randomGenerator = randomGenerator;
         this.refreshTokenRepository = refreshTokenRepository;
-        this.accessTokenTtl = accessTokenTtl;
-        this.refreshTokenTtl = refreshTokenTtl;
-        this.issuer = issuer;
+        this.sessionRevocationChecker = sessionRevocationChecker;
+        this.accessTokenTtl = tokenIssuanceSettings.accessTokenTtl();
+        this.refreshTokenTtl = tokenIssuanceSettings.refreshTokenTtl();
+        this.issuer = tokenIssuanceSettings.issuer();
     }
 
     public Mono<AuthTokenPair> issueTokenPair(WalletUser user, UUID passkeyId) {
         var now = Instant.now();
         var exp = now.plus(accessTokenTtl);
 
+        var rawRefreshToken = randomGenerator.generateUuid().toString();
+        var tokenHash = hashProvider.sha256(rawRefreshToken);
+        var refreshToken = RefreshToken.create(
+                user.getId(), passkeyId, tokenHash, now.plus(refreshTokenTtl));
+
+        // "sid" ties the access token to the refresh-token row that spawned it, so
+        // JwtAuthenticationWebFilter can reject it the moment that row is revoked
+        // instead of only at its own `exp` — see SessionRevocationChecker.
         var claims = Map.<String, Object>of(
                 "sub", user.getId().toString(),
                 "email", user.getEmail(),
                 "iss", issuer,
                 "iat", now.getEpochSecond(),
-                "exp", exp.getEpochSecond()
+                "exp", exp.getEpochSecond(),
+                "sid", refreshToken.getId().toString()
         );
 
         var accessToken = tokenSigner.sign(claims);
-        var rawRefreshToken = randomGenerator.generateUuid().toString();
-        var tokenHash = hashProvider.sha256(rawRefreshToken);
-
-        var refreshToken = RefreshToken.create(
-                user.getId(), passkeyId, tokenHash, now.plus(refreshTokenTtl));
 
         return refreshTokenRepository.save(refreshToken)
                 .thenReturn(new AuthTokenPair(accessToken, rawRefreshToken, accessTokenTtl.toSeconds()));
@@ -75,10 +81,21 @@ public class AuthTokenService {
                 .switchIfEmpty(Mono.error(new InvalidTokenException()))
                 .flatMap(existing -> {
                     if (existing.isRevoked()) {
+                        // A non-null passkeyId scopes the compromise response to every
+                        // session of that one device (defense in depth: if one of its
+                        // tokens was reused, treat the whole device as suspect). A null
+                        // passkeyId is NOT proof this token was never attributed to any
+                        // device — deleting a passkey nulls it via refresh_token's
+                        // ON DELETE SET NULL — so revoking "by user" here must stay
+                        // scoped to still-unattributed sessions only (revokeOrphanByUserId),
+                        // never every session for the user: that let a deleted device's
+                        // own retried refresh wipe out every other, properly-attributed
+                        // device's session too.
                         var revoke = existing.getPasskeyId() != null
                                 ? refreshTokenRepository.revokeByPasskeyId(existing.getPasskeyId())
-                                : refreshTokenRepository.revokeByUserId(existing.getUserId());
-                        return revoke.then(Mono.error(new TokenFamilyCompromisedException()));
+                                : refreshTokenRepository.revokeOrphanByUserId(existing.getUserId());
+                        return revoke.doOnSuccess(v -> sessionRevocationChecker.invalidateAll())
+                                .then(Mono.error(new TokenFamilyCompromisedException()));
                     }
                     if (existing.isExpired()) {
                         return Mono.error(new InvalidTokenException());
@@ -89,36 +106,30 @@ public class AuthTokenService {
                 });
     }
 
-    public Mono<Void> revokeRefreshToken(String rawToken) {
-        var tokenHash = hashProvider.sha256(rawToken);
-        return refreshTokenRepository.findByTokenHash(tokenHash)
-                .flatMap(token -> {
-                    token.revoke();
-                    return refreshTokenRepository.save(token).then();
-                })
-                .then();
-    }
-
     /**
-     * Global logout: finds the token by hash, revokes ALL tokens for that user.
-     * Returns the userId for audit purposes, or empty if token not found (idempotent).
+     * Per-device logout: finds the token by hash, revokes only that one session.
+     * Returns the userId for audit purposes, or empty if token not found (idempotent) —
+     * other devices' sessions for the same user are left untouched.
      */
-    public Mono<UUID> revokeAllByRefreshToken(String rawToken) {
+    public Mono<UUID> revokeRefreshToken(String rawToken) {
         var tokenHash = hashProvider.sha256(rawToken);
         return refreshTokenRepository.findByTokenHash(tokenHash)
                 .flatMap(token -> {
                     var userId = token.getUserId();
-                    return refreshTokenRepository.revokeByUserId(userId)
-                            .thenReturn(userId);
-                });
+                    token.revoke();
+                    return refreshTokenRepository.save(token).thenReturn(userId);
+                })
+                .doOnSuccess(userId -> sessionRevocationChecker.invalidateAll());
     }
 
     public Mono<Void> revokeAllByUser(UUID userId) {
-        return refreshTokenRepository.revokeByUserId(userId);
+        return refreshTokenRepository.revokeByUserId(userId)
+                .doOnSuccess(v -> sessionRevocationChecker.invalidateAll());
     }
 
     public Mono<Void> revokeAllByPasskey(UUID passkeyId) {
-        return refreshTokenRepository.revokeByPasskeyId(passkeyId);
+        return refreshTokenRepository.revokeByPasskeyId(passkeyId)
+                .doOnSuccess(v -> sessionRevocationChecker.invalidateAll());
     }
 
     /**

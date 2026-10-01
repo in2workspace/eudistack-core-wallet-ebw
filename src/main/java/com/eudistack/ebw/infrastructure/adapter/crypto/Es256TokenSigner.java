@@ -129,6 +129,12 @@ public class Es256TokenSigner implements TokenSigner {
             result.put("iss", claimsSet.getIssuer());
             result.put("iat", claimsSet.getIssueTime());
             result.put("exp", claimsSet.getExpirationTime());
+            // "sid" is absent on tokens issued before session-revocation checking existed;
+            // JwtAuthenticationWebFilter treats that as valid (no forced logout on deploy).
+            var sid = claimsSet.getStringClaim("sid");
+            if (sid != null) {
+                result.put("sid", sid);
+            }
             // Pass through PBAC powers and OAuth2-style scope claims if present so the
             // security filter can map them to granted authorities. Additive — no behaviour
             // change for existing tokens that carry neither claim.
