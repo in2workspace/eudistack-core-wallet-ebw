@@ -50,7 +50,9 @@ public class JwtAuthenticationWebFilter implements WebFilter {
         return Mono.<Map<String, Object>>fromCallable(() -> tokenSigner.verify(token))
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMap(claims -> checkSessionValidity(exchange, claims)
-                        .flatMap(valid -> valid ? authenticate(exchange, chain, claims) : chain.filter(exchange)))
+                        .flatMap(valid -> valid.booleanValue()
+                                ? authenticate(exchange, chain, claims)
+                                : chain.filter(exchange)))
                 .onErrorResume(InvalidTokenException.class, e -> chain.filter(exchange));
     }
 

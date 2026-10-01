@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
+import com.eudistack.ebw.domain.model.TokenIssuanceSettings;
 import com.eudistack.ebw.domain.repository.AuditLogRepository;
 import com.eudistack.ebw.domain.repository.EmailVerificationRepository;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
@@ -45,9 +46,10 @@ public class DomainConfig {
                                              RefreshTokenRepository refreshTokenRepository,
                                              SessionRevocationChecker sessionRevocationChecker,
                                              JwtProperties jwtProperties) {
+        var tokenIssuanceSettings = new TokenIssuanceSettings(
+                jwtProperties.accessTokenTtl(), jwtProperties.refreshTokenTtl(), jwtProperties.issuer());
         return new AuthTokenService(tokenSigner, hashProvider, randomGenerator, refreshTokenRepository,
-                sessionRevocationChecker, jwtProperties.accessTokenTtl(), jwtProperties.refreshTokenTtl(),
-                jwtProperties.issuer());
+                sessionRevocationChecker, tokenIssuanceSettings);
     }
 
     @Bean

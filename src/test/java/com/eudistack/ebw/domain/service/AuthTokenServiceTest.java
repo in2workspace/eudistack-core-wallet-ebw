@@ -1,6 +1,7 @@
 package com.eudistack.ebw.domain.service;
 
 import com.eudistack.ebw.domain.model.RefreshToken;
+import com.eudistack.ebw.domain.model.TokenIssuanceSettings;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.model.exception.TokenFamilyCompromisedException;
@@ -42,9 +43,10 @@ class AuthTokenServiceTest {
         randomGenerator = mock(SecureRandomGenerator.class);
         refreshTokenRepository = mock(RefreshTokenRepository.class);
         sessionRevocationChecker = mock(SessionRevocationChecker.class);
-        authTokenService = new AuthTokenService(tokenSigner, hashProvider, randomGenerator,
-                refreshTokenRepository, sessionRevocationChecker,
+        var tokenIssuanceSettings = new TokenIssuanceSettings(
                 Duration.ofMinutes(15), Duration.ofDays(7), "eudistack-ebw");
+        authTokenService = new AuthTokenService(tokenSigner, hashProvider, randomGenerator,
+                refreshTokenRepository, sessionRevocationChecker, tokenIssuanceSettings);
 
         testUser = WalletUser.create("user@example.com");
     }
@@ -92,7 +94,7 @@ class AuthTokenServiceTest {
         // refresh-token row's id to reject the access token once that row is revoked.
         verify(tokenSigner).sign(claimsCaptor.capture());
         verify(refreshTokenRepository).save(tokenCaptor.capture());
-        assertThat(claimsCaptor.getValue().get("sid")).isEqualTo(tokenCaptor.getValue().getId().toString());
+        assertThat(claimsCaptor.getValue()).containsEntry("sid", tokenCaptor.getValue().getId().toString());
     }
 
     @Test

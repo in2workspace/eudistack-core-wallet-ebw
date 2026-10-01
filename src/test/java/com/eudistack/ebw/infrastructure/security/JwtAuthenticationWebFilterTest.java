@@ -8,9 +8,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -88,6 +91,23 @@ class JwtAuthenticationWebFilterTest {
         assertThat(authenticationWasSet(exchange)).isFalse();
     }
 
+    @Test
+    void validTokenWithPowersClaim_authenticatesWithMappedAuthorities() {
+        var sid = UUID.randomUUID();
+        var exchange = bearerRequest("token-with-powers");
+        when(tokenSigner.verify("token-with-powers")).thenReturn(Map.of(
+                "sub", UUID.randomUUID().toString(), "email", "user@example.com", "sid", sid.toString(),
+                "powers", List.of("ISSUE_CREDENTIAL", "VERIFY_CREDENTIAL")));
+        when(sessionRevocationChecker.isValid(sid)).thenReturn(Mono.just(true));
+
+        var authentication = capturedAuthentication(exchange);
+
+        assertThat(authentication).isNotNull();
+        assertThat(authentication.getAuthorities())
+                .extracting(GrantedAuthority::getAuthority)
+                .containsExactlyInAnyOrder("ISSUE_CREDENTIAL", "VERIFY_CREDENTIAL");
+    }
+
     private static MockServerWebExchange bearerRequest(String token) {
         return MockServerWebExchange.from(MockServerHttpRequest.get("/")
                 .header("Authorization", "Bearer " + token)
@@ -96,11 +116,16 @@ class JwtAuthenticationWebFilterTest {
 
     /** Runs the filter and reports whether the downstream chain saw an Authentication. */
     private boolean authenticationWasSet(MockServerWebExchange exchange) {
-        boolean[] hasAuth = {false};
+        return capturedAuthentication(exchange) != null;
+    }
+
+    /** Runs the filter and returns the Authentication the downstream chain saw, or null. */
+    private Authentication capturedAuthentication(MockServerWebExchange exchange) {
+        Authentication[] authentication = {null};
         filter.filter(exchange, ex -> ReactiveSecurityContextHolder.getContext()
-                .doOnNext(ctx -> hasAuth[0] = ctx.getAuthentication() != null)
+                .doOnNext(ctx -> authentication[0] = ctx.getAuthentication())
                 .then()
         ).block();
-        return hasAuth[0];
+        return authentication[0];
     }
 }

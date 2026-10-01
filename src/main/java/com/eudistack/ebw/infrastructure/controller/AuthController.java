@@ -68,5 +68,8 @@ public class AuthController {
     @GetMapping("/session")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void checkSession() {
+        // Intentionally empty — see the Javadoc above: reaching this method is the
+        // whole check, there is nothing left to do once JwtAuthenticationWebFilter
+        // has already accepted the request.
     }
 }
