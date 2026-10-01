@@ -142,14 +142,42 @@ class AuthFlowIntegrationTest extends IntegrationTestBase {
     }
 
     /**
+     * #1061173: an expired OTP answers 401/expired_code (not invalid_code), and a resend to the
+     * same email issues a fresh code that verifies — the wallet never has to re-collect the email.
+     */
+    @Test
+    void verifyEmail_expiredCode_returns401ExpiredCode_thenResendVerifies() {
+        var email = "test-otp-expired-" + System.nanoTime() + "@example.com";
+        registerUser(email);
+        var expiredOtp = capturedOtps.get(email);
+
+        databaseClient.sql("UPDATE email_verification SET expires_at = NOW() - INTERVAL '1 minute' "
+                        + "WHERE user_email = $1 AND used = false")
+                .bind("$1", email)
+                .then()
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TEST_TENANT))
+                .block();
+
+        webClient.post().uri("/api/v1/auth/verify-email")
+                .bodyValue(Map.of("email", email, "code", expiredOtp))
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.error").isEqualTo("expired_code");
+
+        registerUser(email);
+        var freshOtp = capturedOtps.get(email);
+
+        webClient.post().uri("/api/v1/auth/verify-email")
+                .bodyValue(Map.of("email", email, "code", freshOtp))
+                .exchange()
+                .expectStatus().isOk();
+    }
+
+    /**
      * ES-01 (EUD-104): exhausting the OTP attempt budget (5, {@code otp.max-attempts} in
      * application-integration.yaml) MUST fail-closed — 429, no tokens, no passkey — and MUST
-     * stay closed even for the correct code afterwards. Expired-code handling is not
-     * duplicated here: {@code GlobalExceptionHandler} maps {@code InvalidOtpException} and
-     * {@code OtpExpiredException} to the identical 401/invalid_code response (see
-     * verifyEmail_wrongCode_returns401), and {@code OtpServiceTest} already covers the
-     * expiry branch at the unit level — an IT for it would just re-assert the same HTTP
-     * contract this test already exercises for wrong codes.
+     * stay closed even for the correct code afterwards.
      */
     @Test
     void verifyEmail_tooManyWrongAttempts_returns429_neverIssuesTokensOrPasskey() {

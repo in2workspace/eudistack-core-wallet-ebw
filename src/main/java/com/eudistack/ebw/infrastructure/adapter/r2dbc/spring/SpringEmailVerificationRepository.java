@@ -10,8 +10,9 @@ import java.util.UUID;
 
 public interface SpringEmailVerificationRepository extends ReactiveCrudRepository<EmailVerificationEntity, UUID> {
 
-    @Query("SELECT * FROM email_verification WHERE user_email = :email AND used = false AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1")
-    Mono<EmailVerificationEntity> findActiveByEmail(String email);
+    // No expiry filter: OtpService must see an expired row to raise OtpExpiredException
+    // instead of treating it as "no code" (#1061173).
+    Mono<EmailVerificationEntity> findFirstByUserEmailAndUsedFalseOrderByCreatedAtDesc(String email);
 
     @Modifying
     @Query("UPDATE email_verification SET used = true WHERE user_email = :email AND used = false")
