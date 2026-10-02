@@ -4,6 +4,7 @@ import com.eudistack.ebw.domain.repository.AuditLogRepository;
 import com.eudistack.ebw.domain.repository.EmailVerificationRepository;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.TenantConfigRepository;
+import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.AuthTokenService;
 import com.eudistack.ebw.domain.service.CredentialService;
@@ -37,9 +38,10 @@ public class DomainConfig {
                                              HashProvider hashProvider,
                                              SecureRandomGenerator randomGenerator,
                                              RefreshTokenRepository refreshTokenRepository,
+                                             UserPasskeyRepository userPasskeyRepository,
                                              JwtProperties jwtProperties) {
         return new AuthTokenService(tokenSigner, hashProvider, randomGenerator, refreshTokenRepository,
-                jwtProperties.accessTokenTtl(), jwtProperties.refreshTokenTtl(), jwtProperties.issuer());
+                userPasskeyRepository, jwtProperties.accessTokenTtl(), jwtProperties.refreshTokenTtl(), jwtProperties.issuer());
     }
 
     @Bean

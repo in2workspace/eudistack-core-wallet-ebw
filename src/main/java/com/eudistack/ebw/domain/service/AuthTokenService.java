@@ -6,6 +6,7 @@ import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.model.exception.TokenFamilyCompromisedException;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
+import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TokenSigner;
@@ -22,6 +23,7 @@ public class AuthTokenService {
     private final HashProvider hashProvider;
     private final SecureRandomGenerator randomGenerator;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserPasskeyRepository userPasskeyRepository;
     private final Duration accessTokenTtl;
     private final Duration refreshTokenTtl;
     private final String issuer;
@@ -30,6 +32,7 @@ public class AuthTokenService {
                             HashProvider hashProvider,
                             SecureRandomGenerator randomGenerator,
                             RefreshTokenRepository refreshTokenRepository,
+                            UserPasskeyRepository userPasskeyRepository,
                             Duration accessTokenTtl,
                             Duration refreshTokenTtl,
                             String issuer) {
@@ -37,6 +40,7 @@ public class AuthTokenService {
         this.hashProvider = hashProvider;
         this.randomGenerator = randomGenerator;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.userPasskeyRepository = userPasskeyRepository;
         this.accessTokenTtl = accessTokenTtl;
         this.refreshTokenTtl = refreshTokenTtl;
         this.issuer = issuer;
@@ -85,6 +89,7 @@ public class AuthTokenService {
                     }
                     existing.revoke();
                     return refreshTokenRepository.save(existing)
+                            .then(touchPasskey(existing.getPasskeyId()))
                             .then(issueTokenPair(user, existing.getPasskeyId()));
                 });
     }
@@ -132,6 +137,20 @@ public class AuthTokenService {
         return refreshTokenRepository.findByTokenHash(tokenHash)
                 .filter(token -> token.getUserId().equals(userId))
                 .switchIfEmpty(Mono.error(new InvalidTokenException()))
-                .flatMap(token -> refreshTokenRepository.updatePasskeyIdByTokenHash(tokenHash, passkeyId));
+                .flatMap(token -> refreshTokenRepository.updatePasskeyIdByTokenHash(tokenHash, passkeyId))
+                .then(touchPasskey(passkeyId));
+    }
+
+    /**
+     * Records device activity for the devices list ("Última actividad", #1061961): a session
+     * refresh or a session attribution means the device behind this passkey is in use.
+     * Best-effort: a bookkeeping failure must never fail the token operation that triggered it.
+     */
+    private Mono<Void> touchPasskey(UUID passkeyId) {
+        if (passkeyId == null) {
+            return Mono.empty();
+        }
+        return Mono.defer(() -> userPasskeyRepository.touchLastUsed(passkeyId))
+                .onErrorResume(e -> Mono.empty());
     }
 }
