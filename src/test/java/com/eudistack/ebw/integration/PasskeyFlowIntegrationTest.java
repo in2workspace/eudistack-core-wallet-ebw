@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.annotation.DirtiesContext;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -281,6 +282,28 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
                 .isEqualTo(1L);
     }
 
+    /**
+     * #1061961 — "Última actividad" in the devices list stayed equal to the creation date
+     * forever: nothing ever updated last_used_at. Every refresh of a session attributed to
+     * a passkey is device activity and must move it forward.
+     */
+    @Test
+    void refresh_sessionLinkedToPasskey_movesLastUsedAtForward() throws InterruptedException {
+        var auth = authenticateUser("passkey-last-used@example.com");
+        var passkeyId = createPasskeyLinkedToSession(auth.accessToken(), "cred-last-used", "My PC",
+                auth.refreshToken());
+        var lastUsedBefore = Instant.parse((String) passkeyOf(auth.accessToken(), passkeyId).get("lastUsedAt"));
+
+        Thread.sleep(20);
+        webClient.post().uri("/api/v1/auth/refresh")
+                .bodyValue(Map.of("refreshToken", auth.refreshToken()))
+                .exchange()
+                .expectStatus().isOk();
+
+        var lastUsedAfter = Instant.parse((String) passkeyOf(auth.accessToken(), passkeyId).get("lastUsedAt"));
+        assertThat(lastUsedAfter).isAfter(lastUsedBefore);
+    }
+
     @Test
     void confirmSession_refreshTokenBelongsToAnotherUser_returns401() {
         var user1 = authenticateUser("passkey-confirm-user1@example.com");
@@ -357,8 +380,12 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
         return (String) passkey.get("id");
     }
 
-    @SuppressWarnings("unchecked")
     private long activeSessionsOf(String accessToken, String passkeyId) {
+        return ((Number) passkeyOf(accessToken, passkeyId).get("activeSessions")).longValue();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> passkeyOf(String accessToken, String passkeyId) {
         var rawList = webClient.get().uri("/api/v1/auth/passkeys")
                 .headers(h -> h.setBearerAuth(accessToken))
                 .exchange()
@@ -370,7 +397,6 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
         return list.stream()
                 .filter(p -> passkeyId.equals(p.get("id")))
                 .findFirst()
-                .map(p -> ((Number) p.get("activeSessions")).longValue())
                 .orElseThrow(() -> new AssertionError("Passkey " + passkeyId + " not found in list"));
     }
 }
