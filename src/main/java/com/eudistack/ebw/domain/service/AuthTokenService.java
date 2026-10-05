@@ -56,6 +56,18 @@ public class AuthTokenService {
         // "sid" ties the access token to the refresh-token row that spawned it, so
         // JwtAuthenticationWebFilter can reject it the moment that row is revoked
         // instead of only at its own `exp` — see SessionRevocationChecker.
+        //
+        // KNOWN RISK (code review, fix/session-revocation-not-hot, 2026-10-05): "sid"
+        // is the id of THIS ROW, not a stable session id — every rotation in
+        // rotateRefreshToken() below revokes it and mints a new one with a new id. If
+        // two live contexts ever shared the same refresh token (two tabs/devices on
+        // the same account racing the wallet's single-instance tab lock, or a browser
+        // without BroadcastChannel), one rotating invalidates the other's still-live
+        // access token's "sid", which can cascade into TokenFamilyCompromisedException
+        // below and revoke the whole device. The wallet's single-instance lock avoids
+        // this in normal use; the residual cases are documented, not fixed, pending a
+        // decision on introducing a stable session_id that survives rotation (tracked
+        // outside this file — see the PR description).
         var claims = Map.<String, Object>of(
                 "sub", user.getId().toString(),
                 "email", user.getEmail(),
@@ -75,6 +87,9 @@ public class AuthTokenService {
         return tokenSigner.verify(token);
     }
 
+    // See the KNOWN RISK note on issueTokenPair()'s "sid" claim above: every
+    // rotation here invalidates the previous row's "sid", including for any other
+    // still-live context that happened to be holding an access token minted from it.
     public Mono<AuthTokenPair> rotateRefreshToken(String rawToken, WalletUser user) {
         var tokenHash = hashProvider.sha256(rawToken);
         return refreshTokenRepository.findByTokenHash(tokenHash)
