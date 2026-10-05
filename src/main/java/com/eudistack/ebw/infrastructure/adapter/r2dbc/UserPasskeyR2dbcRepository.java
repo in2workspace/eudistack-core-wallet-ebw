@@ -54,4 +54,9 @@ public class UserPasskeyR2dbcRepository implements UserPasskeyRepository {
     public Mono<Long> countByUserId(UUID userId) {
         return springRepository.countByUserId(userId);
     }
+
+    @Override
+    public Mono<Void> touchLastUsed(UUID id) {
+        return springRepository.touchLastUsed(id);
+    }
 }

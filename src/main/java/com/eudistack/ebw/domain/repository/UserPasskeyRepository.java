@@ -19,4 +19,7 @@ public interface UserPasskeyRepository {
     Mono<Void> deleteById(UUID id);
 
     Mono<Long> countByUserId(UUID userId);
+
+    /** Sets {@code last_used_at} to now: the device behind this passkey just used its session. */
+    Mono<Void> touchLastUsed(UUID id);
 }
