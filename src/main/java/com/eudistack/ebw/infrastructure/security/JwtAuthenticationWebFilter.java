@@ -75,6 +75,12 @@ public class JwtAuthenticationWebFilter implements WebFilter {
     private Mono<Boolean> checkSessionValidity(ServerWebExchange exchange, Map<String, Object> claims) {
         var sid = (String) claims.get("sid");
         if (sid == null) {
+            // TODO(retire after 2026-11-15): every legacy token minted before this
+            // filter existed will have expired by then (access-token TTL is 15 min,
+            // so this branch is already dead code within 15 min of deploy) — remove
+            // this no-"sid" allowance once that date has passed and nobody is relying
+            // on it. No ticket exists for this branch (code-review L4 finding,
+            // fix/session-revocation-not-hot, 2026-10-05); open one if this slips.
             return Mono.just(true);
         }
         var tenant = tenantDomainWebFilter.resolveTenant(exchange);
