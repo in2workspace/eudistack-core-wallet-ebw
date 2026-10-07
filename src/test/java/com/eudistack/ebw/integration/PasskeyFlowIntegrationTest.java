@@ -1,9 +1,13 @@
 package com.eudistack.ebw.integration;
 
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.test.annotation.DirtiesContext;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -12,6 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_CLASS)
 class PasskeyFlowIntegrationTest extends IntegrationTestBase {
+
+    @Autowired
+    private DatabaseClient databaseClient;
 
     @BeforeEach
     void setUp() {
@@ -281,6 +288,28 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
                 .isEqualTo(1L);
     }
 
+    /**
+     * #1061961 — "Última actividad" in the devices list stayed equal to the creation date
+     * forever: nothing ever updated last_used_at. Every refresh of a session attributed to
+     * a passkey is device activity and must move it forward.
+     */
+    @Test
+    void refresh_sessionLinkedToPasskey_movesLastUsedAtForward() {
+        var auth = authenticateUser("passkey-last-used@example.com");
+        var passkeyId = createPasskeyLinkedToSession(auth.accessToken(), "cred-last-used", "My PC",
+                auth.refreshToken());
+        backdateLastUsedAt(passkeyId);
+        var lastUsedBefore = Instant.parse((String) passkeyOf(auth.accessToken(), passkeyId).get("lastUsedAt"));
+
+        webClient.post().uri("/api/v1/auth/refresh")
+                .bodyValue(Map.of("refreshToken", auth.refreshToken()))
+                .exchange()
+                .expectStatus().isOk();
+
+        var lastUsedAfter = Instant.parse((String) passkeyOf(auth.accessToken(), passkeyId).get("lastUsedAt"));
+        assertThat(lastUsedAfter).isAfter(lastUsedBefore);
+    }
+
     @Test
     void confirmSession_refreshTokenBelongsToAnotherUser_returns401() {
         var user1 = authenticateUser("passkey-confirm-user1@example.com");
@@ -357,8 +386,22 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
         return (String) passkey.get("id");
     }
 
-    @SuppressWarnings("unchecked")
+    // Direct DatabaseClient calls bypass the X-Tenant/TenantDomainWebFilter pipeline, so the
+    // tenant is supplied explicitly via contextWrite (same pattern as SecondDeviceAssociationIT).
+    private void backdateLastUsedAt(String passkeyId) {
+        databaseClient.sql("UPDATE user_passkey SET last_used_at = NOW() - INTERVAL '1 day' WHERE id = $1")
+                .bind("$1", UUID.fromString(passkeyId))
+                .then()
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TEST_TENANT))
+                .block();
+    }
+
     private long activeSessionsOf(String accessToken, String passkeyId) {
+        return ((Number) passkeyOf(accessToken, passkeyId).get("activeSessions")).longValue();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> passkeyOf(String accessToken, String passkeyId) {
         var rawList = webClient.get().uri("/api/v1/auth/passkeys")
                 .headers(h -> h.setBearerAuth(accessToken))
                 .exchange()
@@ -370,7 +413,6 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
         return list.stream()
                 .filter(p -> passkeyId.equals(p.get("id")))
                 .findFirst()
-                .map(p -> ((Number) p.get("activeSessions")).longValue())
                 .orElseThrow(() -> new AssertionError("Passkey " + passkeyId + " not found in list"));
     }
 }

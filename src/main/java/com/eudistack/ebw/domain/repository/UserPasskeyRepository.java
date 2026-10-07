@@ -19,4 +19,6 @@ public interface UserPasskeyRepository {
     Mono<Void> deleteById(UUID id);
 
     Mono<Long> countByUserId(UUID userId);
+
+    Mono<Void> touchLastUsed(UUID id);
 }

@@ -1,10 +1,12 @@
 package com.eudistack.ebw.domain.service;
 
+import com.eudistack.ebw.domain.model.AuthTokenSettings;
 import com.eudistack.ebw.domain.model.RefreshToken;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.model.exception.TokenFamilyCompromisedException;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
+import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TokenSigner;
@@ -29,6 +31,7 @@ class AuthTokenServiceTest {
     private HashProvider hashProvider;
     private SecureRandomGenerator randomGenerator;
     private RefreshTokenRepository refreshTokenRepository;
+    private UserPasskeyRepository userPasskeyRepository;
     private AuthTokenService authTokenService;
 
     private WalletUser testUser;
@@ -39,8 +42,11 @@ class AuthTokenServiceTest {
         hashProvider = mock(HashProvider.class);
         randomGenerator = mock(SecureRandomGenerator.class);
         refreshTokenRepository = mock(RefreshTokenRepository.class);
+        userPasskeyRepository = mock(UserPasskeyRepository.class);
+        when(userPasskeyRepository.touchLastUsed(any())).thenReturn(Mono.empty());
         authTokenService = new AuthTokenService(tokenSigner, hashProvider, randomGenerator,
-                refreshTokenRepository, Duration.ofMinutes(15), Duration.ofDays(7), "eudistack-ebw");
+                refreshTokenRepository, userPasskeyRepository,
+                new AuthTokenSettings(Duration.ofMinutes(15), Duration.ofDays(7), "eudistack-ebw"));
 
         testUser = WalletUser.create("user@example.com");
     }
@@ -95,6 +101,54 @@ class AuthTokenServiceTest {
                 })
                 .verifyComplete();
         assertThat(existingToken.isRevoked()).isTrue();
+        verify(userPasskeyRepository, never()).touchLastUsed(any());
+    }
+
+    @Test
+    void rotateRefreshToken_tokenLinkedToPasskey_touchesPasskeyLastUsed() {
+        // Arrange: #1061961 — a refresh is device activity ("Última actividad")
+        var rawToken = "device-refresh-token";
+        var passkeyId = UUID.randomUUID();
+        var existingToken = RefreshToken.create(testUser.getId(), passkeyId, "sha256-hash",
+                Instant.now().plusSeconds(3600));
+        when(hashProvider.sha256(anyString())).thenReturn("sha256-hash");
+        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(existingToken));
+        when(refreshTokenRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(tokenSigner.sign(anyMap())).thenReturn("new-jwt");
+        when(randomGenerator.generateUuid()).thenReturn(UUID.randomUUID());
+
+        // Act
+        var result = authTokenService.rotateRefreshToken(rawToken, testUser);
+
+        // Assert
+        StepVerifier.create(result)
+                .assertNext(pair -> assertThat(pair.accessToken()).isEqualTo("new-jwt"))
+                .verifyComplete();
+        verify(userPasskeyRepository).touchLastUsed(passkeyId);
+    }
+
+    @Test
+    void rotateRefreshToken_touchFails_stillIssuesNewPair() {
+        // Arrange: activity bookkeeping must never break the session refresh
+        var rawToken = "device-refresh-token";
+        var passkeyId = UUID.randomUUID();
+        var existingToken = RefreshToken.create(testUser.getId(), passkeyId, "sha256-hash",
+                Instant.now().plusSeconds(3600));
+        when(hashProvider.sha256(anyString())).thenReturn("sha256-hash");
+        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(existingToken));
+        when(refreshTokenRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(tokenSigner.sign(anyMap())).thenReturn("new-jwt");
+        when(randomGenerator.generateUuid()).thenReturn(UUID.randomUUID());
+        when(userPasskeyRepository.touchLastUsed(passkeyId))
+                .thenReturn(Mono.error(new RuntimeException("db down")));
+
+        // Act
+        var result = authTokenService.rotateRefreshToken(rawToken, testUser);
+
+        // Assert
+        StepVerifier.create(result)
+                .assertNext(pair -> assertThat(pair.accessToken()).isEqualTo("new-jwt"))
+                .verifyComplete();
     }
 
     @Test
@@ -227,6 +281,30 @@ class AuthTokenServiceTest {
         StepVerifier.create(result)
                 .verifyComplete();
         verify(refreshTokenRepository).updatePasskeyIdByTokenHash("sha256-hash", passkeyId);
+        verify(userPasskeyRepository).touchLastUsed(passkeyId);
+    }
+
+    @Test
+    void linkSessionToPasskey_touchFails_stillCompletes() {
+        // Arrange: activity bookkeeping must never break the session attribution
+        var rawToken = "session-token";
+        var passkeyId = UUID.randomUUID();
+        var existingToken = RefreshToken.create(testUser.getId(), null, "sha256-hash",
+                Instant.now().plusSeconds(3600));
+        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
+        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(existingToken));
+        when(refreshTokenRepository.updatePasskeyIdByTokenHash("sha256-hash", passkeyId)).thenReturn(Mono.empty());
+        when(userPasskeyRepository.touchLastUsed(passkeyId))
+                .thenReturn(Mono.error(new RuntimeException("db down")));
+
+        // Act
+        var result = authTokenService.linkSessionToPasskey(rawToken, testUser.getId(), passkeyId);
+
+        // Assert
+        StepVerifier.create(result)
+                .verifyComplete();
+        verify(refreshTokenRepository).updatePasskeyIdByTokenHash("sha256-hash", passkeyId);
+        verify(userPasskeyRepository).touchLastUsed(passkeyId);
     }
 
     @Test
@@ -245,6 +323,7 @@ class AuthTokenServiceTest {
                 .expectError(InvalidTokenException.class)
                 .verify();
         verify(refreshTokenRepository, never()).updatePasskeyIdByTokenHash(any(), any());
+        verify(userPasskeyRepository, never()).touchLastUsed(any());
     }
 
     @Test
@@ -266,5 +345,6 @@ class AuthTokenServiceTest {
                 .expectError(InvalidTokenException.class)
                 .verify();
         verify(refreshTokenRepository, never()).updatePasskeyIdByTokenHash(any(), any());
+        verify(userPasskeyRepository, never()).touchLastUsed(any());
     }
 }
