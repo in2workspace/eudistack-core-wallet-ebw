@@ -1,6 +1,7 @@
 package com.eudistack.ebw.domain.service;
 
 import com.eudistack.ebw.domain.model.AuthTokenPair;
+import com.eudistack.ebw.domain.model.AuthTokenSettings;
 import com.eudistack.ebw.domain.model.RefreshToken;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
@@ -37,17 +38,15 @@ public class AuthTokenService {
                             SecureRandomGenerator randomGenerator,
                             RefreshTokenRepository refreshTokenRepository,
                             UserPasskeyRepository userPasskeyRepository,
-                            Duration accessTokenTtl,
-                            Duration refreshTokenTtl,
-                            String issuer) {
+                            AuthTokenSettings settings) {
         this.tokenSigner = tokenSigner;
         this.hashProvider = hashProvider;
         this.randomGenerator = randomGenerator;
         this.refreshTokenRepository = refreshTokenRepository;
         this.userPasskeyRepository = userPasskeyRepository;
-        this.accessTokenTtl = accessTokenTtl;
-        this.refreshTokenTtl = refreshTokenTtl;
-        this.issuer = issuer;
+        this.accessTokenTtl = settings.accessTokenTtl();
+        this.refreshTokenTtl = settings.refreshTokenTtl();
+        this.issuer = settings.issuer();
     }
 
     public Mono<AuthTokenPair> issueTokenPair(WalletUser user, UUID passkeyId) {

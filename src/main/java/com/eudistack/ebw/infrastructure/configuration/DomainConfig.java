@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
+import com.eudistack.ebw.domain.model.AuthTokenSettings;
 import com.eudistack.ebw.domain.repository.AuditLogRepository;
 import com.eudistack.ebw.domain.repository.EmailVerificationRepository;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
@@ -41,7 +42,8 @@ public class DomainConfig {
                                              UserPasskeyRepository userPasskeyRepository,
                                              JwtProperties jwtProperties) {
         return new AuthTokenService(tokenSigner, hashProvider, randomGenerator, refreshTokenRepository,
-                userPasskeyRepository, jwtProperties.accessTokenTtl(), jwtProperties.refreshTokenTtl(), jwtProperties.issuer());
+                userPasskeyRepository, new AuthTokenSettings(jwtProperties.accessTokenTtl(),
+                        jwtProperties.refreshTokenTtl(), jwtProperties.issuer()));
     }
 
     @Bean

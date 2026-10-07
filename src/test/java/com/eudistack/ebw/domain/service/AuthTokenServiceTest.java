@@ -1,5 +1,6 @@
 package com.eudistack.ebw.domain.service;
 
+import com.eudistack.ebw.domain.model.AuthTokenSettings;
 import com.eudistack.ebw.domain.model.RefreshToken;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
@@ -44,7 +45,8 @@ class AuthTokenServiceTest {
         userPasskeyRepository = mock(UserPasskeyRepository.class);
         when(userPasskeyRepository.touchLastUsed(any())).thenReturn(Mono.empty());
         authTokenService = new AuthTokenService(tokenSigner, hashProvider, randomGenerator,
-                refreshTokenRepository, userPasskeyRepository, Duration.ofMinutes(15), Duration.ofDays(7), "eudistack-ebw");
+                refreshTokenRepository, userPasskeyRepository,
+                new AuthTokenSettings(Duration.ofMinutes(15), Duration.ofDays(7), "eudistack-ebw"));
 
         testUser = WalletUser.create("user@example.com");
     }
