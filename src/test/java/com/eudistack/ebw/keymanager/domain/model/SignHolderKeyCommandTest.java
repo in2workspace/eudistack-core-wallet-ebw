@@ -133,4 +133,41 @@ class SignHolderKeyCommandTest {
                 .contains("keyId=")
                 .contains("tenantId=");
     }
+
+    // --- equals / hashCode (content-based, including the signing input bytes) ---
+
+    @Test
+    void equals_sameFieldsAndSigningInputContent_areEqualWithSameHashCode() {
+        // Arrange
+        var first = validCommand(new byte[]{1, 2, 3, 4});
+        var second = validCommand(new byte[]{1, 2, 3, 4});
+
+        // Act + Assert
+        assertThat(first).isEqualTo(second).hasSameHashCodeAs(second);
+        assertThat(first).isEqualTo(first);
+    }
+
+    @Test
+    void equals_anyDifferentField_isNotEqual() {
+        // Arrange
+        var base = validCommand(INPUT);
+        var variants = java.util.List.of(
+                new SignHolderKeyCommand(HolderKeyId.generate(), "tenant-a", "holder-b",
+                        SigningType.KB_JWT, SignaturePurpose.PRESENTATION, ConsumerOrigin.SYSTEM, INPUT),
+                new SignHolderKeyCommand(KEY_ID, "tenant-x", "holder-b",
+                        SigningType.KB_JWT, SignaturePurpose.PRESENTATION, ConsumerOrigin.SYSTEM, INPUT),
+                new SignHolderKeyCommand(KEY_ID, "tenant-a", "holder-x",
+                        SigningType.KB_JWT, SignaturePurpose.PRESENTATION, ConsumerOrigin.SYSTEM, INPUT),
+                new SignHolderKeyCommand(KEY_ID, "tenant-a", "holder-b",
+                        SigningType.VP_ENVELOPE, SignaturePurpose.PRESENTATION, ConsumerOrigin.SYSTEM, INPUT),
+                new SignHolderKeyCommand(KEY_ID, "tenant-a", "holder-b",
+                        SigningType.KB_JWT, SignaturePurpose.AUDIT_PROBE, ConsumerOrigin.SYSTEM, INPUT),
+                new SignHolderKeyCommand(KEY_ID, "tenant-a", "holder-b",
+                        SigningType.KB_JWT, SignaturePurpose.PRESENTATION, ConsumerOrigin.STORAGE, INPUT),
+                validCommand(new byte[]{9}));
+
+        // Act + Assert
+        assertThat(variants).allSatisfy(variant -> assertThat(base).isNotEqualTo(variant));
+        assertThat(base).isNotEqualTo("not a command").isNotEqualTo(null);
+    }
 }

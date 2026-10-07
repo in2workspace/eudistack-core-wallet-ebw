@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Unit test coverage of the EBW raised from 45.9% to 87.0%** (JaCoCo/Sonar overall of `./gradlew test jacocoTestReport`; lines 46.3% → 87.6%, branches 44.2% → 83.7%; 756 unit tests, none tagged `integration`, no Docker needed). New Mockito/StepVerifier tests for the credential, auth and passkey workflows, `CredentialService` (SD-JWT / JWT VC parsing and fallbacks), `Es256TokenSigner`, `CorsOriginsLoader`, the `SecurityConfig` filter chain (built with `ServerHttpSecurity.http()`, no Spring context), the JWT and rate-limit web filters, every REST controller and exception handler, the R2DBC adapters and mappers (including the raw-SQL key manager adapters, via a `DatabaseClient` test stub) and `KeyAuditCloudWatchAdapter` (hash chain verified against the published payload). Production code is unchanged; the PR gate (40% / 60%) is unchanged.
+
 ### Fixed
 
 - **#1061173 — an expired OTP was indistinguishable from a wrong one**: `SpringEmailVerificationRepository.findActiveByEmail` filtered `expires_at > NOW()`, so an expired code was simply "not found" and surfaced as `InvalidOtpException`; the `isExpired()` branch in `OtpService.verify` was unreachable, and `GlobalExceptionHandler` mapped both exceptions to the same 401 `invalid_code` anyway. The lookup is now `findLatestUnusedByEmail` (no expiry filter — `generateAndSend` already marks older codes used, so the latest unused row is always the current one) and `OtpExpiredException` returns 401 `expired_code`, so the wallet can offer a resend without sending the user back to the email step. `invalid_code` keeps its status and shape (message is now "Invalid verification code"). Covered by a new `AuthFlowIntegrationTest` case: expired → `expired_code` → resend → the new code verifies.
