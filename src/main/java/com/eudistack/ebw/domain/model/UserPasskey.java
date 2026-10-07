@@ -33,10 +33,6 @@ public class UserPasskey {
         this.displayName = displayName;
     }
 
-    public void touchLastUsed() {
-        this.lastUsedAt = Instant.now();
-    }
-
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public String getCredentialId() { return credentialId; }

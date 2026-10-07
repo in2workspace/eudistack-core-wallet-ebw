@@ -283,6 +283,29 @@ class AuthTokenServiceTest {
     }
 
     @Test
+    void linkSessionToPasskey_touchFails_stillCompletes() {
+        // Arrange: activity bookkeeping must never break the session attribution
+        var rawToken = "session-token";
+        var passkeyId = UUID.randomUUID();
+        var existingToken = RefreshToken.create(testUser.getId(), null, "sha256-hash",
+                Instant.now().plusSeconds(3600));
+        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
+        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(existingToken));
+        when(refreshTokenRepository.updatePasskeyIdByTokenHash("sha256-hash", passkeyId)).thenReturn(Mono.empty());
+        when(userPasskeyRepository.touchLastUsed(passkeyId))
+                .thenReturn(Mono.error(new RuntimeException("db down")));
+
+        // Act
+        var result = authTokenService.linkSessionToPasskey(rawToken, testUser.getId(), passkeyId);
+
+        // Assert
+        StepVerifier.create(result)
+                .verifyComplete();
+        verify(refreshTokenRepository).updatePasskeyIdByTokenHash("sha256-hash", passkeyId);
+        verify(userPasskeyRepository).touchLastUsed(passkeyId);
+    }
+
+    @Test
     void linkSessionToPasskey_tokenNotFound_throwsInvalidTokenException() {
         // Arrange
         var rawToken = "unknown-token";

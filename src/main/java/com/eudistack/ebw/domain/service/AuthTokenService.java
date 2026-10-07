@@ -10,6 +10,8 @@ import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TokenSigner;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
@@ -18,6 +20,8 @@ import java.util.Map;
 import java.util.UUID;
 
 public class AuthTokenService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthTokenService.class);
 
     private final TokenSigner tokenSigner;
     private final HashProvider hashProvider;
@@ -151,6 +155,7 @@ public class AuthTokenService {
             return Mono.empty();
         }
         return Mono.defer(() -> userPasskeyRepository.touchLastUsed(passkeyId))
+                .doOnError(e -> log.warn("Could not record last_used_at for passkey {}: {}", passkeyId, e.toString()))
                 .onErrorResume(e -> Mono.empty());
     }
 }

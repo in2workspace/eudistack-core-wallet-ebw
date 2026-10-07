@@ -1,7 +1,10 @@
 package com.eudistack.ebw.integration;
 
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.test.annotation.DirtiesContext;
 
 import java.time.Instant;
@@ -13,6 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_CLASS)
 class PasskeyFlowIntegrationTest extends IntegrationTestBase {
+
+    @Autowired
+    private DatabaseClient databaseClient;
 
     @BeforeEach
     void setUp() {
@@ -288,13 +294,13 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
      * a passkey is device activity and must move it forward.
      */
     @Test
-    void refresh_sessionLinkedToPasskey_movesLastUsedAtForward() throws InterruptedException {
+    void refresh_sessionLinkedToPasskey_movesLastUsedAtForward() {
         var auth = authenticateUser("passkey-last-used@example.com");
         var passkeyId = createPasskeyLinkedToSession(auth.accessToken(), "cred-last-used", "My PC",
                 auth.refreshToken());
+        backdateLastUsedAt(passkeyId);
         var lastUsedBefore = Instant.parse((String) passkeyOf(auth.accessToken(), passkeyId).get("lastUsedAt"));
 
-        Thread.sleep(20);
         webClient.post().uri("/api/v1/auth/refresh")
                 .bodyValue(Map.of("refreshToken", auth.refreshToken()))
                 .exchange()
@@ -378,6 +384,16 @@ class PasskeyFlowIntegrationTest extends IntegrationTestBase {
                 .returnResult().getResponseBody();
 
         return (String) passkey.get("id");
+    }
+
+    // Direct DatabaseClient calls bypass the X-Tenant/TenantDomainWebFilter pipeline, so the
+    // tenant is supplied explicitly via contextWrite (same pattern as SecondDeviceAssociationIT).
+    private void backdateLastUsedAt(String passkeyId) {
+        databaseClient.sql("UPDATE user_passkey SET last_used_at = NOW() - INTERVAL '1 day' WHERE id = $1")
+                .bind("$1", UUID.fromString(passkeyId))
+                .then()
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TEST_TENANT))
+                .block();
     }
 
     private long activeSessionsOf(String accessToken, String passkeyId) {
