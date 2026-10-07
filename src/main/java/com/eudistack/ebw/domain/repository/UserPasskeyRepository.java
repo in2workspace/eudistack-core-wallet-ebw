@@ -20,6 +20,5 @@ public interface UserPasskeyRepository {
 
     Mono<Long> countByUserId(UUID userId);
 
-    /** Sets {@code last_used_at} to now: the device behind this passkey just used its session. */
     Mono<Void> touchLastUsed(UUID id);
 }
