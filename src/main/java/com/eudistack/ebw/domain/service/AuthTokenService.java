@@ -1,14 +1,18 @@
 package com.eudistack.ebw.domain.service;
 
 import com.eudistack.ebw.domain.model.AuthTokenPair;
+import com.eudistack.ebw.domain.model.AuthTokenSettings;
 import com.eudistack.ebw.domain.model.RefreshToken;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.model.exception.TokenFamilyCompromisedException;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
+import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TokenSigner;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
@@ -18,10 +22,13 @@ import java.util.UUID;
 
 public class AuthTokenService {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthTokenService.class);
+
     private final TokenSigner tokenSigner;
     private final HashProvider hashProvider;
     private final SecureRandomGenerator randomGenerator;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserPasskeyRepository userPasskeyRepository;
     private final Duration accessTokenTtl;
     private final Duration refreshTokenTtl;
     private final String issuer;
@@ -30,16 +37,16 @@ public class AuthTokenService {
                             HashProvider hashProvider,
                             SecureRandomGenerator randomGenerator,
                             RefreshTokenRepository refreshTokenRepository,
-                            Duration accessTokenTtl,
-                            Duration refreshTokenTtl,
-                            String issuer) {
+                            UserPasskeyRepository userPasskeyRepository,
+                            AuthTokenSettings settings) {
         this.tokenSigner = tokenSigner;
         this.hashProvider = hashProvider;
         this.randomGenerator = randomGenerator;
         this.refreshTokenRepository = refreshTokenRepository;
-        this.accessTokenTtl = accessTokenTtl;
-        this.refreshTokenTtl = refreshTokenTtl;
-        this.issuer = issuer;
+        this.userPasskeyRepository = userPasskeyRepository;
+        this.accessTokenTtl = settings.accessTokenTtl();
+        this.refreshTokenTtl = settings.refreshTokenTtl();
+        this.issuer = settings.issuer();
     }
 
     public Mono<AuthTokenPair> issueTokenPair(WalletUser user, UUID passkeyId) {
@@ -85,6 +92,7 @@ public class AuthTokenService {
                     }
                     existing.revoke();
                     return refreshTokenRepository.save(existing)
+                            .then(touchPasskey(existing.getPasskeyId()))
                             .then(issueTokenPair(user, existing.getPasskeyId()));
                 });
     }
@@ -132,6 +140,21 @@ public class AuthTokenService {
         return refreshTokenRepository.findByTokenHash(tokenHash)
                 .filter(token -> token.getUserId().equals(userId))
                 .switchIfEmpty(Mono.error(new InvalidTokenException()))
-                .flatMap(token -> refreshTokenRepository.updatePasskeyIdByTokenHash(tokenHash, passkeyId));
+                .flatMap(token -> refreshTokenRepository.updatePasskeyIdByTokenHash(tokenHash, passkeyId))
+                .then(touchPasskey(passkeyId));
+    }
+
+    /**
+     * Records device activity for the devices list ("Última actividad", #1061961): a session
+     * refresh or a session attribution means the device behind this passkey is in use.
+     * Best-effort: a bookkeeping failure must never fail the token operation that triggered it.
+     */
+    private Mono<Void> touchPasskey(UUID passkeyId) {
+        if (passkeyId == null) {
+            return Mono.empty();
+        }
+        return Mono.defer(() -> userPasskeyRepository.touchLastUsed(passkeyId))
+                .doOnError(e -> log.warn("Could not record last_used_at for passkey {}: {}", passkeyId, e.toString()))
+                .onErrorResume(e -> Mono.empty());
     }
 }
