@@ -1,9 +1,11 @@
 package com.eudistack.ebw.infrastructure.adapter.r2dbc;
 
+import com.eudistack.ebw.domain.model.EmailVerification;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.entity.EmailVerificationEntity;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.spring.SpringEmailVerificationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -11,7 +13,9 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -66,5 +70,57 @@ class EmailVerificationR2dbcRepositoryTest {
         // Act & Assert
         StepVerifier.create(repository.findLatestUnusedByEmail(email))
                 .verifyComplete();
+    }
+
+    @Test
+    void save_newVerification_insertsAnEntityMarkedNew() {
+        // Arrange
+        var verification = new EmailVerification(UUID.randomUUID(), "user@example.com", "hash", 0,
+                Instant.now().plusSeconds(600), false, Instant.now());
+        when(springRepository.existsById(verification.getId())).thenReturn(Mono.just(false));
+        when(springRepository.save(any(EmailVerificationEntity.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        // Act
+        var result = repository.save(verification);
+
+        // Assert
+        StepVerifier.create(result)
+                .assertNext(saved -> assertThat(saved).usingRecursiveComparison().isEqualTo(verification))
+                .verifyComplete();
+        var saved = ArgumentCaptor.forClass(EmailVerificationEntity.class);
+        verify(springRepository).save(saved.capture());
+        assertThat(saved.getValue().isNew()).isTrue();
+    }
+
+    @Test
+    void save_existingVerification_updatesWithoutMarkingNew() {
+        // Arrange
+        var verification = new EmailVerification(UUID.randomUUID(), "user@example.com", "hash", 3,
+                Instant.now().plusSeconds(600), true, Instant.now());
+        when(springRepository.existsById(verification.getId())).thenReturn(Mono.just(true));
+        when(springRepository.save(any(EmailVerificationEntity.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        // Act
+        var result = repository.save(verification);
+
+        // Assert
+        StepVerifier.create(result).expectNextCount(1).verifyComplete();
+        var saved = ArgumentCaptor.forClass(EmailVerificationEntity.class);
+        verify(springRepository).save(saved.capture());
+        assertThat(saved.getValue().isNew()).isFalse();
+        assertThat(saved.getValue().getAttempts()).isEqualTo(3);
+    }
+
+    @Test
+    void invalidateByEmail_delegatesToSpringData() {
+        // Arrange
+        when(springRepository.invalidateByEmail("user@example.com")).thenReturn(Mono.empty());
+
+        // Act
+        var result = repository.invalidateByEmail("user@example.com");
+
+        // Assert
+        StepVerifier.create(result).verifyComplete();
+        verify(springRepository).invalidateByEmail("user@example.com");
     }
 }

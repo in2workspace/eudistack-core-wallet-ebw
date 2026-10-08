@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Unit test coverage of the EBW raised from 46.1% to 87.0%** (JaCoCo/Sonar overall of `./gradlew clean test jacocoTestReport`, `main` vs this branch; lines 46.4% → 87.7%, branches 44.3% → 83.8%; 495 → 759 unit tests, none tagged `integration`, no Docker needed). New Mockito/StepVerifier tests for the credential, auth and passkey workflows, `CredentialService` (SD-JWT / JWT VC parsing and fallbacks), `Es256TokenSigner`, `CorsOriginsLoader`, the `SecurityConfig` filter chain (built with `ServerHttpSecurity.http()`, no Spring context), the JWT and rate-limit web filters, every REST controller and exception handler, the R2DBC adapters and mappers (including the raw-SQL key manager adapters, via a `DatabaseClient` test stub) and `KeyAuditCloudWatchAdapter` (hash chain verified against the published payload). Production code is unchanged; the PR gate (40% / 60%) is unchanged.
+
 ### Fixed
 
 - **#1061961 — "Última actividad" in the devices list never changed after a device was added**: `UserPasskey.touchLastUsed()` existed but nothing called it, so `user_passkey.last_used_at` kept the value written at registration and the wallet's devices list always showed the creation date as last activity (and its `last_used_at DESC` ordering was effectively by creation). `AuthTokenService` now records device activity through a new `UserPasskeyRepository.touchLastUsed(id)` (`UPDATE … SET last_used_at = NOW()`) whenever a session attributed to a passkey is refreshed (`rotateRefreshToken`) and whenever a session is attributed to a passkey (`linkSessionToPasskey`, i.e. `confirm-session` on a returning login and passkey registration with `refreshToken`). Best-effort: a failure to record the activity never fails the refresh or the attribution (it is logged as a warning). The unused domain method `UserPasskey.touchLastUsed()` is removed, so `last_used_at` has a single writer (the DB clock). Covered by `AuthTokenServiceTest` and a new `PasskeyFlowIntegrationTest` case (refresh moves `lastUsedAt` forward).
