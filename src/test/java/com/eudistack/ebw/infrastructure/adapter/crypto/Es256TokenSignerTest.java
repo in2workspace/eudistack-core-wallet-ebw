@@ -112,9 +112,10 @@ class Es256TokenSignerTest {
     void sign_notInitialized_throwsIllegalState() {
         // Arrange
         var signer = signerWithKeyPath(null);
+        Map<String, Object> claims = Map.of("sub", "user-1");
 
         // Act + Assert
-        assertThatThrownBy(() -> signer.sign(Map.of("sub", "user-1")))
+        assertThatThrownBy(() -> signer.sign(claims))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("signer not initialized");
     }
@@ -145,8 +146,7 @@ class Es256TokenSignerTest {
         var verified = signer.verify(token);
 
         // Assert
-        assertThat(verified).containsKeys("powers", "scope", "scp");
-        assertThat(verified.get("scope")).isEqualTo("openid wallet");
+        assertThat(verified).containsKeys("powers", "scp").containsEntry("scope", "openid wallet");
     }
 
     @Test
@@ -194,9 +194,10 @@ class Es256TokenSignerTest {
         var hs256 = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), new JWTClaimsSet.Builder()
                 .subject("user-1").expirationTime(Date.from(Instant.now().plus(Duration.ofMinutes(5)))).build());
         hs256.sign(new MACSigner("an-hmac-secret-of-at-least-256-bits!".getBytes()));
+        var token = hs256.serialize();
 
         // Act + Assert
-        assertThatThrownBy(() -> signer.verify(hs256.serialize()))
+        assertThatThrownBy(() -> signer.verify(token))
                 .isInstanceOf(InvalidTokenException.class)
                 .hasMessage("Unsupported JWT algorithm");
     }

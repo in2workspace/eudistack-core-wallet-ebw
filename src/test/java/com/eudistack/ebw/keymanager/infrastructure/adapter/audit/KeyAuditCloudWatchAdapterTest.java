@@ -131,8 +131,9 @@ class KeyAuditCloudWatchAdapterTest {
 
         // Assert
         var published = publishedMessages(1).get(0);
-        assertThat(published.get("previous_batch_hash")).isEqualTo(ZERO_HASH);
-        assertThat(published.get("batch_hash")).isEqualTo(sha256OfCanonical(published));
+        assertThat(published)
+                .containsEntry("previous_batch_hash", ZERO_HASH)
+                .containsEntry("batch_hash", sha256OfCanonical(published));
         var events = eventsOf(published);
         assertThat(events).hasSize(1);
         assertThat(events.get(0))
@@ -180,7 +181,7 @@ class KeyAuditCloudWatchAdapterTest {
 
         // Assert
         var messages = publishedMessages(2);
-        assertThat(messages.get(1).get("previous_batch_hash")).isEqualTo(messages.get(0).get("batch_hash"));
+        assertThat(messages.get(1)).containsEntry("previous_batch_hash", messages.get(0).get("batch_hash"));
     }
 
     @Test
@@ -199,7 +200,7 @@ class KeyAuditCloudWatchAdapterTest {
 
         // Assert — the failed batch did not advance the chain
         var messages = publishedMessages(2);
-        assertThat(messages.get(1).get("previous_batch_hash")).isEqualTo(ZERO_HASH);
+        assertThat(messages.get(1)).containsEntry("previous_batch_hash", ZERO_HASH);
     }
 
     @Test

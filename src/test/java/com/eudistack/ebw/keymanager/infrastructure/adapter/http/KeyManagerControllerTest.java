@@ -148,8 +148,11 @@ class KeyManagerControllerTest {
 
     @Test
     void generate_unknownFormat_failsBeforeQueryingTheProfile() {
+        // Arrange
+        var request = generateRequest("mso_mdoc");
+
         // Act + Assert
-        assertThatThrownBy(() -> controller.generate(generateRequest("mso_mdoc"), auth))
+        assertThatThrownBy(() -> controller.generate(request, auth))
                 .isInstanceOf(UnsupportedCredentialFormatException.class);
         verifyNoInteractions(walletProfileQueryPort, keyManagerPort);
     }
@@ -202,16 +205,23 @@ class KeyManagerControllerTest {
 
     @Test
     void sign_unknownOriginHeader_failsWithInvalidConsumerOrigin() {
+        // Arrange
+        var keyId = UUID.randomUUID().toString();
+        var request = signRequest(new byte[]{1});
+
         // Act + Assert
-        assertThatThrownBy(() -> controller.sign(UUID.randomUUID().toString(), signRequest(new byte[]{1}), auth,
-                "browser")).isInstanceOf(InvalidConsumerOriginException.class);
+        assertThatThrownBy(() -> controller.sign(keyId, request, auth, "browser"))
+                .isInstanceOf(InvalidConsumerOriginException.class);
         verifyNoInteractions(keyManagerPort);
     }
 
     @Test
     void sign_malformedKeyId_failsWithInvalidKeyIdFormat() {
+        // Arrange
+        var request = signRequest(new byte[]{1});
+
         // Act + Assert
-        assertThatThrownBy(() -> controller.sign("not-a-uuid", signRequest(new byte[]{1}), auth, null))
+        assertThatThrownBy(() -> controller.sign("not-a-uuid", request, auth, null))
                 .isInstanceOf(InvalidKeyIdFormatException.class);
         verifyNoInteractions(keyManagerPort);
     }

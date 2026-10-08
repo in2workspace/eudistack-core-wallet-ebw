@@ -56,7 +56,7 @@ final class DatabaseClientStub {
             return spec;
         });
         when(spec.map(any(Function.class))).thenAnswer(inv ->
-                rowsFetchSpec(r -> ((Function<Row, Object>) inv.getArgument(0)).apply(r)));
+                rowsFetchSpec(((Function<Row, Object>) inv.getArgument(0))::apply));
         when(spec.map(any(BiFunction.class))).thenAnswer(inv ->
                 rowsFetchSpec(r -> ((BiFunction<Row, RowMetadata, Object>) inv.getArgument(0)).apply(r, metadata)));
         when(spec.fetch()).thenReturn(fetchSpec);

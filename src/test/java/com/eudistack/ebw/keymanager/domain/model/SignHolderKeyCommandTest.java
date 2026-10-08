@@ -143,8 +143,7 @@ class SignHolderKeyCommandTest {
         var second = validCommand(new byte[]{1, 2, 3, 4});
 
         // Act + Assert
-        assertThat(first).isEqualTo(second).hasSameHashCodeAs(second);
-        assertThat(first).isEqualTo(first);
+        assertThat(first).isEqualTo(first).isEqualTo(second).hasSameHashCodeAs(second);
     }
 
     @Test
@@ -167,7 +166,7 @@ class SignHolderKeyCommandTest {
                 validCommand(new byte[]{9}));
 
         // Act + Assert
-        assertThat(variants).allSatisfy(variant -> assertThat(base).isNotEqualTo(variant));
+        assertThat(variants).isNotEmpty().allSatisfy(variant -> assertThat(base).isNotEqualTo(variant));
         assertThat(base).isNotEqualTo("not a command").isNotEqualTo(null);
     }
 }

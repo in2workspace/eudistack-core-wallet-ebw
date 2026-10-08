@@ -3,6 +3,8 @@ package com.eudistack.ebw.infrastructure.security;
 import com.eudistack.ebw.infrastructure.adapter.properties.CorsProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -42,36 +44,16 @@ class CorsOriginsLoaderTest {
         assertThat(origins).containsExactly("https://sandbox.wallet.example", "https://kpmg.wallet.example");
     }
 
-    @Test
-    void loadOrigins_externalFileWithoutOrigins_usesFallback() throws IOException {
+    // Empty origins list, no origins key, unreadable YAML.
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "origins: []\n",
+            "other: value\n",
+            "origins: [unclosed\n"
+    })
+    void loadOrigins_externalFileWithoutUsableOrigins_usesFallback(String yaml) throws IOException {
         // Arrange
-        var file = writeYaml("origins: []\n");
-        var loader = new CorsOriginsLoader(new CorsProperties(FALLBACK, file.toString()));
-
-        // Act
-        var origins = loader.loadOrigins();
-
-        // Assert
-        assertThat(origins).containsExactly("http://localhost:4200", "https://wallet.example");
-    }
-
-    @Test
-    void loadOrigins_externalFileWithNullOrigins_usesFallback() throws IOException {
-        // Arrange
-        var file = writeYaml("other: value\n");
-        var loader = new CorsOriginsLoader(new CorsProperties(FALLBACK, file.toString()));
-
-        // Act
-        var origins = loader.loadOrigins();
-
-        // Assert
-        assertThat(origins).containsExactly("http://localhost:4200", "https://wallet.example");
-    }
-
-    @Test
-    void loadOrigins_unreadableYaml_usesFallback() throws IOException {
-        // Arrange
-        var file = writeYaml("origins: [unclosed\n");
+        var file = writeYaml(yaml);
         var loader = new CorsOriginsLoader(new CorsProperties(FALLBACK, file.toString()));
 
         // Act

@@ -64,9 +64,8 @@ class SmtpEmailSenderTest {
         StepVerifier.create(result).verifyComplete();
         var sent = ArgumentCaptor.forClass(MimeMessage.class);
         verify(mailSender).send(sent.capture());
-        assertThat(sent.getValue().getFrom()[0].toString()).isEqualTo("wallet@sandbox.example");
-        assertThat(sent.getValue().getRecipients(Message.RecipientType.TO)[0].toString())
-                .isEqualTo("holder@example.com");
+        assertThat(sent.getValue().getFrom()[0]).hasToString("wallet@sandbox.example");
+        assertThat(sent.getValue().getRecipients(Message.RecipientType.TO)[0]).hasToString("holder@example.com");
         assertThat(sent.getValue().getSubject()).isEqualTo("Your code");
         var context = ArgumentCaptor.forClass(IContext.class);
         verify(templateEngine).process(eq("verification-code-email"), context.capture());
