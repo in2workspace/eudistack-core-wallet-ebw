@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.5] - 2026-10-09
+
+### Fixed
+- **#1061961 — "Última actividad" in the devices list never changed after a device was added.** last_used_at stayed at the registration time because nothing called it. It is now updated when a session attributed to a passkey is refreshed and when a session is linked to a passkey. Failing to record the activity does not fail the login.
+
 ## [Unreleased]
 
 ### Fixed
