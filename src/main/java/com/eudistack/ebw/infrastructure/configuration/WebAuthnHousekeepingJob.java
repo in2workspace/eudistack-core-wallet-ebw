@@ -1,6 +1,7 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.RegistrationTicketRepository;
 import com.eudistack.ebw.domain.repository.WebAuthnCeremonyRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -14,9 +15,10 @@ import java.time.Duration;
 import java.time.Instant;
 
 /**
- * Every hour, deletes the WebAuthn ceremonies and registration tickets created more than one
- * day ago, in every active tenant schema (design AD-3). They are single use and expire after
- * 5 minutes; the day of margin keeps them for diagnosis.
+ * Every hour, in every active tenant schema: deletes the WebAuthn ceremonies and registration
+ * tickets created more than one day ago (design AD-3; they are single use and expire after 5
+ * minutes, the day of margin keeps them for diagnosis), and the refresh tokens of the sessions
+ * that ended more than {@link #ENDED_SESSION_RETENTION} ago.
  */
 @Slf4j
 @Component
@@ -25,17 +27,21 @@ import java.time.Instant;
 public class WebAuthnHousekeepingJob {
 
     static final Duration RETENTION = Duration.ofDays(1);
+    static final Duration ENDED_SESSION_RETENTION = Duration.ofDays(7);
 
     private final ActiveTenantDirectory tenantDirectory;
     private final WebAuthnCeremonyRepository ceremonyRepository;
     private final RegistrationTicketRepository ticketRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     public WebAuthnHousekeepingJob(ActiveTenantDirectory tenantDirectory,
                                    WebAuthnCeremonyRepository ceremonyRepository,
-                                   RegistrationTicketRepository ticketRepository) {
+                                   RegistrationTicketRepository ticketRepository,
+                                   RefreshTokenRepository refreshTokenRepository) {
         this.tenantDirectory = tenantDirectory;
         this.ceremonyRepository = ceremonyRepository;
         this.ticketRepository = ticketRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
     }
 
     @Scheduled(cron = "0 0 * * * *")
@@ -45,10 +51,13 @@ public class WebAuthnHousekeepingJob {
 
     /** Emits the number of deleted rows across all tenants. */
     public Mono<Long> cleanup() {
-        var cutoff = Instant.now().minus(RETENTION);
+        var now = Instant.now();
+        var cutoff = now.minus(RETENTION);
+        var sessionCutoff = now.minus(ENDED_SESSION_RETENTION);
         return tenantDirectory.activeTenants()
                 .concatMap(tenant -> ceremonyRepository.deleteCreatedBefore(cutoff)
                         .zipWith(ticketRepository.deleteCreatedBefore(cutoff), Long::sum)
+                        .zipWith(refreshTokenRepository.deleteSessionsEndedBefore(sessionCutoff), Long::sum)
                         .doOnNext(deleted -> log.debug("Deleted {} expired WebAuthn rows in tenant '{}'",
                                 deleted, tenant))
                         .onErrorResume(e -> {

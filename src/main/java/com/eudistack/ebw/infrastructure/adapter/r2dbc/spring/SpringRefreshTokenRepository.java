@@ -35,4 +35,13 @@ public interface SpringRefreshTokenRepository extends ReactiveCrudRepository<Ref
 
     @Query("SELECT COUNT(*) FROM refresh_token WHERE passkey_id = :passkeyId AND revoked = false AND expires_at > NOW()")
     Mono<Long> countActiveByPasskeyId(UUID passkeyId);
+
+    @Modifying
+    @Query("""
+            DELETE FROM refresh_token WHERE session_id IN (
+                SELECT session_id FROM refresh_token
+                 GROUP BY session_id
+                HAVING bool_and(revoked OR expires_at < NOW()) AND max(expires_at) < :cutoff)
+            """)
+    Mono<Long> deleteSessionsEndedBefore(java.time.Instant cutoff);
 }

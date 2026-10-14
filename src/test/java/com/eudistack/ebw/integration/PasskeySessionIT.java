@@ -19,6 +19,9 @@ class PasskeySessionIT extends IntegrationTestBase {
 
     private WalletAuthClient auth;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.eudistack.ebw.domain.repository.RefreshTokenRepository refreshTokenRepository;
+
     @BeforeEach
     void setUp() {
         setupEmailCapture();
@@ -298,5 +301,21 @@ class PasskeySessionIT extends IntegrationTestBase {
 
         webClient.get().uri("/api/v1/credentials").headers(h -> h.setBearerAuth(ticket))
                 .exchange().expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void housekeeping_sessionEndedMoreThanSevenDaysAgo_isDeletedAndActiveOnesKept() {
+        var ended = auth.signUp(email("ses-housekeeping-old"), new SoftwareAuthenticator(TEST_ORIGIN));
+        var active = auth.signUp(email("ses-housekeeping-new"), new SoftwareAuthenticator(TEST_ORIGIN));
+        sql("UPDATE refresh_token SET revoked = true, expires_at = now() - interval '8 days' WHERE passkey_id = '"
+                + ended.passkeyId() + "'");
+
+        refreshTokenRepository.deleteSessionsEndedBefore(java.time.Instant.now().minus(java.time.Duration.ofDays(7)))
+                .contextWrite(ctx -> ctx.put(com.eudistack.ebw.domain.model.ReactorContextKeys.TENANT_DOMAIN,
+                        TEST_TENANT))
+                .block();
+
+        assertThat(query("SELECT 1 FROM refresh_token WHERE passkey_id = '" + ended.passkeyId() + "'")).isEmpty();
+        assertThat(query("SELECT 1 FROM refresh_token WHERE passkey_id = '" + active.passkeyId() + "'")).isNotEmpty();
     }
 }

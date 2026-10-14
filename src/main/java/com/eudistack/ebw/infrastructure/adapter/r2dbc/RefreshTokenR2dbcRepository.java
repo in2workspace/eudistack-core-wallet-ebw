@@ -59,4 +59,9 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
     public Mono<Long> countActiveByPasskeyId(UUID passkeyId) {
         return springRepository.countActiveByPasskeyId(passkeyId);
     }
+
+    @Override
+    public Mono<Long> deleteSessionsEndedBefore(java.time.Instant cutoff) {
+        return springRepository.deleteSessionsEndedBefore(cutoff).defaultIfEmpty(0L);
+    }
 }

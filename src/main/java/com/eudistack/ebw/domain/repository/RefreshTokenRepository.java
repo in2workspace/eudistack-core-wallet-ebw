@@ -26,4 +26,10 @@ public interface RefreshTokenRepository {
     Mono<Void> revokeByPasskeyId(UUID passkeyId);
 
     Mono<Long> countActiveByPasskeyId(UUID passkeyId);
+
+    /**
+     * Deletes the tokens of the sessions that ended before {@code cutoff}: every token revoked or
+     * expired, and none valid after the cutoff. Emits the number of deleted rows.
+     */
+    Mono<Long> deleteSessionsEndedBefore(java.time.Instant cutoff);
 }
