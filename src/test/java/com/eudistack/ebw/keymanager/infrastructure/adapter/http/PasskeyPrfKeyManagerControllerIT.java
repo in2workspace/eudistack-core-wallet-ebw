@@ -43,7 +43,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Web-layer integration tests for {@link HybridKeyManagerController}.
+ * Web-layer integration tests for {@link PasskeyPrfKeyManagerController}.
  *
  * <p>Uses {@code @WebFluxTest} slice — no DB, no Testcontainers. The adapter and
  * wallet-profile port are replaced with Mockito beans.
@@ -51,11 +51,11 @@ import static org.mockito.Mockito.when;
  * <p>Covered criteria:
  * <ul>
  *   <li>AC-05 / ES-01 — unsupported format → 400 {@code error=unsupported_format}</li>
- *   <li>AC-03 — HYBRID tenant + supported format → adapter called (stub → 500 in US-01)</li>
- *   <li>ES-02 — DB tenant on hybrid endpoint → 403 opaque</li>
+ *   <li>AC-03 — PASSKEY_PRF tenant + supported format → adapter called (stub → 500 in US-01)</li>
+ *   <li>ES-02 — DB tenant on passkey-prf endpoint → 403 opaque</li>
  *   <li>ES-03 — submit with invalid signature → 400 {@code error=signature_invalid}</li>
  *   <li>ES-01 — missing required field → 400</li>
- *   <li>US-06 AC-02 — HYBRID tenant accepts constraint → audit recorded → 204</li>
+ *   <li>US-06 AC-02 — PASSKEY_PRF tenant accepts constraint → audit recorded → 204</li>
  *   <li>US-06 — DB tenant on constraint-accepted → 403 opaque</li>
  *   <li>US-06 — audit failure propagates as 500</li>
  * </ul>
@@ -63,17 +63,17 @@ import static org.mockito.Mockito.when;
  * <p>Spec: EUDISTACK-533 AC-03, AC-04, AC-05, ES-01, ES-02, ES-03;
  * EUDISTACK-538 (US-06) AC-02.</p>
  */
-@WebFluxTest(controllers = HybridKeyManagerController.class)
-@Import(HybridKeyManagerExceptionHandler.class)
+@WebFluxTest(controllers = PasskeyPrfKeyManagerController.class)
+@Import(PasskeyPrfKeyManagerExceptionHandler.class)
 @WithMockUser
-class HybridKeyManagerControllerIT {
+class PasskeyPrfKeyManagerControllerIT {
 
-    private static final String PREPARE_URL             = "/api/v1/keys/hybrid/sign/prepare";
-    private static final String SUBMIT_URL              = "/api/v1/keys/hybrid/sign/submit";
-    private static final String CONSTRAINT_ACCEPTED_URL = "/api/v1/keys/hybrid/constraint-accepted";
+    private static final String PREPARE_URL             = "/api/v1/keys/passkey-prf/sign/prepare";
+    private static final String SUBMIT_URL              = "/api/v1/keys/passkey-prf/sign/submit";
+    private static final String CONSTRAINT_ACCEPTED_URL = "/api/v1/keys/passkey-prf/constraint-accepted";
 
     @MockitoBean
-    KeyManagerPort hybridAdapter;
+    KeyManagerPort passkeyPrfAdapter;
 
     @MockitoBean
     WalletProfileQueryPort walletProfileQueryPort;
@@ -93,10 +93,10 @@ class HybridKeyManagerControllerIT {
     // --- AC-05 / ES-01: unsupported format → 400 unsupported_format ---
 
     @Test
-    void prepare_givenHybridTenantAndUnsupportedFormat_returns400WithUnsupportedFormat() {
+    void prepare_givenPasskeyPrfTenantAndUnsupportedFormat_returns400WithUnsupportedFormat() {
         // Arrange
-        stubHybridProfile();
-        when(hybridAdapter.prepareSign(any()))
+        stubPasskeyPrfProfile();
+        when(passkeyPrfAdapter.prepareSign(any()))
                 .thenReturn(Mono.error(new UnsupportedCredentialFormatException("mso_mdoc")));
 
         // Act & Assert
@@ -114,13 +114,13 @@ class HybridKeyManagerControllerIT {
                 .jsonPath("$.error").isEqualTo("unsupported_format");
     }
 
-    // --- AC-03: HYBRID tenant + supported format → adapter delegated (US-01 stub → 500) ---
+    // --- AC-03: PASSKEY_PRF tenant + supported format → adapter delegated (US-01 stub → 500) ---
 
     @Test
-    void prepare_givenHybridTenantAndSupportedFormat_delegatesToAdapter() {
+    void prepare_givenPasskeyPrfTenantAndSupportedFormat_delegatesToAdapter() {
         // Arrange
-        stubHybridProfile();
-        when(hybridAdapter.prepareSign(any()))
+        stubPasskeyPrfProfile();
+        when(passkeyPrfAdapter.prepareSign(any()))
                 .thenReturn(Mono.error(new UnsupportedOperationException("skeleton")));
 
         // Act & Assert — stub throws UnsupportedOperationException (US-04 TODO) caught by catch-all → 500.
@@ -134,7 +134,7 @@ class HybridKeyManagerControllerIT {
                 .expectStatus().is5xxServerError();
     }
 
-    // --- ES-02: DB tenant on hybrid endpoint → 403 opaque ---
+    // --- ES-02: DB tenant on passkey-prf endpoint → 403 opaque ---
 
     @Test
     void prepare_givenDbTenant_returns403Opaque() {
@@ -160,8 +160,8 @@ class HybridKeyManagerControllerIT {
     @Test
     void submit_givenSignatureInvalidException_returns400WithSignatureInvalid() {
         // Arrange
-        stubHybridProfile();
-        when(hybridAdapter.submitSignedAssertion(any()))
+        stubPasskeyPrfProfile();
+        when(passkeyPrfAdapter.submitSignedAssertion(any()))
                 .thenReturn(Mono.error(new SignatureInvalidException()));
 
         // Act & Assert
@@ -184,7 +184,7 @@ class HybridKeyManagerControllerIT {
     @Test
     void prepare_givenMissingCredentialId_returns400() {
         // Arrange
-        stubHybridProfile();
+        stubPasskeyPrfProfile();
 
         // Act & Assert
         webTestClient.post().uri(PREPARE_URL)
@@ -199,10 +199,10 @@ class HybridKeyManagerControllerIT {
     // --- US-06 AC-02: constraint-accepted ---
 
     @Test
-    void acceptConstraint_givenHybridTenant_recordsAuditAndReturns204() {
+    void acceptConstraint_givenPasskeyPrfTenant_recordsAuditAndReturns204() {
         // Arrange
         UUID actorId = UUID.randomUUID();
-        stubHybridProfile();
+        stubPasskeyPrfProfile();
         when(enrollHolderUseCase.recordConsent(any(), any())).thenReturn(Mono.empty());
 
         // Act & Assert
@@ -238,7 +238,7 @@ class HybridKeyManagerControllerIT {
     void acceptConstraint_givenAuditFailure_returns500() {
         // Arrange
         UUID actorId = UUID.randomUUID();
-        stubHybridProfile();
+        stubPasskeyPrfProfile();
         when(enrollHolderUseCase.recordConsent(any(), any()))
                 .thenReturn(Mono.error(new RuntimeException("audit unavailable")));
 
@@ -253,9 +253,9 @@ class HybridKeyManagerControllerIT {
 
     // --- helpers ---
 
-    private void stubHybridProfile() {
+    private void stubPasskeyPrfProfile() {
         TenantWalletProfile profile = new TenantWalletProfile(
-                "hybrid-tenant", WalletMode.SERVER, KeyManager.HYBRID,
+                "passkey-prf-tenant", WalletMode.SERVER, KeyManager.PASSKEY_PRF,
                 Instant.now(), Instant.now());
         when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(profile));
     }

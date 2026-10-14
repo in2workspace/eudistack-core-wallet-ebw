@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
 /**
- * Verifies the foreign-key constraints on {@code hybrid_wrapped_key_handle}.
+ * Verifies the foreign-key constraints on {@code passkey_prf_wrapped_key_handle}.
  *
  * <p>Covered cases:
  * <ol>
@@ -27,8 +27,8 @@ import static org.assertj.core.api.Assertions.fail;
  *   <li>(b) DELETE of a {@code wallet_user} row that is referenced by a handle
  *       -> rejected by FK ON DELETE RESTRICT (AC-05).</li>
  *   <li>(c) INSERT of a handle whose {@code (holder_id, credential_id)} has no
- *       matching row in {@code hybrid_prf_salt} -> rejected by composite FK
- *       (AC-05, ES-02). The {@code hybrid_prf_salt} table is now available as
+ *       matching row in {@code passkey_prf_salt} -> rejected by composite FK
+ *       (AC-05, ES-02). The {@code passkey_prf_salt} table is now available as
  *       V3 migration from US-05 (EUDISTACK-537).</li>
  * </ol>
  *
@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.fail;
  */
 @Tag("integration")
 @Testcontainers
-class HybridWrappedKeyHandleFkIT {
+class PasskeyPrfWrappedKeyHandleFkIT {
 
     /** SQLSTATE for foreign_key_violation (PostgreSQL). */
     private static final String SQLSTATE_FOREIGN_KEY_VIOLATION = "23503";
@@ -127,7 +127,7 @@ class HybridWrappedKeyHandleFkIT {
     }
 
     // -------------------------------------------------------------------------
-    // (c) INSERT with no matching (holder_id, credential_id) in hybrid_prf_salt
+    // (c) INSERT with no matching (holder_id, credential_id) in passkey_prf_salt
     //     -> composite FK violation (AC-05, ES-02)
     // -------------------------------------------------------------------------
 
@@ -143,10 +143,10 @@ class HybridWrappedKeyHandleFkIT {
             try {
                 conn.createStatement().execute(insertSql(holderId, credId));
                 fail("Expected SQLSTATE " + SQLSTATE_FOREIGN_KEY_VIOLATION
-                        + " for composite FK to hybrid_prf_salt but no exception was thrown");
+                        + " for composite FK to passkey_prf_salt but no exception was thrown");
             } catch (SQLException ex) {
                 assertThat(ex.getSQLState())
-                        .as("INSERT with no matching hybrid_prf_salt row must be rejected with "
+                        .as("INSERT with no matching passkey_prf_salt row must be rejected with "
                             + "SQLSTATE 23503 (foreign_key_violation) — composite FK (AC-05, ES-02)")
                         .isEqualTo(SQLSTATE_FOREIGN_KEY_VIOLATION);
             } finally {
@@ -213,7 +213,7 @@ class HybridWrappedKeyHandleFkIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.createStatement().execute("SET search_path TO " + testSchema);
             conn.createStatement().execute(
-                    "INSERT INTO hybrid_prf_salt (holder_id, credential_id, prf_salt) "
+                    "INSERT INTO passkey_prf_salt (holder_id, credential_id, prf_salt) "
                     + "VALUES ('" + hId + "', '" + credId + "', "
                     + " decode('" + hex(new byte[32]) + "', 'hex'))");
         }
@@ -221,7 +221,7 @@ class HybridWrappedKeyHandleFkIT {
 
     private String insertSql(UUID hId, String credId) {
         byte[] blob = new byte[48];
-        return "INSERT INTO hybrid_wrapped_key_handle "
+        return "INSERT INTO passkey_prf_wrapped_key_handle "
                 + "(holder_id, credential_id, wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk) "
                 + "VALUES ('" + hId + "', '" + credId + "', "
                 + " decode('" + hex(blob) + "', 'hex'), "
@@ -233,7 +233,7 @@ class HybridWrappedKeyHandleFkIT {
     private void assertNoRow(String credId) throws SQLException {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT count(*) FROM " + testSchema + ".hybrid_wrapped_key_handle "
+                     "SELECT count(*) FROM " + testSchema + ".passkey_prf_wrapped_key_handle "
                      + "WHERE credential_id = '" + credId + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1))
@@ -245,7 +245,7 @@ class HybridWrappedKeyHandleFkIT {
     private void assertRowExists(String credId) throws SQLException {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT count(*) FROM " + testSchema + ".hybrid_wrapped_key_handle "
+                     "SELECT count(*) FROM " + testSchema + ".passkey_prf_wrapped_key_handle "
                      + "WHERE credential_id = '" + credId + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1))

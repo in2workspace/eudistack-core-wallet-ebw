@@ -31,13 +31,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * Integration tests for the {@code POST /api/v1/keys/hybrid/onboarding/init} endpoint.
+ * Integration tests for the {@code POST /api/v1/keys/passkey-prf/onboarding/init} endpoint.
  *
  * <p>Covered criteria:
  * <ul>
  *   <li>AC-01 (partial) — 200 OK with {@code prf_salt}, {@code kdf_params}, and
- *       {@code signing_pubkey_envelope_format} for a hybrid tenant.</li>
- *   <li>ES-02 — non-hybrid tenant → 403 opaque.</li>
+ *       {@code signing_pubkey_envelope_format} for a passkey-prf tenant.</li>
+ *   <li>ES-02 — non-passkey-prf tenant → 403 opaque.</li>
  *   <li>ES-01 — missing required field → 400.</li>
  * </ul>
  *
@@ -57,11 +57,11 @@ import static org.mockito.Mockito.when;
 class EnrollHolderInitIT {
 
     private static final String SCHEMA_SUFFIX = "_business_wallet";
-    private static final String HYBRID_TENANT = "hinit";
+    private static final String PASSKEY_PRF_TENANT = "hinit";
     private static final String DB_TENANT     = "hinitdb";
     private static final UUID   HOLDER_UUID   = UUID.fromString("cccccccc-1111-2222-3333-dddddddddddd");
-    private static final String BEARER        = "hybrid-init-bearer";
-    private static final String INIT_URL      = "/api/v1/keys/hybrid/onboarding/init";
+    private static final String BEARER        = "passkey-prf-init-bearer";
+    private static final String INIT_URL      = "/api/v1/keys/passkey-prf/onboarding/init";
 
     @Container
     static final PostgreSQLContainer<?> postgres =
@@ -101,11 +101,11 @@ class EnrollHolderInitIT {
                     "DO $$ BEGIN CREATE ROLE config_manager_role; "
                     + "EXCEPTION WHEN duplicate_object THEN NULL; END $$");
             conn.createStatement().execute(
-                    "CREATE SCHEMA IF NOT EXISTS " + HYBRID_TENANT + SCHEMA_SUFFIX);
+                    "CREATE SCHEMA IF NOT EXISTS " + PASSKEY_PRF_TENANT + SCHEMA_SUFFIX);
             conn.createStatement().execute(
                     "CREATE SCHEMA IF NOT EXISTS " + DB_TENANT + SCHEMA_SUFFIX);
         }
-        runTenantMigrations(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX);
+        runTenantMigrations(jdbcUrl, PASSKEY_PRF_TENANT + SCHEMA_SUFFIX);
         runTenantMigrations(jdbcUrl, DB_TENANT + SCHEMA_SUFFIX);
     }
 
@@ -123,7 +123,7 @@ class EnrollHolderInitIT {
 
     @BeforeEach
     void setUp() throws SQLException {
-        seedWalletProfile(HYBRID_TENANT, "server", "hybrid");
+        seedWalletProfile(PASSKEY_PRF_TENANT, "server", "passkey-prf");
         seedWalletProfile(DB_TENANT, "server", "db");
         when(tokenSigner.verify(BEARER)).thenReturn(
                 Map.of("sub", HOLDER_UUID.toString(), "email", "test@test.com"));
@@ -144,13 +144,13 @@ class EnrollHolderInitIT {
     // ------------------------------------------------------------------ AC-01
 
     @Test
-    void init_hybridTenant_returns200WithPrfSaltAndKdfParams() {
+    void init_passkeyPrfTenant_returns200WithPrfSaltAndKdfParams() {
         byte[] salt = new byte[32];
         salt[0] = 0x01;
         when(prfSaltUseCase.getOrCreatePrfSalt(any(), any(), any())).thenReturn(Mono.just(salt));
 
         webClient.post().uri(INIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", "cred-init-1", "format", "vc+sd-jwt"))
@@ -163,12 +163,12 @@ class EnrollHolderInitIT {
     }
 
     @Test
-    void init_hybridTenant_prfSaltIsBase64url() {
+    void init_passkeyPrfTenant_prfSaltIsBase64url() {
         byte[] salt = new byte[32];
         when(prfSaltUseCase.getOrCreatePrfSalt(any(), any(), any())).thenReturn(Mono.just(salt));
 
         webClient.post().uri(INIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", "cred-init-2", "format", "vc+sd-jwt"))
@@ -202,7 +202,7 @@ class EnrollHolderInitIT {
     @Test
     void init_missingCredentialId_returns400() {
         webClient.post().uri(INIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("format", "vc+sd-jwt"))

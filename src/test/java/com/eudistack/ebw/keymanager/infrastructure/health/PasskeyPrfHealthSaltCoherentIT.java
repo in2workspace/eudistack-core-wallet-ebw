@@ -26,11 +26,11 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Integration tests for {@link HybridHealthContributor} — the {@code salt_coherent}
+ * Integration tests for {@link PasskeyPrfHealthContributor} — the {@code salt_coherent}
  * health indicator.
  *
  * <p>The indicator reports {@code UP} ({@code salt_coherent=true}) when each
- * {@code (holder_id, credential_id)} pair has exactly one row in {@code hybrid_prf_salt},
+ * {@code (holder_id, credential_id)} pair has exactly one row in {@code passkey_prf_salt},
  * and {@code DOWN} ({@code salt_coherent=false}) when a duplicate pair exists.
  *
  * <p>The "duplicate row" scenario bypasses the composite PK by dropping the constraint
@@ -56,7 +56,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 )
 @ActiveProfiles("integration")
 @Testcontainers
-class HybridHealthSaltCoherentIT {
+class PasskeyPrfHealthSaltCoherentIT {
 
     private static final String SCHEMA_SUFFIX = "_business_wallet";
     private static final String TENANT        = "prfhealth";
@@ -87,7 +87,7 @@ class HybridHealthSaltCoherentIT {
         registry.add("spring.flyway.default-schema", () -> "public");
     }
 
-    @Autowired HybridHealthContributor hybridHealthContributor;
+    @Autowired PasskeyPrfHealthContributor passkeyPrfHealthContributor;
 
     @BeforeAll
     static void provisionSchema() throws SQLException {
@@ -125,7 +125,7 @@ class HybridHealthSaltCoherentIT {
                     + "VALUES ('" + HOLDER_ID + "', 'health@test.com') "
                     + "ON CONFLICT (id) DO NOTHING");
             conn.createStatement().execute(
-                    "DELETE FROM " + TENANT_SCHEMA + ".hybrid_prf_salt");
+                    "DELETE FROM " + TENANT_SCHEMA + ".passkey_prf_salt");
             // Restore PK in case a previous test dropped it
             restorePkIfMissing(conn);
         }
@@ -135,7 +135,7 @@ class HybridHealthSaltCoherentIT {
 
     @Test
     void health_emptyTable_reportsUp_saltCoherentTrue() {
-        StepVerifier.create(hybridHealthContributor.health()
+        StepVerifier.create(passkeyPrfHealthContributor.health()
                         .contextWrite(ctx -> ctx.put("tenantDomain", TENANT)))
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.UP);
@@ -151,7 +151,7 @@ class HybridHealthSaltCoherentIT {
         insertSaltRow("cred-health-1", randomSalt());
         insertSaltRow("cred-health-2", randomSalt());
 
-        StepVerifier.create(hybridHealthContributor.health()
+        StepVerifier.create(passkeyPrfHealthContributor.health()
                         .contextWrite(ctx -> ctx.put("tenantDomain", TENANT)))
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.UP);
@@ -172,7 +172,7 @@ class HybridHealthSaltCoherentIT {
         insertSaltRow("cred-multi-1", randomSalt());
         insertSaltRowForHolder(holder2, "cred-multi-2", randomSalt());
 
-        StepVerifier.create(hybridHealthContributor.health()
+        StepVerifier.create(passkeyPrfHealthContributor.health()
                         .contextWrite(ctx -> ctx.put("tenantDomain", TENANT)))
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.UP);
@@ -188,7 +188,7 @@ class HybridHealthSaltCoherentIT {
         // Actuator calls health() outside an HTTP request — no tenantDomain in Reactor context.
         // The indicator must not produce DOWN/salt_coherent=false in this case; it should return
         // UP with salt_coherent=true (and an explanatory note).
-        StepVerifier.create(hybridHealthContributor.health())
+        StepVerifier.create(passkeyPrfHealthContributor.health())
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isNotEqualTo(Status.DOWN);
                     assertThat(health.getDetails()).containsEntry("salt_coherent", true);
@@ -201,7 +201,7 @@ class HybridHealthSaltCoherentIT {
     @Test
     void health_response_doesNotContainPrfSaltOrHolderId() {
         // Health response must not expose prf_salt bytes or holder_id values (NFR-S-537-01)
-        StepVerifier.create(hybridHealthContributor.health()
+        StepVerifier.create(passkeyPrfHealthContributor.health()
                         .contextWrite(ctx -> ctx.put("tenantDomain", TENANT)))
                 .assertNext(health -> {
                     Map<String, Object> details = health.getDetails();
@@ -228,7 +228,7 @@ class HybridHealthSaltCoherentIT {
     void health_withRows_response_doesNotContainPrfSaltOrHolderId() throws SQLException {
         insertSaltRow("cred-noleak-1", randomSalt());
 
-        StepVerifier.create(hybridHealthContributor.health()
+        StepVerifier.create(passkeyPrfHealthContributor.health()
                         .contextWrite(ctx -> ctx.put("tenantDomain", TENANT)))
                 .assertNext(health -> {
                     Map<String, Object> details = health.getDetails();
@@ -253,7 +253,7 @@ class HybridHealthSaltCoherentIT {
             throws SQLException {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
-                    "INSERT INTO " + TENANT_SCHEMA + ".hybrid_prf_salt "
+                    "INSERT INTO " + TENANT_SCHEMA + ".passkey_prf_salt "
                     + "(holder_id, credential_id, prf_salt) VALUES "
                     + "('" + holderId + "', '" + credentialId + "', "
                     + "decode('" + hex(salt) + "', 'hex'))");
@@ -261,11 +261,11 @@ class HybridHealthSaltCoherentIT {
     }
 
     private void restorePkIfMissing(Connection conn) throws SQLException {
-        try (var rs = conn.getMetaData().getPrimaryKeys(null, TENANT_SCHEMA, "hybrid_prf_salt")) {
+        try (var rs = conn.getMetaData().getPrimaryKeys(null, TENANT_SCHEMA, "passkey_prf_salt")) {
             if (!rs.next()) {
                 conn.createStatement().execute(
-                        "ALTER TABLE " + TENANT_SCHEMA + ".hybrid_prf_salt "
-                        + "ADD CONSTRAINT pk_hybrid_prf_salt "
+                        "ALTER TABLE " + TENANT_SCHEMA + ".passkey_prf_salt "
+                        + "ADD CONSTRAINT pk_passkey_prf_salt "
                         + "PRIMARY KEY (holder_id, credential_id)");
             }
         }

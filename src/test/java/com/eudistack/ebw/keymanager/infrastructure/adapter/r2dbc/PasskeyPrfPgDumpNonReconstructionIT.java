@@ -32,7 +32,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies AC-02 / NFR-S-535-01: a full dump of the {@code hybrid_wrapped_key_handle}
+ * Verifies AC-02 / NFR-S-535-01: a full dump of the {@code passkey_prf_wrapped_key_handle}
  * table cannot be used to reconstruct the holder private key, even at volume (>= 100 holders).
  *
  * <p>The test inserts handles whose {@code wrapped_blob} is opaque ciphertext that does NOT
@@ -50,7 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (EUDISTACK-535). The temporary DDL stub used in the US-02 (EUDISTACK-534) version
  * of this test has been removed -- the real V4 migration is the single source of truth.
  *
- * <p>Note: each seeded handle requires a matching {@code hybrid_prf_salt} row due to
+ * <p>Note: each seeded handle requires a matching {@code passkey_prf_salt} row due to
  * the composite FK introduced in V4 ({@code fk_hwkh_prf_salt}).
  *
  * <p>Spec: EUDISTACK-534 AC-05; EUDISTACK-535 AC-02, EC-03, NFR-S-535-01;
@@ -63,7 +63,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 )
 @ActiveProfiles("integration")
 @Testcontainers
-class HybridPgDumpNonReconstructionIT {
+class PasskeyPrfPgDumpNonReconstructionIT {
 
     private static final String SCHEMA_SUFFIX = "_business_wallet";
     private static final String TENANT        = "pgdump";
@@ -141,9 +141,9 @@ class HybridPgDumpNonReconstructionIT {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             // Delete in FK order: child (handle) before parents (prf_salt, wallet_user)
             conn.createStatement().execute(
-                    "DELETE FROM " + TENANT + SCHEMA_SUFFIX + ".hybrid_wrapped_key_handle");
+                    "DELETE FROM " + TENANT + SCHEMA_SUFFIX + ".passkey_prf_wrapped_key_handle");
             conn.createStatement().execute(
-                    "DELETE FROM " + TENANT + SCHEMA_SUFFIX + ".hybrid_prf_salt");
+                    "DELETE FROM " + TENANT + SCHEMA_SUFFIX + ".passkey_prf_salt");
             conn.createStatement().execute(
                     "DELETE FROM " + TENANT + SCHEMA_SUFFIX + ".wallet_user");
         }
@@ -164,7 +164,7 @@ class HybridPgDumpNonReconstructionIT {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
                      "SELECT wrapped_blob FROM " + TENANT + SCHEMA_SUFFIX
-                     + ".hybrid_wrapped_key_handle WHERE credential_id = '" + credId + "'")) {
+                     + ".passkey_prf_wrapped_key_handle WHERE credential_id = '" + credId + "'")) {
             assertThat(rs.next()).as("Expected one row").isTrue();
             storedBlob = rs.getBytes("wrapped_blob");
         }
@@ -183,7 +183,7 @@ class HybridPgDumpNonReconstructionIT {
         // Verify there is no separate plaintext_key or private_key column in the table
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
              ResultSet rs = conn.getMetaData().getColumns(
-                     null, TENANT + SCHEMA_SUFFIX, "hybrid_wrapped_key_handle", null)) {
+                     null, TENANT + SCHEMA_SUFFIX, "passkey_prf_wrapped_key_handle", null)) {
             while (rs.next()) {
                 String colName = rs.getString("COLUMN_NAME").toLowerCase();
                 assertThat(colName)
@@ -225,7 +225,7 @@ class HybridPgDumpNonReconstructionIT {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
                      "EXPLAIN SELECT * FROM " + TENANT + SCHEMA_SUFFIX
-                     + ".hybrid_wrapped_key_handle "
+                     + ".passkey_prf_wrapped_key_handle "
                      + "WHERE holder_id = '" + sampleHolderId + "'"
                      + "  AND credential_id = '" + sampleCredId + "'")) {
             StringBuilder plan = new StringBuilder();
@@ -255,7 +255,7 @@ class HybridPgDumpNonReconstructionIT {
     private void insertPrfSalt(UUID holderId, String credId) throws SQLException {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
-                    "INSERT INTO " + TENANT + SCHEMA_SUFFIX + ".hybrid_prf_salt "
+                    "INSERT INTO " + TENANT + SCHEMA_SUFFIX + ".passkey_prf_salt "
                     + "(holder_id, credential_id, prf_salt) "
                     + "VALUES ('" + holderId + "', '" + credId + "', "
                     + " decode('" + hex(new byte[32]) + "', 'hex'))");
@@ -295,11 +295,11 @@ class HybridPgDumpNonReconstructionIT {
                         + "VALUES ('" + hId + "', 'vol-" + i + "-" + hId + "@test.local')");
                 // Seed prf_salt before handle (composite FK in V4 requires this order)
                 conn.createStatement().execute(
-                        "INSERT INTO hybrid_prf_salt (holder_id, credential_id, prf_salt) "
+                        "INSERT INTO passkey_prf_salt (holder_id, credential_id, prf_salt) "
                         + "VALUES ('" + hId + "', '" + credId + "', "
                         + " decode('" + hex(new byte[32]) + "', 'hex'))");
                 conn.createStatement().execute(
-                        "INSERT INTO hybrid_wrapped_key_handle "
+                        "INSERT INTO passkey_prf_wrapped_key_handle "
                         + "(holder_id, credential_id, wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk) "
                         + "VALUES ('" + hId + "', '" + credId + "', "
                         + " decode('" + hex(WRAPPED_BLOB) + "', 'hex'), "
@@ -329,7 +329,7 @@ class HybridPgDumpNonReconstructionIT {
                 "--no-password",
                 "--schema=" + schemaName,
                 "--data-only",
-                "--table=" + schemaName + ".hybrid_wrapped_key_handle",
+                "--table=" + schemaName + ".passkey_prf_wrapped_key_handle",
                 "pgdump_it"
         );
         // Return stdout; ignore stderr (pg_dump warning about no password is expected)

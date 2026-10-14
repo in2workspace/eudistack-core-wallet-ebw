@@ -41,7 +41,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Web-layer integration tests for {@link HybridOnboardingController}.
+ * Web-layer integration tests for {@link PasskeyPrfOnboardingController}.
  *
  * <p>Covers:
  * <ul>
@@ -49,18 +49,18 @@ import static org.mockito.Mockito.when;
  *       422 {@code prf_unsupported}</li>
  *   <li>US-08 — DB tenant on block → 403 opaque</li>
  *   <li>US-08 — audit failure on block does not mask the {@code prf_unsupported} rejection</li>
- *   <li>US-02 AC-07 — commit with HYBRID tenant → 201 (verifies tenantId extraction wire-up)</li>
+ *   <li>US-02 AC-07 — commit with PASSKEY_PRF tenant → 201 (verifies tenantId extraction wire-up)</li>
  * </ul>
  *
  * <p>Spec: EUDISTACK-534 (US-02), EUDISTACK-540 (US-08), EUDISTACK-359 (PRF detection gate).</p>
  */
-@WebFluxTest(controllers = HybridOnboardingController.class)
-@Import(HybridKeyManagerExceptionHandler.class)
+@WebFluxTest(controllers = PasskeyPrfOnboardingController.class)
+@Import(PasskeyPrfKeyManagerExceptionHandler.class)
 @WithMockUser
-class HybridOnboardingControllerIT {
+class PasskeyPrfOnboardingControllerIT {
 
-    private static final String COMMIT_URL = "/api/v1/keys/hybrid/onboarding/commit";
-    private static final String BLOCK_URL  = "/api/v1/keys/hybrid/onboarding/block";
+    private static final String COMMIT_URL = "/api/v1/keys/passkey-prf/onboarding/commit";
+    private static final String BLOCK_URL  = "/api/v1/keys/passkey-prf/onboarding/block";
 
     // Minimal valid commit payload fixtures
     private static final byte[] BLOB_BYTES = new byte[48];
@@ -85,10 +85,10 @@ class HybridOnboardingControllerIT {
             """;
 
     @Test
-    void block_givenHybridTenant_emitsAuditAndReturnsPrfUnsupported() {
+    void block_givenPasskeyPrfTenant_emitsAuditAndReturnsPrfUnsupported() {
         // Arrange
         UUID actorId = UUID.randomUUID();
-        stubHybridProfile();
+        stubPasskeyPrfProfile();
         when(enrollHolderUseCase.recordPrfUnsupported(any(), any())).thenReturn(Mono.empty());
 
         // Act & Assert
@@ -129,7 +129,7 @@ class HybridOnboardingControllerIT {
     void block_givenAuditFailure_stillReturnsPrfUnsupported() {
         // Arrange
         UUID actorId = UUID.randomUUID();
-        stubHybridProfile();
+        stubPasskeyPrfProfile();
         when(enrollHolderUseCase.recordPrfUnsupported(any(), any()))
                 .thenReturn(Mono.error(new RuntimeException("cloudwatch unavailable")));
 
@@ -149,10 +149,10 @@ class HybridOnboardingControllerIT {
     // --- US-02 commit: verify tenantId extraction wire-up ---
 
     @Test
-    void commit_givenHybridTenantAndValidRequest_returns201() {
+    void commit_givenPasskeyPrfTenantAndValidRequest_returns201() {
         // Arrange
         UUID actorId = UUID.randomUUID();
-        stubHybridProfile();
+        stubPasskeyPrfProfile();
         when(enrollHolderUseCase.commit(any(), any(), any()))
                 .thenReturn(Mono.just(new EnrollHolderCommitResponse("cred-1", false)));
 
@@ -179,9 +179,9 @@ class HybridOnboardingControllerIT {
 
     // --- helpers ---
 
-    private void stubHybridProfile() {
+    private void stubPasskeyPrfProfile() {
         TenantWalletProfile profile = new TenantWalletProfile(
-                "hybrid-tenant", WalletMode.SERVER, KeyManager.HYBRID,
+                "passkey-prf-tenant", WalletMode.SERVER, KeyManager.PASSKEY_PRF,
                 Instant.now(), Instant.now());
         when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(profile));
     }

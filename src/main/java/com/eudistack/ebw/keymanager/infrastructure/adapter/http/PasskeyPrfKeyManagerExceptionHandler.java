@@ -24,7 +24,7 @@ import org.springframework.web.bind.support.WebExchangeBindException;
 import java.net.URI;
 
 /**
- * Exception handler scoped to {@link HybridKeyManagerController}.
+ * Exception handler scoped to {@link PasskeyPrfKeyManagerController}.
  *
  * <p>Handler mappings:
  * <ul>
@@ -35,7 +35,7 @@ import java.net.URI;
  *   <li>{@link SignatureInvalidException} → 400 with {@code error=signature_invalid}
  *       (ES-03 — structurally invalid or mismatched client assertion).</li>
  *   <li>{@link TenantWalletProfileUnsupportedException}, {@link TenantUnknownException}
- *       → 403 opaque (ES-02 anti-probing — prevents DB tenants from inferring hybrid state).</li>
+ *       → 403 opaque (ES-02 anti-probing — prevents DB tenants from inferring passkey-prf state).</li>
  *   <li>Any other {@link Exception} → 500 (catch-all, class name only to prevent leakage).</li>
  * </ul>
  *
@@ -51,12 +51,12 @@ import java.net.URI;
  *          EUDISTACK-534 ES-01, ES-02, ES-03; architecture.md §8.3.</p>
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = {HybridKeyManagerController.class, HybridOnboardingController.class})
-public class HybridKeyManagerExceptionHandler {
+@RestControllerAdvice(assignableTypes = {PasskeyPrfKeyManagerController.class, PasskeyPrfOnboardingController.class})
+public class PasskeyPrfKeyManagerExceptionHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(HybridKeyManagerExceptionHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(PasskeyPrfKeyManagerExceptionHandler.class);
 
-    private static final String TYPE_BASE = "urn:eudistack:error:keymanager:hybrid:";
+    private static final String TYPE_BASE = "urn:eudistack:error:keymanager:passkey-prf:";
 
     @ExceptionHandler(WebExchangeBindException.class)
     public ResponseEntity<ProblemDetail> handleValidation(WebExchangeBindException ex) {
@@ -88,7 +88,7 @@ public class HybridKeyManagerExceptionHandler {
      */
     @ExceptionHandler(InvalidSignatureSubmissionException.class)
     public ResponseEntity<ProblemDetail> handleInvalidSignatureSubmission(InvalidSignatureSubmissionException ex) {
-        log.debug("keymanager.hybrid.invalid_signature_submission");
+        log.debug("keymanager.passkey-prf.invalid_signature_submission");
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         problem.setType(URI.create(TYPE_BASE + "invalid-request"));
         problem.setProperty("error", "invalid_request");
@@ -97,7 +97,7 @@ public class HybridKeyManagerExceptionHandler {
 
     /**
      * ES-02: opaque 403 — no body, no distinguishing detail between "tenant not found"
-     * and "key_manager mode not HYBRID" (anti-probing).
+     * and "key_manager mode not PASSKEY_PRF" (anti-probing).
      */
     @ExceptionHandler({TenantWalletProfileUnsupportedException.class, TenantUnknownException.class})
     public ResponseEntity<Void> handleForbidden(RuntimeException ex) {
@@ -130,7 +130,7 @@ public class HybridKeyManagerExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleGeneral(Exception ex) {
-        log.error("keymanager.hybrid.unhandled exception_class={}", ex.getClass().getName());
+        log.error("keymanager.passkey-prf.unhandled exception_class={}", ex.getClass().getName());
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
         problem.setType(URI.create(TYPE_BASE + "internal"));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
@@ -151,7 +151,7 @@ public class HybridKeyManagerExceptionHandler {
      */
     @ExceptionHandler(PrfSaltNotFoundException.class)
     public ResponseEntity<ProblemDetail> handlePrfSaltNotFound(PrfSaltNotFoundException ex) {
-        log.debug("keymanager.hybrid.prf_salt_not_found credential_present=false");
+        log.debug("keymanager.passkey_prf.prf_salt_not_found credential_present=false");
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
         problem.setType(URI.create(TYPE_BASE + "wrap-handle-not-found"));
         problem.setProperty("error", "wrap_handle_not_found");
@@ -167,7 +167,7 @@ public class HybridKeyManagerExceptionHandler {
      */
     @ExceptionHandler(HolderIsolationViolationException.class)
     public ResponseEntity<ProblemDetail> handleHolderIsolation(HolderIsolationViolationException ex) {
-        log.debug("keymanager.hybrid.holder_isolation_violation");
+        log.debug("keymanager.passkey-prf.holder_isolation_violation");
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
         problem.setType(URI.create(TYPE_BASE + "holder-isolation-violation"));
         problem.setProperty("error", "holder_isolation_violation");

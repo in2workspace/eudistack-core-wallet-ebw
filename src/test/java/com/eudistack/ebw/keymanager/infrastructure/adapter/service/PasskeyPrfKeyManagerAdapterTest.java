@@ -6,7 +6,7 @@ import com.eudistack.ebw.keymanager.application.SubmitSignedUseCase;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
 import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
 import com.eudistack.ebw.keymanager.domain.model.PrepareSignResponse;
-import com.eudistack.ebw.keymanager.infrastructure.observability.HybridSignTelemetry;
+import com.eudistack.ebw.keymanager.infrastructure.observability.PasskeyPrfSignTelemetry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,22 +21,22 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link HybridKeyManagerAdapter} format allow-list validation and delegation.
+ * Unit tests for {@link PasskeyPrfKeyManagerAdapter} format allow-list validation and delegation.
  *
  * <p>Spec: EUDISTACK-533 AC-05, ES-01; EUDISTACK-536 AC-01.</p>
  */
 @ExtendWith(MockitoExtension.class)
-class HybridKeyManagerAdapterTest {
+class PasskeyPrfKeyManagerAdapterTest {
 
     @Mock private PrepareSignUseCase prepareSignUseCase;
     @Mock private SubmitSignedUseCase submitSignedUseCase;
-    @Mock private HybridSignTelemetry telemetry;
+    @Mock private PasskeyPrfSignTelemetry telemetry;
 
-    private HybridKeyManagerAdapter adapter;
+    private PasskeyPrfKeyManagerAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        adapter = new HybridKeyManagerAdapter(prepareSignUseCase, submitSignedUseCase, telemetry);
+        adapter = new PasskeyPrfKeyManagerAdapter(prepareSignUseCase, submitSignedUseCase, telemetry);
     }
 
     // --- AC-05 / ES-01: unsupported formats are rejected before reaching the use case ---
@@ -93,7 +93,7 @@ class HybridKeyManagerAdapterTest {
                 .verifyComplete();
     }
 
-    // --- generateHolderKey and signWithHolderKey are not applicable for the hybrid adapter ---
+    // --- generateHolderKey and signWithHolderKey are not applicable for the passkey-prf adapter ---
 
     @Test
     void generateHolderKey_alwaysThrowsUnsupportedOperationException() {

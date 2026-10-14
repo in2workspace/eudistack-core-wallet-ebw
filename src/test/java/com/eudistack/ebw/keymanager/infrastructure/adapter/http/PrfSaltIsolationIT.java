@@ -36,10 +36,10 @@ import static org.mockito.Mockito.when;
 /**
  * HTTP-layer isolation test for PRF salt holder-isolation exception mapping.
  *
- * <p>Exercises the {@link HybridKeyManagerExceptionHandler} mappings for
+ * <p>Exercises the {@link PasskeyPrfKeyManagerExceptionHandler} mappings for
  * {@link HolderIsolationViolationException} → 403 and
  * {@link PrfSaltNotFoundException} → 404 via the real
- * {@code POST /api/v1/keys/hybrid/onboarding/init} endpoint. {@link PrfSaltService}
+ * {@code POST /api/v1/keys/passkey-prf/onboarding/init} endpoint. {@link PrfSaltService}
  * is mocked so no US-04 endpoints are required.</p>
  *
  * <p>Covered criteria:
@@ -66,7 +66,7 @@ class PrfSaltIsolationIT {
     private static final String TENANT        = "prfisolation";
     private static final UUID   HOLDER_UUID   = UUID.fromString("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb");
     private static final String BEARER        = "prf-isolation-bearer";
-    private static final String INIT_URL      = "/api/v1/keys/hybrid/onboarding/init";
+    private static final String INIT_URL      = "/api/v1/keys/passkey-prf/onboarding/init";
 
     @Container
     static final PostgreSQLContainer<?> postgres =
@@ -131,7 +131,7 @@ class PrfSaltIsolationIT {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
                     "INSERT INTO " + schema + ".tenant_wallet_profile (tenant, wallet_mode, key_manager) "
-                    + "VALUES ('" + TENANT + "', 'server', 'hybrid') "
+                    + "VALUES ('" + TENANT + "', 'server', 'passkey-prf') "
                     + "ON CONFLICT (tenant) DO NOTHING");
         }
     }

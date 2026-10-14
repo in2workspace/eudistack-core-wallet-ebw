@@ -22,14 +22,14 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies the structure of {@code hybrid_wrapped_key_handle} after applying
+ * Verifies the structure of {@code passkey_prf_wrapped_key_handle} after applying
  * the Flyway migration V4.
  *
  * <p>Covered criteria:
  * <ul>
  *   <li>AC-01 — table exists with PK (holder_id, credential_id), FK to wallet_user,
- *       FK to hybrid_prf_salt, correct columns and types</li>
- *   <li>AC-05 — FK (holder_id, credential_id) -> hybrid_prf_salt (ES-02 physical barrier)</li>
+ *       FK to passkey_prf_salt, correct columns and types</li>
+ *   <li>AC-05 — FK (holder_id, credential_id) -> passkey_prf_salt (ES-02 physical barrier)</li>
  *   <li>EC-02 — created_at DEFAULT now() is populated when not supplied; not updatable
  *       via ACL</li>
  *   <li>NFR-S-535-02 — no column stores holder private key or wrap key in clear</li>
@@ -41,9 +41,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @Tag("integration")
 @Testcontainers
-class HybridWrappedKeyHandleSchemaIT {
+class PasskeyPrfWrappedKeyHandleSchemaIT {
 
-    private static final String TABLE_NAME = "hybrid_wrapped_key_handle";
+    private static final String TABLE_NAME = "passkey_prf_wrapped_key_handle";
 
     /** Expected (column_name -> jdbc_type_name) for the table. */
     private static final Map<String, String> EXPECTED_COLUMNS = new HashMap<>();
@@ -84,7 +84,7 @@ class HybridWrappedKeyHandleSchemaIT {
     // -------------------------------------------------------------------------
 
     @Test
-    void table_hybrid_wrapped_key_handle_exists_after_migration() throws SQLException {
+    void table_passkey_prf_wrapped_key_handle_exists_after_migration() throws SQLException {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.getMetaData().getTables(
                      null, testSchema, TABLE_NAME, new String[]{"TABLE"})) {
@@ -143,24 +143,24 @@ class HybridWrappedKeyHandleSchemaIT {
     }
 
     // -------------------------------------------------------------------------
-    // AC-01 / AC-05 / ES-02 — composite FK to hybrid_prf_salt
+    // AC-01 / AC-05 / ES-02 — composite FK to passkey_prf_salt
     // -------------------------------------------------------------------------
 
     @Test
-    void composite_foreign_key_references_hybrid_prf_salt() throws SQLException {
-        // Collect all FK columns that point to hybrid_prf_salt
+    void composite_foreign_key_references_passkey_prf_salt() throws SQLException {
+        // Collect all FK columns that point to passkey_prf_salt
         List<String> fkColsToSalt = new ArrayList<>();
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.getMetaData().getImportedKeys(null, testSchema, TABLE_NAME)) {
             while (rs.next()) {
                 String pkTable = rs.getString("PKTABLE_NAME");
-                if ("hybrid_prf_salt".equals(pkTable)) {
+                if ("passkey_prf_salt".equals(pkTable)) {
                     fkColsToSalt.add(rs.getString("FKCOLUMN_NAME"));
                 }
             }
         }
         assertThat(fkColsToSalt)
-                .as("Composite FK (holder_id, credential_id) -> hybrid_prf_salt must exist (AC-05, ES-02)")
+                .as("Composite FK (holder_id, credential_id) -> passkey_prf_salt must exist (AC-05, ES-02)")
                 .containsExactlyInAnyOrder("holder_id", "credential_id");
     }
 
@@ -205,7 +205,7 @@ class HybridWrappedKeyHandleSchemaIT {
             conn.createStatement().execute("SET search_path TO " + testSchema);
             // Insert without specifying created_at
             conn.createStatement().execute(
-                    "INSERT INTO hybrid_wrapped_key_handle "
+                    "INSERT INTO passkey_prf_wrapped_key_handle "
                     + "(holder_id, credential_id, wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk) "
                     + "VALUES ('" + holderId + "', '" + credId + "', "
                     + " decode('" + hex(new byte[48]) + "', 'hex'), "
@@ -214,7 +214,7 @@ class HybridWrappedKeyHandleSchemaIT {
                     + " 'HKDF-SHA-256', 1, '{\"kty\":\"EC\"}')");
 
             try (ResultSet rs = conn.createStatement().executeQuery(
-                    "SELECT created_at FROM hybrid_wrapped_key_handle "
+                    "SELECT created_at FROM passkey_prf_wrapped_key_handle "
                     + "WHERE credential_id = '" + credId + "'")) {
                 assertThat(rs.next()).as("row must be present").isTrue();
                 assertThat(rs.getTimestamp("created_at"))
@@ -288,7 +288,7 @@ class HybridWrappedKeyHandleSchemaIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.createStatement().execute("SET search_path TO " + testSchema);
             conn.createStatement().execute(
-                    "INSERT INTO hybrid_prf_salt (holder_id, credential_id, prf_salt) "
+                    "INSERT INTO passkey_prf_salt (holder_id, credential_id, prf_salt) "
                     + "VALUES ('" + holderId + "', '" + credId + "', "
                     + " decode('" + hex(new byte[32]) + "', 'hex'))");
         }

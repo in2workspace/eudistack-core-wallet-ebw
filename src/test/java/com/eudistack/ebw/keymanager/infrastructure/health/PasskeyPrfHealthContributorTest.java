@@ -1,7 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.health;
 
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
-import com.eudistack.ebw.keymanager.infrastructure.observability.HybridKeyManagerTelemetry;
+import com.eudistack.ebw.keymanager.infrastructure.observability.PasskeyPrfKeyManagerTelemetry;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.TenantWalletProfile;
@@ -25,18 +25,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link HybridHealthContributor} (US-09 / EUDISTACK-541).
+ * Unit tests for {@link PasskeyPrfHealthContributor} (US-09 / EUDISTACK-541).
  *
- * <p>Hybrid mode is a per-tenant attribute, so this indicator first resolves the tenant of
- * the current request via {@link WalletProfileQueryPort} and only runs the hybrid checks when
- * that tenant's key manager is {@link KeyManager#HYBRID}. {@link WrappedKeyHandleRepository}
- * and {@link HybridKeyManagerTelemetry} are mocked; a {@link SimpleMeterRegistry} is used to
+ * <p>passkey+prf mode is a per-tenant attribute, so this indicator first resolves the tenant of
+ * the current request via {@link WalletProfileQueryPort} and only runs the passkey-prf checks when
+ * that tenant's key manager is {@link KeyManager#PASSKEY_PRF}. {@link WrappedKeyHandleRepository}
+ * and {@link PasskeyPrfKeyManagerTelemetry} are mocked; a {@link SimpleMeterRegistry} is used to
  * inspect counter values in-process.
  *
  * <p>Covered criteria:
  * <ul>
- *   <li>Non-hybrid tenant → neutral UP, hybrid checks not run</li>
- *   <li>Tenant cannot be resolved ({@code TenantUnknownException}) → neutral UP (same as non-hybrid)</li>
+ *   <li>Non-passkey-prf tenant → neutral UP, passkey-prf checks not run</li>
+ *   <li>Tenant cannot be resolved ({@code TenantUnknownException}) → neutral UP (same as non-passkey-prf)</li>
  *   <li>Tenant resolution fails with any other error → DOWN, not swallowed into neutral UP</li>
  *   <li>prf_gate_pass_rate above threshold → UP</li>
  *   <li>prf_gate_pass_rate below threshold → DOWN</li>
@@ -49,34 +49,34 @@ import static org.mockito.Mockito.when;
  * </ul>
  */
 @ExtendWith(MockitoExtension.class)
-class HybridHealthContributorTest {
+class PasskeyPrfHealthContributorTest {
 
     private static final String TENANT = "cgcom";
 
     @Mock private WalletProfileQueryPort walletProfileQueryPort;
     @Mock private WrappedKeyHandleRepository repository;
-    @Mock private HybridKeyManagerTelemetry telemetry;
+    @Mock private PasskeyPrfKeyManagerTelemetry telemetry;
 
     private MeterRegistry meterRegistry;
-    private HybridHealthContributor contributor;
+    private PasskeyPrfHealthContributor contributor;
 
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        contributor   = new HybridHealthContributor(walletProfileQueryPort, repository, meterRegistry, telemetry);
+        contributor   = new PasskeyPrfHealthContributor(walletProfileQueryPort, repository, meterRegistry, telemetry);
     }
 
     // ------------------------------------------------------------------ tenant resolution
 
     @Test
-    void health_tenantNotHybrid_returnsNeutralUp_withoutRunningHybridChecks() {
+    void health_tenantNotPasskeyPrf_returnsNeutralUp_withoutRunningPasskeyPrfChecks() {
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.just(dbModeProfile()));
 
         StepVerifier.create(contributor.health())
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.UP);
-                    assertThat(health.getDetails().get("hybrid_applicable")).isEqualTo(false);
+                    assertThat(health.getDetails().get("passkey_prf_applicable")).isEqualTo(false);
                     assertThat(health.getDetails()).doesNotContainKey("prf_gate_pass_rate");
                     assertThat(health.getDetails()).doesNotContainKey("wrap_handles_total");
                 })
@@ -92,7 +92,7 @@ class HybridHealthContributorTest {
         StepVerifier.create(contributor.health())
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.UP);
-                    assertThat(health.getDetails().get("hybrid_applicable")).isEqualTo(false);
+                    assertThat(health.getDetails().get("passkey_prf_applicable")).isEqualTo(false);
                 })
                 .verifyComplete();
     }
@@ -100,7 +100,7 @@ class HybridHealthContributorTest {
     @Test
     void health_walletProfileQueryFailsUnexpectedly_returnsDown_notNeutralUp() {
         // A genuine dependency failure (e.g. R2DBC outage) while resolving the tenant must
-        // surface as DOWN, not be swallowed into the same neutral UP used for "not hybrid".
+        // surface as DOWN, not be swallowed into the same neutral UP used for "not passkey-prf".
         when(walletProfileQueryPort.queryByCurrentTenant())
                 .thenReturn(Mono.error(new RuntimeException("R2DBC connection refused")));
 
@@ -114,9 +114,9 @@ class HybridHealthContributorTest {
     @Test
     void health_withPrfRateAboveThreshold_returnsUp() {
         // Arrange — 8/10 = 0.80 ≥ 0.75
-        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", TENANT).increment(10);
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", TENANT).increment(8);
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(passkeyPrfProfile()));
+        meterRegistry.counter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", TENANT).increment(10);
+        meterRegistry.counter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", TENANT).increment(8);
         when(repository.count()).thenReturn(Mono.just(5L));
         when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
@@ -135,9 +135,9 @@ class HybridHealthContributorTest {
     @Test
     void health_withPrfRateBelowThreshold_returnsDown() {
         // Arrange — 6/10 = 0.60 < 0.75
-        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", TENANT).increment(10);
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", TENANT).increment(6);
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(passkeyPrfProfile()));
+        meterRegistry.counter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", TENANT).increment(10);
+        meterRegistry.counter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", TENANT).increment(6);
         when(repository.count()).thenReturn(Mono.just(3L));
         when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
@@ -153,7 +153,7 @@ class HybridHealthContributorTest {
     @Test
     void health_withNoAttempts_returnsUpWithNote() {
         // Arrange — counters at zero (no attempts yet)
-        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(passkeyPrfProfile()));
         when(repository.count()).thenReturn(Mono.just(0L));
         when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
@@ -171,11 +171,11 @@ class HybridHealthContributorTest {
     @Test
     void health_ignoresOtherTenantsCounters() {
         // Arrange — cgcom has a healthy 9/10 rate, but a different tenant ("other-tenant")
-        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", TENANT).increment(10);
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", TENANT).increment(9);
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", "other-tenant").increment(10);
-        meterRegistry.counter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", "other-tenant").increment(0);
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(passkeyPrfProfile()));
+        meterRegistry.counter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", TENANT).increment(10);
+        meterRegistry.counter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", TENANT).increment(9);
+        meterRegistry.counter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, "tenant", "other-tenant").increment(10);
+        meterRegistry.counter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_PASSES,   "tenant", "other-tenant").increment(0);
         when(repository.count()).thenReturn(Mono.just(5L));
         when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
@@ -191,7 +191,7 @@ class HybridHealthContributorTest {
 
     @Test
     void health_noOrphanedHandles_saltCoherentUp() {
-        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(passkeyPrfProfile()));
         when(repository.count()).thenReturn(Mono.just(5L));
         when(repository.countOrphaned()).thenReturn(Mono.just(0L));
 
@@ -205,7 +205,7 @@ class HybridHealthContributorTest {
 
     @Test
     void health_orphanedHandlesFound_saltCoherentDown() {
-        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(passkeyPrfProfile()));
         when(repository.count()).thenReturn(Mono.just(5L));
         when(repository.countOrphaned()).thenReturn(Mono.just(2L));
 
@@ -220,7 +220,7 @@ class HybridHealthContributorTest {
 
     @Test
     void health_countOrphanedFails_returnsDown() {
-        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(passkeyPrfProfile()));
         when(repository.count()).thenReturn(Mono.just(5L));
         when(repository.countOrphaned()).thenReturn(Mono.error(new RuntimeException("R2DBC connection refused")));
 
@@ -235,7 +235,7 @@ class HybridHealthContributorTest {
     @Test
     void health_countFails_returnsDown() {
         // Arrange — R2DBC error from count()
-        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(hybridProfile()));
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(passkeyPrfProfile()));
         RuntimeException dbError = new RuntimeException("R2DBC connection refused");
         when(repository.count()).thenReturn(Mono.error(dbError));
         when(repository.countOrphaned()).thenReturn(Mono.just(0L));
@@ -252,8 +252,8 @@ class HybridHealthContributorTest {
 
     // --------------------------------------------------------------- helpers
 
-    private TenantWalletProfile hybridProfile() {
-        return new TenantWalletProfile(TENANT, WalletMode.SERVER, KeyManager.HYBRID, Instant.now(), Instant.now());
+    private TenantWalletProfile passkeyPrfProfile() {
+        return new TenantWalletProfile(TENANT, WalletMode.SERVER, KeyManager.PASSKEY_PRF, Instant.now(), Instant.now());
     }
 
     private TenantWalletProfile dbModeProfile() {

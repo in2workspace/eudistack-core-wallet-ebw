@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.fail;
 
 /**
  * Verifies the CHECK constraints and NOT NULL invariants on
- * {@code hybrid_wrapped_key_handle} (physical no-custody barriers).
+ * {@code passkey_prf_wrapped_key_handle} (physical no-custody barriers).
  *
  * <p>Covered criteria:
  * <ul>
@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.fail;
  * <p>All rejection cases are atomic: no partial row is persisted after the failure.
  *
  * <p>Note: inserts that expect to succeed must first have a matching row in
- * {@code hybrid_prf_salt} due to the composite FK (V4 migration), so helper
+ * {@code passkey_prf_salt} due to the composite FK (V4 migration), so helper
  * {@code insertPrfSalt} is called before each positive-path insert.
  *
  * <p>Spec: EUDISTACK-535 T6; acceptance-criteria.md §1 AC-03; §3 ES-01, ES-03;
@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.fail;
  */
 @Tag("integration")
 @Testcontainers
-class HybridWrappedKeyHandleConstraintIT {
+class PasskeyPrfWrappedKeyHandleConstraintIT {
 
     /** SQLSTATE for check_violation (PostgreSQL). */
     private static final String SQLSTATE_CHECK_VIOLATION = "23514";
@@ -190,7 +190,7 @@ class HybridWrappedKeyHandleConstraintIT {
             conn.createStatement().execute("SET search_path TO " + testSchema);
             try {
                 conn.createStatement().execute(
-                        "INSERT INTO hybrid_wrapped_key_handle "
+                        "INSERT INTO passkey_prf_wrapped_key_handle "
                         + "(holder_id, credential_id, wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk) "
                         + "VALUES ('" + holderId + "', 'cred-null-blob', "
                         + " NULL, "
@@ -247,7 +247,7 @@ class HybridWrappedKeyHandleConstraintIT {
         // Exactly one row must remain
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT count(*) FROM " + testSchema + ".hybrid_wrapped_key_handle "
+                     "SELECT count(*) FROM " + testSchema + ".passkey_prf_wrapped_key_handle "
                      + "WHERE credential_id = '" + credId + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1))
@@ -315,14 +315,14 @@ class HybridWrappedKeyHandleConstraintIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.createStatement().execute("SET search_path TO " + testSchema);
             conn.createStatement().execute(
-                    "INSERT INTO hybrid_prf_salt (holder_id, credential_id, prf_salt) "
+                    "INSERT INTO passkey_prf_salt (holder_id, credential_id, prf_salt) "
                     + "VALUES ('" + hId + "', '" + credId + "', "
                     + " decode('" + hex(new byte[32]) + "', 'hex'))");
         }
     }
 
     private String insertSql(UUID hId, String credId, byte[] blob, byte[] iv, byte[] tag) {
-        return "INSERT INTO hybrid_wrapped_key_handle "
+        return "INSERT INTO passkey_prf_wrapped_key_handle "
                 + "(holder_id, credential_id, wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk) "
                 + "VALUES ('" + hId + "', '" + credId + "', "
                 + " decode('" + hex(blob) + "', 'hex'), "
@@ -334,7 +334,7 @@ class HybridWrappedKeyHandleConstraintIT {
     private void assertNoRow(String credId) throws SQLException {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT count(*) FROM " + testSchema + ".hybrid_wrapped_key_handle "
+                     "SELECT count(*) FROM " + testSchema + ".passkey_prf_wrapped_key_handle "
                      + "WHERE credential_id = '" + credId + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1))
@@ -346,7 +346,7 @@ class HybridWrappedKeyHandleConstraintIT {
     private void assertRowExists(String credId) throws SQLException {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT count(*) FROM " + testSchema + ".hybrid_wrapped_key_handle "
+                     "SELECT count(*) FROM " + testSchema + ".passkey_prf_wrapped_key_handle "
                      + "WHERE credential_id = '" + credId + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1))

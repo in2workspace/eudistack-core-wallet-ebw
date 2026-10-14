@@ -22,10 +22,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component
 public class RateLimitWebFilter implements WebFilter, Ordered {
 
-    private static final String HYBRID_ONBOARDING_INIT = "/api/v1/keys/hybrid/onboarding/init";
-    private static final String HYBRID_ONBOARDING_COMMIT = "/api/v1/keys/hybrid/onboarding/commit";
-    private static final String HYBRID_SIGN_PREPARE = "/api/v1/keys/hybrid/sign/prepare";
-    private static final String HYBRID_SIGN_SUBMIT = "/api/v1/keys/hybrid/sign/submit";
+    private static final String PASSKEY_PRF_ONBOARDING_INIT = "/api/v1/keys/passkey-prf/onboarding/init";
+    private static final String PASSKEY_PRF_ONBOARDING_COMMIT = "/api/v1/keys/passkey-prf/onboarding/commit";
+    private static final String PASSKEY_PRF_SIGN_PREPARE = "/api/v1/keys/passkey-prf/sign/prepare";
+    private static final String PASSKEY_PRF_SIGN_SUBMIT = "/api/v1/keys/passkey-prf/sign/submit";
 
     private final RateLimitProperties properties;
     private final ObjectMapper objectMapper;
@@ -64,8 +64,8 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
                     .then(chain.filter(exchange));
             case "/api/v1/auth/logout" -> checkRateLimit("logout:ip:" + ip, properties.logoutPerIp())
                     .then(chain.filter(exchange));
-            case HYBRID_ONBOARDING_INIT, HYBRID_ONBOARDING_COMMIT, HYBRID_SIGN_PREPARE, HYBRID_SIGN_SUBMIT ->
-                    checkRateLimit("hybrid:ip:" + ip, properties.hybridSignPerIp())
+            case PASSKEY_PRF_ONBOARDING_INIT, PASSKEY_PRF_ONBOARDING_COMMIT, PASSKEY_PRF_SIGN_PREPARE, PASSKEY_PRF_SIGN_SUBMIT ->
+                    checkRateLimit("passkey-prf:ip:" + ip, properties.passkeyPrfSignPerIp())
                             .then(chain.filter(exchange));
             default -> chain.filter(exchange);
         };

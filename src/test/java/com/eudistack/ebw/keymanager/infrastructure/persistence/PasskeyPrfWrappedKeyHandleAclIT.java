@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
 /**
- * Verifies the ACL matrix on {@code hybrid_wrapped_key_handle} using the real
+ * Verifies the ACL matrix on {@code passkey_prf_wrapped_key_handle} using the real
  * {@code ebw_app_role} (not the Testcontainers superuser).
  *
  * <p>All privilege-check tests open a connection as a login user that has been
@@ -36,8 +36,8 @@ import static org.assertj.core.api.Assertions.fail;
  *       (V4 GRANTs {@code SELECT, INSERT} + {@code UPDATE(last_used_at)} to
  *       {@code ebw_app_role}).</li>
  *   <li>Grant USAGE on the schema to {@code ebw_app_role}.</li>
- *   <li>Seed a {@code wallet_user} row, a {@code hybrid_prf_salt} row, and a
- *       {@code hybrid_wrapped_key_handle} row as the superuser (for UPDATE/DELETE tests).</li>
+ *   <li>Seed a {@code wallet_user} row, a {@code passkey_prf_salt} row, and a
+ *       {@code passkey_prf_wrapped_key_handle} row as the superuser (for UPDATE/DELETE tests).</li>
  * </ol>
  *
  * <p>Covered criteria:
@@ -56,7 +56,7 @@ import static org.assertj.core.api.Assertions.fail;
  */
 @Tag("integration")
 @Testcontainers
-class HybridWrappedKeyHandleAclIT {
+class PasskeyPrfWrappedKeyHandleAclIT {
 
     /** SQLSTATE for insufficient_privilege (PostgreSQL). */
     private static final String SQLSTATE_INSUFFICIENT_PRIVILEGE = "42501";
@@ -75,7 +75,7 @@ class HybridWrappedKeyHandleAclIT {
     @Container
     static final PostgreSQLContainer<?> postgres =
             new PostgreSQLContainer<>("postgres:17-alpine")
-                    .withDatabaseName("acl_hybrid_it")
+                    .withDatabaseName("acl_passkey_prf_it")
                     .withUsername("test")
                     .withPassword("test");
 
@@ -104,10 +104,10 @@ class HybridWrappedKeyHandleAclIT {
     // -------------------------------------------------------------------------
 
     @Test
-    void ebw_app_role_can_select_from_hybrid_wrapped_key_handle() throws SQLException {
+    void ebw_app_role_can_select_from_passkey_prf_wrapped_key_handle() throws SQLException {
         try (Connection conn = connectionAsEbwAppRole()) {
             try (ResultSet rs = conn.createStatement().executeQuery(
-                    "SELECT holder_id, credential_id, kdf_algo FROM hybrid_wrapped_key_handle "
+                    "SELECT holder_id, credential_id, kdf_algo FROM passkey_prf_wrapped_key_handle "
                     + "WHERE credential_id = '" + SEEDED_CRED_ID + "'")) {
                 assertThat(rs.next())
                         .as("ebw_app_role must be able to SELECT the seeded row")
@@ -123,7 +123,7 @@ class HybridWrappedKeyHandleAclIT {
     // -------------------------------------------------------------------------
 
     @Test
-    void ebw_app_role_can_insert_into_hybrid_wrapped_key_handle() throws SQLException {
+    void ebw_app_role_can_insert_into_passkey_prf_wrapped_key_handle() throws SQLException {
         UUID newHolder = insertWalletUser();
         String newCred = "cred-acl-insert";
         insertPrfSalt(newHolder, newCred);
@@ -136,7 +136,7 @@ class HybridWrappedKeyHandleAclIT {
         // Verify row was persisted (read as superuser)
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT count(*) FROM " + testSchema + ".hybrid_wrapped_key_handle "
+                     "SELECT count(*) FROM " + testSchema + ".passkey_prf_wrapped_key_handle "
                      + "WHERE credential_id = '" + newCred + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1))
@@ -153,7 +153,7 @@ class HybridWrappedKeyHandleAclIT {
     void ebw_app_role_can_update_last_used_at() throws SQLException {
         try (Connection conn = connectionAsEbwAppRole()) {
             int affected = conn.createStatement().executeUpdate(
-                    "UPDATE hybrid_wrapped_key_handle "
+                    "UPDATE passkey_prf_wrapped_key_handle "
                     + "SET last_used_at = now() "
                     + "WHERE credential_id = '" + SEEDED_CRED_ID + "'");
             assertThat(affected)
@@ -206,7 +206,7 @@ class HybridWrappedKeyHandleAclIT {
         try (Connection conn = connectionAsEbwAppRole()) {
             try {
                 conn.createStatement().execute(
-                        "DELETE FROM hybrid_wrapped_key_handle "
+                        "DELETE FROM passkey_prf_wrapped_key_handle "
                         + "WHERE credential_id = '" + SEEDED_CRED_ID + "'");
                 fail("Expected SQLSTATE 42501 (insufficient_privilege) for DELETE as ebw_app_role "
                         + "but no exception was thrown");
@@ -220,7 +220,7 @@ class HybridWrappedKeyHandleAclIT {
         // Row must still exist
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT count(*) FROM " + testSchema + ".hybrid_wrapped_key_handle "
+                     "SELECT count(*) FROM " + testSchema + ".passkey_prf_wrapped_key_handle "
                      + "WHERE credential_id = '" + SEEDED_CRED_ID + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1))
@@ -231,7 +231,7 @@ class HybridWrappedKeyHandleAclIT {
 
     // -------------------------------------------------------------------------
     // PUBLIC denial — unprivileged login (no ebw_app_role) cannot SELECT
-    // Verifies that REVOKE ALL ON hybrid_wrapped_key_handle FROM PUBLIC is in
+    // Verifies that REVOKE ALL ON passkey_prf_wrapped_key_handle FROM PUBLIC is in
     // effect: a bare login user with no role membership is denied access.
     //
     // PostgreSQL raises 42501 (insufficient_privilege) when the user has schema
@@ -248,12 +248,12 @@ class HybridWrappedKeyHandleAclIT {
         try (Connection conn = connectionAsUnprivilegedLogin()) {
             try {
                 conn.createStatement().executeQuery(
-                        "SELECT 1 FROM hybrid_wrapped_key_handle LIMIT 1");
+                        "SELECT 1 FROM passkey_prf_wrapped_key_handle LIMIT 1");
                 fail("Expected SQLSTATE 42501 or 42P01 for SELECT "
                         + "as unprivileged login but no exception was thrown");
             } catch (SQLException ex) {
                 assertThat(ex.getSQLState())
-                        .as("SELECT on hybrid_wrapped_key_handle must be denied "
+                        .as("SELECT on passkey_prf_wrapped_key_handle must be denied "
                             + "(42501 insufficient_privilege or 42P01 undefined_table) "
                             + "for a login without ebw_app_role — REVOKE ALL FROM PUBLIC is effective")
                         .isIn(SQLSTATE_INSUFFICIENT_PRIVILEGE, SQLSTATE_UNDEFINED_TABLE);
@@ -271,7 +271,7 @@ class HybridWrappedKeyHandleAclIT {
         byte[] originalBlob;
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT wrapped_blob FROM " + testSchema + ".hybrid_wrapped_key_handle "
+                     "SELECT wrapped_blob FROM " + testSchema + ".passkey_prf_wrapped_key_handle "
                      + "WHERE credential_id = '" + SEEDED_CRED_ID + "'")) {
             assertThat(rs.next()).isTrue();
             originalBlob = rs.getBytes("wrapped_blob");
@@ -280,7 +280,7 @@ class HybridWrappedKeyHandleAclIT {
         // Update last_used_at as ebw_app_role
         try (Connection conn = connectionAsEbwAppRole()) {
             conn.createStatement().executeUpdate(
-                    "UPDATE hybrid_wrapped_key_handle "
+                    "UPDATE passkey_prf_wrapped_key_handle "
                     + "SET last_used_at = now() "
                     + "WHERE credential_id = '" + SEEDED_CRED_ID + "'");
         }
@@ -288,7 +288,7 @@ class HybridWrappedKeyHandleAclIT {
         // Verify wrapped_blob has not changed
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT wrapped_blob FROM " + testSchema + ".hybrid_wrapped_key_handle "
+                     "SELECT wrapped_blob FROM " + testSchema + ".passkey_prf_wrapped_key_handle "
                      + "WHERE credential_id = '" + SEEDED_CRED_ID + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getBytes("wrapped_blob"))
@@ -391,7 +391,7 @@ class HybridWrappedKeyHandleAclIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.createStatement().execute("SET search_path TO " + testSchema);
             conn.createStatement().execute(
-                    "INSERT INTO hybrid_prf_salt (holder_id, credential_id, prf_salt) "
+                    "INSERT INTO passkey_prf_salt (holder_id, credential_id, prf_salt) "
                     + "VALUES ('" + hId + "', '" + credId + "', "
                     + " decode('" + hex(new byte[32]) + "', 'hex'))");
         }
@@ -409,7 +409,7 @@ class HybridWrappedKeyHandleAclIT {
         for (int i = 0; i < blob.length; i++) {
             blob[i] = (byte) (i % 256);
         }
-        return "INSERT INTO hybrid_wrapped_key_handle "
+        return "INSERT INTO passkey_prf_wrapped_key_handle "
                 + "(holder_id, credential_id, wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk) "
                 + "VALUES ('" + hId + "', '" + credId + "', "
                 + " decode('" + hex(blob) + "', 'hex'), "
@@ -422,7 +422,7 @@ class HybridWrappedKeyHandleAclIT {
         try (Connection conn = connectionAsEbwAppRole()) {
             try {
                 conn.createStatement().execute(
-                        "UPDATE hybrid_wrapped_key_handle SET " + setClause
+                        "UPDATE passkey_prf_wrapped_key_handle SET " + setClause
                         + " WHERE credential_id = '" + SEEDED_CRED_ID + "'");
                 fail("Expected SQLSTATE 42501 (insufficient_privilege) for UPDATE " + column
                         + " as ebw_app_role but no exception was thrown");

@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * Request DTO for {@code POST /api/v1/keys/hybrid/onboarding/block}.
+ * Request DTO for {@code POST /api/v1/keys/passkey-prf/onboarding/block}.
  *
  * <p>{@code credentialId}/{@code correlationId} are validated but intentionally not threaded
  * into the {@code ONBOARDING_BLOCKED_PRF_UNSUPPORTED} audit event: it is a device-level event

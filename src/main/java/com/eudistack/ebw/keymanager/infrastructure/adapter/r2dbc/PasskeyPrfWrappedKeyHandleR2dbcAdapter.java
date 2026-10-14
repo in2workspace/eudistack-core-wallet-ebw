@@ -14,38 +14,38 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * R2DBC adapter for the {@code hybrid_wrapped_key_handle} table.
+ * R2DBC adapter for the {@code passkey_prf_wrapped_key_handle} table.
  *
  * <p>Uses raw {@link DatabaseClient} SQL because the table has a composite primary key
  * ({@code holder_id, credential_id}), which Spring Data R2DBC does not support
  * natively (technical-design.md §3.2 AD-4). Tenant isolation is via PostgreSQL
  * {@code search_path} set by {@code TenantAwareConnectionFactoryDecorator} (architecture.md §5.3).</p>
  *
- * <p>The DDL for {@code hybrid_wrapped_key_handle} is provided by the V4 Flyway tenant
+ * <p>The DDL for {@code passkey_prf_wrapped_key_handle} is provided by the V4 Flyway tenant
  * migration (US-03, EUDISTACK-535). The {@code holder_id} column is {@code UUID} — all
  * R2DBC bindings use {@link java.util.UUID} to match the column type.</p>
  *
  * <p>Spec: EUDISTACK-534 AC-04, AC-05; architecture.md §5.3.</p>
  */
-public class HybridWrappedKeyHandleR2dbcAdapter implements WrappedKeyHandleRepository {
+public class PasskeyPrfWrappedKeyHandleR2dbcAdapter implements WrappedKeyHandleRepository {
 
     private static final String COUNT_SQL =
-            "SELECT COUNT(*) FROM hybrid_wrapped_key_handle";
+            "SELECT COUNT(*) FROM passkey_prf_wrapped_key_handle";
 
     private static final String COUNT_ORPHANED_SQL =
-            "SELECT COUNT(*) FROM hybrid_wrapped_key_handle h "
-            + "LEFT JOIN hybrid_prf_salt s "
+            "SELECT COUNT(*) FROM passkey_prf_wrapped_key_handle h "
+            + "LEFT JOIN passkey_prf_salt s "
             + "  ON h.holder_id = s.holder_id AND h.credential_id = s.credential_id "
             + "WHERE s.holder_id IS NULL";
 
     private static final String SELECT_SQL =
             "SELECT holder_id, credential_id, wrapped_blob, iv, tag, "
             + "kdf_algo, kdf_version, cnf_jwk, created_at, last_used_at "
-            + "FROM hybrid_wrapped_key_handle "
+            + "FROM passkey_prf_wrapped_key_handle "
             + "WHERE holder_id = :holderId AND credential_id = :credentialId";
 
     private static final String INSERT_SQL =
-            "INSERT INTO hybrid_wrapped_key_handle "
+            "INSERT INTO passkey_prf_wrapped_key_handle "
             + "(holder_id, credential_id, wrapped_blob, iv, tag, "
             + " kdf_algo, kdf_version, cnf_jwk, created_at) "
             + "VALUES (:holderId, :credentialId, :wrappedBlob, :iv, :tag, "
@@ -53,7 +53,7 @@ public class HybridWrappedKeyHandleR2dbcAdapter implements WrappedKeyHandleRepos
 
     private final DatabaseClient databaseClient;
 
-    public HybridWrappedKeyHandleR2dbcAdapter(DatabaseClient databaseClient) {
+    public PasskeyPrfWrappedKeyHandleR2dbcAdapter(DatabaseClient databaseClient) {
         this.databaseClient = databaseClient;
     }
 

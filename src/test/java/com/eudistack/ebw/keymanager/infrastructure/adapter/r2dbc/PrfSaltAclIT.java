@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
 /**
- * Integration tests verifying the ACL on {@code hybrid_prf_salt} as defined in
+ * Integration tests verifying the ACL on {@code passkey_prf_salt} as defined in
  * the Flyway migration {@code V3__create_hybrid_prf_salt.sql}:
  * only {@code SELECT} and {@code INSERT} are granted to {@code ebw_app_role};
  * {@code UPDATE} and {@code DELETE} are explicitly not granted.
@@ -29,9 +29,9 @@ import static org.assertj.core.api.Assertions.fail;
  *
  * <p>Covered criteria:
  * <ul>
- *   <li>AC-03 / ES-03 — {@code ebw_app_role} UPDATE on {@code hybrid_prf_salt}
+ *   <li>AC-03 / ES-03 — {@code ebw_app_role} UPDATE on {@code passkey_prf_salt}
  *       is denied (SQLSTATE 42501)</li>
- *   <li>ES-03 — {@code ebw_app_role} DELETE on {@code hybrid_prf_salt}
+ *   <li>ES-03 — {@code ebw_app_role} DELETE on {@code passkey_prf_salt}
  *       is denied (SQLSTATE 42501)</li>
  *   <li>NFR-S-537-04 — salt row remains intact after both rejected attempts</li>
  *   <li>Positive: SELECT and INSERT work for {@code ebw_app_role}</li>
@@ -98,7 +98,7 @@ class PrfSaltAclIT {
                     "GRANT USAGE ON SCHEMA " + testSchema + " TO ebw_app_role");
         }
 
-        // Apply all tenant migrations — V3 creates hybrid_prf_salt and GRANTs SELECT, INSERT
+        // Apply all tenant migrations — V3 creates passkey_prf_salt and GRANTs SELECT, INSERT
         Flyway.configure()
                 .dataSource(jdbcUrl, "test", "test")
                 .locations("classpath:db/tenant")
@@ -109,7 +109,7 @@ class PrfSaltAclIT {
                 .load()
                 .migrate();
 
-        // Seed a wallet_user row (FK target for hybrid_prf_salt.holder_id)
+        // Seed a wallet_user row (FK target for passkey_prf_salt.holder_id)
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.createStatement().execute(
                     "INSERT INTO " + testSchema + ".wallet_user (id, email) "
@@ -133,7 +133,7 @@ class PrfSaltAclIT {
     private void seedSaltRow(String credentialId, byte[] salt) throws SQLException {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.createStatement().execute(
-                    "INSERT INTO " + testSchema + ".hybrid_prf_salt "
+                    "INSERT INTO " + testSchema + ".passkey_prf_salt "
                     + "(holder_id, credential_id, prf_salt) "
                     + "VALUES ('" + holderUuid + "', '" + credentialId + "', "
                     + "decode('" + bytesToHex(salt) + "', 'hex'))");
@@ -144,7 +144,7 @@ class PrfSaltAclIT {
     private byte[] readSaltDirect(String credentialId) throws SQLException {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              var rs = conn.createStatement().executeQuery(
-                     "SELECT prf_salt FROM " + testSchema + ".hybrid_prf_salt "
+                     "SELECT prf_salt FROM " + testSchema + ".passkey_prf_salt "
                      + "WHERE credential_id = '" + credentialId + "'")) {
             assertThat(rs.next()).isTrue();
             return rs.getBytes("prf_salt");
@@ -154,7 +154,7 @@ class PrfSaltAclIT {
     // ------------------------------------------------------------------ positive: SELECT
 
     @Test
-    void ebwAppRole_canSelect_fromHybridPrfSalt() throws SQLException {
+    void ebwAppRole_canSelect_fromPasskeyPrfPrfSalt() throws SQLException {
         String credId = "cred-acl-select-1";
         byte[] salt = new byte[32];
         salt[0] = 0x11;
@@ -162,7 +162,7 @@ class PrfSaltAclIT {
 
         try (Connection conn = ebwAppConnection();
              var rs = conn.createStatement().executeQuery(
-                     "SELECT prf_salt FROM hybrid_prf_salt "
+                     "SELECT prf_salt FROM passkey_prf_salt "
                      + "WHERE holder_id = '" + holderUuid + "' AND credential_id = '" + credId + "'")) {
             assertThat(rs.next()).as("ebw_app_role must be able to SELECT").isTrue();
             byte[] readSalt = rs.getBytes("prf_salt");
@@ -173,7 +173,7 @@ class PrfSaltAclIT {
     // ------------------------------------------------------------------ positive: INSERT
 
     @Test
-    void ebwAppRole_canInsert_intoHybridPrfSalt() throws SQLException {
+    void ebwAppRole_canInsert_intoPasskeyPrfPrfSalt() throws SQLException {
         String credId = "cred-acl-insert-1";
         byte[] salt = new byte[32];
         salt[1] = 0x22;
@@ -181,7 +181,7 @@ class PrfSaltAclIT {
         try (Connection conn = ebwAppConnection()) {
             // Must not throw
             conn.createStatement().execute(
-                    "INSERT INTO hybrid_prf_salt (holder_id, credential_id, prf_salt) "
+                    "INSERT INTO passkey_prf_salt (holder_id, credential_id, prf_salt) "
                     + "VALUES ('" + holderUuid + "', '" + credId + "', "
                     + "decode('" + bytesToHex(salt) + "', 'hex'))");
         }
@@ -205,7 +205,7 @@ class PrfSaltAclIT {
                 byte[] newSalt = new byte[32];
                 newSalt[2] = (byte) 0xFF;
                 conn.createStatement().execute(
-                        "UPDATE hybrid_prf_salt SET prf_salt = "
+                        "UPDATE passkey_prf_salt SET prf_salt = "
                         + "decode('" + bytesToHex(newSalt) + "', 'hex') "
                         + "WHERE credential_id = '" + credId + "'");
                 fail("Expected SQLSTATE 42501 for UPDATE as ebw_app_role");
@@ -233,7 +233,7 @@ class PrfSaltAclIT {
         try (Connection conn = ebwAppConnection()) {
             try {
                 conn.createStatement().execute(
-                        "DELETE FROM hybrid_prf_salt WHERE credential_id = '" + credId + "'");
+                        "DELETE FROM passkey_prf_salt WHERE credential_id = '" + credId + "'");
                 fail("Expected SQLSTATE 42501 for DELETE as ebw_app_role");
             } catch (SQLException ex) {
                 assertThat(ex.getSQLState())

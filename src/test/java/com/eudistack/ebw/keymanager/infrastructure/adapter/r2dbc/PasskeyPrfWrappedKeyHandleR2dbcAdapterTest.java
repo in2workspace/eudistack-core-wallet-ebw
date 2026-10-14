@@ -16,23 +16,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link HybridWrappedKeyHandleR2dbcAdapter} — raw SQL over the composite-key table: counts, the
+ * Unit tests for {@link PasskeyPrfWrappedKeyHandleR2dbcAdapter} — raw SQL over the composite-key table: counts, the
  * row → {@link WrappedKeyHandle} mapping and the duplicate-commit translation. Schema and constraints are covered
- * by the {@code HybridWrappedKeyHandle*IT} suites.
+ * by the {@code PasskeyPrfWrappedKeyHandle*IT} suites.
  */
-class HybridWrappedKeyHandleR2dbcAdapterTest {
+class PasskeyPrfWrappedKeyHandleR2dbcAdapterTest {
 
     private static final String HOLDER_ID = UUID.randomUUID().toString();
     private static final String CREDENTIAL_ID = "cred-1";
     private static final Instant CREATED_AT = Instant.parse("2026-05-26T10:00:00Z");
 
     private DatabaseClientStub db;
-    private HybridWrappedKeyHandleR2dbcAdapter adapter;
+    private PasskeyPrfWrappedKeyHandleR2dbcAdapter adapter;
 
     @BeforeEach
     void setUp() {
         db = new DatabaseClientStub();
-        adapter = new HybridWrappedKeyHandleR2dbcAdapter(db.client);
+        adapter = new PasskeyPrfWrappedKeyHandleR2dbcAdapter(db.client);
     }
 
     @Test
@@ -42,7 +42,7 @@ class HybridWrappedKeyHandleR2dbcAdapterTest {
 
         // Act + Assert
         StepVerifier.create(adapter.count()).expectNext(7L).verifyComplete();
-        assertThat(db.executedSql.get(0)).isEqualTo("SELECT COUNT(*) FROM hybrid_wrapped_key_handle");
+        assertThat(db.executedSql.get(0)).isEqualTo("SELECT COUNT(*) FROM passkey_prf_wrapped_key_handle");
     }
 
     @Test
@@ -52,7 +52,7 @@ class HybridWrappedKeyHandleR2dbcAdapterTest {
 
         // Act + Assert
         StepVerifier.create(adapter.countOrphaned()).expectNext(0L).verifyComplete();
-        assertThat(db.executedSql.get(0)).contains("LEFT JOIN hybrid_prf_salt");
+        assertThat(db.executedSql.get(0)).contains("LEFT JOIN passkey_prf_salt");
     }
 
     @Test
@@ -108,7 +108,7 @@ class HybridWrappedKeyHandleR2dbcAdapterTest {
 
         // Assert
         StepVerifier.create(result).verifyComplete();
-        assertThat(db.executedSql.get(0)).startsWith("INSERT INTO hybrid_wrapped_key_handle");
+        assertThat(db.executedSql.get(0)).startsWith("INSERT INTO passkey_prf_wrapped_key_handle");
         assertThat(db.bindings)
                 .containsEntry("holderId", UUID.fromString(HOLDER_ID))
                 .containsEntry("credentialId", CREDENTIAL_ID)

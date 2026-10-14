@@ -22,12 +22,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit tests for {@link RateLimitWebFilter} — per-IP budgets on the public auth and hybrid key endpoints, the
+ * Unit tests for {@link RateLimitWebFilter} — per-IP budgets on the public auth and passkey-prf key endpoints, the
  * RFC 7807 429 response written by the filter itself, and client IP resolution.
  */
 class RateLimitWebFilterTest {
 
-    // registerPerIp=2, verifyPerIp=2, refreshPerIp=2, logoutPerIp=2, hybridSignPerIp=2, window=1h
+    // registerPerIp=2, verifyPerIp=2, refreshPerIp=2, logoutPerIp=2, passkeyPrfSignPerIp=2, window=1h
     private static final RateLimitProperties PROPERTIES =
             new RateLimitProperties(10, 2, 10, 2, 2, 2, 2, Duration.ofHours(1));
 
@@ -45,7 +45,7 @@ class RateLimitWebFilterTest {
     @ParameterizedTest
     @ValueSource(strings = {
             "/api/v1/auth/register", "/api/v1/auth/verify-email", "/api/v1/auth/refresh", "/api/v1/auth/logout",
-            "/api/v1/keys/hybrid/onboarding/init", "/api/v1/keys/hybrid/sign/submit"})
+            "/api/v1/keys/passkey-prf/onboarding/init", "/api/v1/keys/passkey-prf/sign/submit"})
     void filter_limitedEndpointOverBudget_returns429ProblemWithRetryAfter(String path) {
         // Arrange
         StepVerifier.create(filter.filter(post(path, "10.0.0.1"), chain)).verifyComplete();
@@ -67,13 +67,13 @@ class RateLimitWebFilterTest {
     }
 
     @Test
-    void filter_hybridEndpoints_shareOneBudgetPerIp() {
+    void filter_passkeyPrfEndpoints_shareOneBudgetPerIp() {
         // Arrange
-        StepVerifier.create(filter.filter(post("/api/v1/keys/hybrid/onboarding/commit", "10.0.0.2"), chain))
+        StepVerifier.create(filter.filter(post("/api/v1/keys/passkey-prf/onboarding/commit", "10.0.0.2"), chain))
                 .verifyComplete();
-        StepVerifier.create(filter.filter(post("/api/v1/keys/hybrid/sign/prepare", "10.0.0.2"), chain))
+        StepVerifier.create(filter.filter(post("/api/v1/keys/passkey-prf/sign/prepare", "10.0.0.2"), chain))
                 .verifyComplete();
-        var third = post("/api/v1/keys/hybrid/onboarding/init", "10.0.0.2");
+        var third = post("/api/v1/keys/passkey-prf/onboarding/init", "10.0.0.2");
 
         // Act
         StepVerifier.create(filter.filter(third, chain)).verifyComplete();

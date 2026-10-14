@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * R2DBC row-mapping POJO for the {@code hybrid_prf_salt} table.
+ * R2DBC row-mapping POJO for the {@code passkey_prf_salt} table.
  *
  * <p>Used exclusively by {@link PrfSaltRepository} raw-SQL mappings via
  * {@code DatabaseClient}. Spring Data's {@code ReactiveCrudRepository} is not used

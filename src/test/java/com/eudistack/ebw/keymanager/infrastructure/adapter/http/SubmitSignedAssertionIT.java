@@ -45,7 +45,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * Integration tests for {@code POST /api/v1/keys/hybrid/sign/submit}.
+ * Integration tests for {@code POST /api/v1/keys/passkey-prf/sign/submit}.
  *
  * <p>Also covers T13 (holder isolation — H2 cannot submit with H1's correlation_id)
  * and T14 (NFR-S-536-03/04 no-leak in error responses).</p>
@@ -78,14 +78,14 @@ import static org.mockito.Mockito.when;
 class SubmitSignedAssertionIT {
 
     private static final String SCHEMA_SUFFIX = "_business_wallet";
-    private static final String HYBRID_TENANT = "hsubmit";
+    private static final String PASSKEY_PRF_TENANT = "hsubmit";
     private static final String DB_TENANT     = "hsubmitdb";
     private static final UUID   H1_UUID       = UUID.fromString("11111111-bbbb-cccc-dddd-eeeeeeeeeeee");
     private static final UUID   H2_UUID       = UUID.fromString("22222222-bbbb-cccc-dddd-eeeeeeeeeeee");
     private static final String H1_BEARER     = "submit-h1-bearer";
     private static final String H2_BEARER     = "submit-h2-bearer";
-    private static final String PREPARE_URL   = "/api/v1/keys/hybrid/sign/prepare";
-    private static final String SUBMIT_URL    = "/api/v1/keys/hybrid/sign/submit";
+    private static final String PREPARE_URL   = "/api/v1/keys/passkey-prf/sign/prepare";
+    private static final String SUBMIT_URL    = "/api/v1/keys/passkey-prf/sign/submit";
     private static final String CRED_ID       = "cred-submit-1";
 
     private static final byte[] PRF_SALT   = new byte[32];
@@ -139,11 +139,11 @@ class SubmitSignedAssertionIT {
                     "DO $$ BEGIN CREATE ROLE config_manager_role; "
                     + "EXCEPTION WHEN duplicate_object THEN NULL; END $$");
             conn.createStatement().execute(
-                    "CREATE SCHEMA IF NOT EXISTS " + HYBRID_TENANT + SCHEMA_SUFFIX);
+                    "CREATE SCHEMA IF NOT EXISTS " + PASSKEY_PRF_TENANT + SCHEMA_SUFFIX);
             conn.createStatement().execute(
                     "CREATE SCHEMA IF NOT EXISTS " + DB_TENANT + SCHEMA_SUFFIX);
         }
-        runTenantMigrations(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX);
+        runTenantMigrations(jdbcUrl, PASSKEY_PRF_TENANT + SCHEMA_SUFFIX);
         runTenantMigrations(jdbcUrl, DB_TENANT + SCHEMA_SUFFIX);
     }
 
@@ -161,7 +161,7 @@ class SubmitSignedAssertionIT {
 
     @BeforeEach
     void setUp() throws SQLException {
-        seedWalletProfile(HYBRID_TENANT, "server", "hybrid");
+        seedWalletProfile(PASSKEY_PRF_TENANT, "server", "passkey-prf");
         seedWalletProfile(DB_TENANT, "server", "db");
         when(tokenSigner.verify(H1_BEARER)).thenReturn(
                 Map.of("sub", H1_UUID.toString(), "email", "h1@test.com"));
@@ -182,7 +182,7 @@ class SubmitSignedAssertionIT {
         String signature = signWithHolderKey(signingInput);
 
         webClient.post().uri(SUBMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + H1_BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of(
@@ -223,7 +223,7 @@ class SubmitSignedAssertionIT {
         String dummySig = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
         webClient.post().uri(SUBMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + H1_BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of(
@@ -248,7 +248,7 @@ class SubmitSignedAssertionIT {
         String forgedSig = signWith(signingInput, attackerKey);
 
         webClient.post().uri(SUBMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + H1_BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of(
@@ -271,7 +271,7 @@ class SubmitSignedAssertionIT {
         String signature = signWithHolderKey(signingInput);
 
         webClient.post().uri(SUBMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + H2_BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of(
@@ -289,7 +289,7 @@ class SubmitSignedAssertionIT {
         String dummySig = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
         webClient.post().uri(SUBMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + H1_BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of(
@@ -315,7 +315,7 @@ class SubmitSignedAssertionIT {
      */
     private Map<String, Object> callPrepare(String bearer) {
         return webClient.post().uri(PREPARE_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + bearer)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", CRED_ID, "payload",
@@ -333,7 +333,7 @@ class SubmitSignedAssertionIT {
      */
     private Map<String, Object> callSubmit(String bearer, String correlationId, String signature) {
         return webClient.post().uri(SUBMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + bearer)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of(

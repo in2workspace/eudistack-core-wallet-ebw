@@ -5,7 +5,7 @@ import com.eudistack.ebw.keymanager.application.PrfSaltUseCase;
 import com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
-import com.eudistack.ebw.keymanager.infrastructure.observability.HybridSignTelemetry;
+import com.eudistack.ebw.keymanager.infrastructure.observability.PasskeyPrfSignTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
@@ -48,7 +48,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * Integration test verifying that OTEL spans for the hybrid signing handshake carry
+ * Integration test verifying that OTEL spans for the passkey-prf signing handshake carry
  * the {@code correlation_id} attribute on both success and error paths.
  *
  * <p>Specifically validates the B2 fix: {@code recordPrepareError} now receives the
@@ -68,14 +68,14 @@ import static org.mockito.Mockito.when;
 @AutoConfigureWebTestClient
 @ActiveProfiles("integration")
 @Testcontainers
-@Import(HybridSignTracingIT.TracingTestConfig.class)
-class HybridSignTracingIT {
+@Import(PasskeyPrfSignTracingIT.TracingTestConfig.class)
+class PasskeyPrfSignTracingIT {
 
     private static final String SCHEMA_SUFFIX  = "_business_wallet";
-    private static final String HYBRID_TENANT  = "htracing";
+    private static final String PASSKEY_PRF_TENANT  = "htracing";
     private static final UUID   HOLDER_UUID    = UUID.fromString("22222222-aaaa-bbbb-cccc-dddddddddddd");
-    private static final String BEARER         = "hybrid-tracing-bearer";
-    private static final String PREPARE_URL    = "/api/v1/keys/hybrid/sign/prepare";
+    private static final String BEARER         = "passkey-prf-tracing-bearer";
+    private static final String PREPARE_URL    = "/api/v1/keys/passkey-prf/sign/prepare";
     private static final String CRED_ID        = "cred-tracing-1";
 
     private static final byte[] PRF_SALT   = new byte[32];
@@ -90,7 +90,7 @@ class HybridSignTracingIT {
     @Container
     static final PostgreSQLContainer<?> postgres =
             new PostgreSQLContainer<>("postgres:16-alpine")
-                    .withDatabaseName("hybrid_tracing_it")
+                    .withDatabaseName("passkey_prf_tracing_it")
                     .withUsername("test")
                     .withPassword("test");
 
@@ -99,11 +99,11 @@ class HybridSignTracingIT {
         String host = postgres.getHost();
         int port = postgres.getMappedPort(5432);
         registry.add("spring.r2dbc.url", () ->
-                "r2dbc:postgresql://" + host + ":" + port + "/hybrid_tracing_it");
+                "r2dbc:postgresql://" + host + ":" + port + "/passkey_prf_tracing_it");
         registry.add("spring.r2dbc.username", () -> "test");
         registry.add("spring.r2dbc.password", () -> "test");
         registry.add("spring.flyway.url", () ->
-                "jdbc:postgresql://" + host + ":" + port + "/hybrid_tracing_it");
+                "jdbc:postgresql://" + host + ":" + port + "/passkey_prf_tracing_it");
         registry.add("spring.flyway.user", () -> "test");
         registry.add("spring.flyway.password", () -> "test");
         registry.add("spring.flyway.default-schema", () -> "public");
@@ -128,13 +128,13 @@ class HybridSignTracingIT {
                     "DO $$ BEGIN CREATE ROLE config_manager_role; "
                     + "EXCEPTION WHEN duplicate_object THEN NULL; END $$");
             conn.createStatement().execute(
-                    "CREATE SCHEMA IF NOT EXISTS " + HYBRID_TENANT + SCHEMA_SUFFIX);
+                    "CREATE SCHEMA IF NOT EXISTS " + PASSKEY_PRF_TENANT + SCHEMA_SUFFIX);
         }
         Flyway.configure()
                 .dataSource(jdbcUrl, "test", "test")
                 .locations("classpath:db/tenant")
-                .defaultSchema(HYBRID_TENANT + SCHEMA_SUFFIX)
-                .schemas(HYBRID_TENANT + SCHEMA_SUFFIX)
+                .defaultSchema(PASSKEY_PRF_TENANT + SCHEMA_SUFFIX)
+                .schemas(PASSKEY_PRF_TENANT + SCHEMA_SUFFIX)
                 .table("flyway_schema_history")
                 .baselineOnMigrate(true)
                 .load()
@@ -143,7 +143,7 @@ class HybridSignTracingIT {
 
     @BeforeEach
     void setUp() throws SQLException {
-        seedWalletProfile(HYBRID_TENANT, "server", "hybrid");
+        seedWalletProfile(PASSKEY_PRF_TENANT, "server", "passkey-prf");
         when(tokenSigner.verify(BEARER)).thenReturn(
                 Map.of("sub", HOLDER_UUID.toString(), "email", "test@test.com"));
         when(wrappedKeyHandleRepository.findBy(any(), any()))
@@ -185,7 +185,7 @@ class HybridSignTracingIT {
         when(prfSaltUseCase.getForHolder(any(), any(), any())).thenReturn(Mono.just(PRF_SALT));
 
         String correlationId = webClient.post().uri(PREPARE_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
@@ -196,9 +196,9 @@ class HybridSignTracingIT {
                 .get("correlation_id").toString();
 
         List<SpanData> spans = spanExporter.getFinishedSpanItems().stream()
-                .filter(s -> HybridSignTelemetry.SPAN_PREPARE.equals(s.getName()))
+                .filter(s -> PasskeyPrfSignTelemetry.SPAN_PREPARE.equals(s.getName()))
                 .toList();
-        assertThat(spans).as("span '%s' must be emitted on prepare success", HybridSignTelemetry.SPAN_PREPARE)
+        assertThat(spans).as("span '%s' must be emitted on prepare success", PasskeyPrfSignTelemetry.SPAN_PREPARE)
                 .isNotEmpty();
         String spanCorrelationId = spans.get(0).getAttributes().get(AttributeKey.stringKey("correlation_id"));
         assertThat(spanCorrelationId)
@@ -216,7 +216,7 @@ class HybridSignTracingIT {
                 .thenReturn(Mono.error(new PrfSaltNotFoundException(CRED_ID)));
 
         webClient.post().uri(PREPARE_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
@@ -224,9 +224,9 @@ class HybridSignTracingIT {
                 .expectStatus().isNotFound();
 
         List<SpanData> spans = spanExporter.getFinishedSpanItems().stream()
-                .filter(s -> HybridSignTelemetry.SPAN_PREPARE.equals(s.getName()))
+                .filter(s -> PasskeyPrfSignTelemetry.SPAN_PREPARE.equals(s.getName()))
                 .toList();
-        assertThat(spans).as("span '%s' must be emitted on prepare error", HybridSignTelemetry.SPAN_PREPARE)
+        assertThat(spans).as("span '%s' must be emitted on prepare error", PasskeyPrfSignTelemetry.SPAN_PREPARE)
                 .isNotEmpty();
         String spanCorrelationId = spans.get(0).getAttributes().get(AttributeKey.stringKey("correlation_id"));
         assertThat(spanCorrelationId)

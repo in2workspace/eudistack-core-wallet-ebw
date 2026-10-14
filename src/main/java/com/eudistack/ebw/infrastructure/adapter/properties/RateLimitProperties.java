@@ -12,7 +12,7 @@ public record RateLimitProperties(
         int verifyPerIp,
         int refreshPerIp,
         int logoutPerIp,
-        int hybridSignPerIp,
+        int passkeyPrfSignPerIp,
         Duration window
 ) {
 }

@@ -1,6 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.observability;
 
-import com.eudistack.ebw.keymanager.domain.port.HybridKeyManagerTelemetryPort;
+import com.eudistack.ebw.keymanager.domain.port.PasskeyPrfKeyManagerTelemetryPort;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -16,15 +16,15 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 @RequiredArgsConstructor
-public class HybridKeyManagerTelemetry implements HybridKeyManagerTelemetryPort {
+public class PasskeyPrfKeyManagerTelemetry implements PasskeyPrfKeyManagerTelemetryPort {
 
-    private static final Logger log = LoggerFactory.getLogger(HybridKeyManagerTelemetry.class);
+    private static final Logger log = LoggerFactory.getLogger(PasskeyPrfKeyManagerTelemetry.class);
 
-    public static final String METRIC_PRF_ATTEMPTS = "hybrid.prf_gate.attempts.total";
-    public static final String METRIC_PRF_PASSES   = "hybrid.prf_gate.passes.total";
-    public static final String METRIC_WRAP_HANDLES = "hybrid.wrap_handles.total";
-    public static final String METRIC_SIGN_LATENCY = "hybrid.sign.latency";
-    public static final String METRIC_SIGN_ERRORS  = "hybrid.sign.errors.total";
+    public static final String METRIC_PRF_ATTEMPTS = "passkey_prf.prf_gate.attempts.total";
+    public static final String METRIC_PRF_PASSES   = "passkey_prf.prf_gate.passes.total";
+    public static final String METRIC_WRAP_HANDLES = "passkey_prf.wrap_handles.total";
+    public static final String METRIC_SIGN_LATENCY = "passkey_prf.sign.latency";
+    public static final String METRIC_SIGN_ERRORS  = "passkey_prf.sign.errors.total";
     public static final String TAG_TENANT          = "tenant";
 
     private final MeterRegistry meterRegistry;
@@ -33,12 +33,12 @@ public class HybridKeyManagerTelemetry implements HybridKeyManagerTelemetryPort 
 
     public void recordPrfAttempt(String tenant) {
         meterRegistry.counter(METRIC_PRF_ATTEMPTS, TAG_TENANT, tenant).increment();
-        log.debug("hybrid.prf_gate attempt tenant={}", tenant);
+        log.debug("passkey_prf.prf_gate attempt tenant={}", tenant);
     }
 
     public void recordPrfPass(String tenant) {
         meterRegistry.counter(METRIC_PRF_PASSES, TAG_TENANT, tenant).increment();
-        log.debug("hybrid.prf_gate pass tenant={}", tenant);
+        log.debug("passkey_prf.prf_gate pass tenant={}", tenant);
     }
 
     public void recordSignLatency(Duration duration, String tenant) {
@@ -50,7 +50,7 @@ public class HybridKeyManagerTelemetry implements HybridKeyManagerTelemetryPort 
 
     public void recordSignError(String tenant) {
         meterRegistry.counter(METRIC_SIGN_ERRORS, TAG_TENANT, tenant).increment();
-        log.debug("hybrid.sign.error tenant={}", tenant);
+        log.debug("passkey_prf.sign.error tenant={}", tenant);
     }
 
     public void updateWrapHandlesTotal(String tenant, long count) {
@@ -61,7 +61,7 @@ public class HybridKeyManagerTelemetry implements HybridKeyManagerTelemetryPort 
         AtomicLong holder = new AtomicLong(0);
         Gauge.builder(METRIC_WRAP_HANDLES, holder, AtomicLong::get)
                 .tag(TAG_TENANT, tenant)
-                .description("Total rows in hybrid_wrapped_key_handle for this tenant (updated on each health check)")
+                .description("Total rows in passkey_prf_wrapped_key_handle for this tenant (updated on each health check)")
                 .register(meterRegistry);
         return holder;
     }

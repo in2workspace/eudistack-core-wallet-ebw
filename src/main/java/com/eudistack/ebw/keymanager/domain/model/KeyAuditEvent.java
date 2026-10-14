@@ -74,15 +74,15 @@ public record KeyAuditEvent(
         SIGN_TIMEOUT,
         /** A dependency (DB) was unavailable during signing (ES-04). */
         SIGN_DEPENDENCY_FAILURE,
-        /** Holder accepted the multi-device constraint before hybrid onboarding (US-06, EUDISTACK-538). */
+        /** Holder accepted the multi-device constraint before passkey-prf onboarding (US-06, EUDISTACK-538). */
         CONSTRAINT_ACCEPTED,
         /** Holder key wrapped and committed after client-side generation (US-08, EUDISTACK-540). */
         WRAP_COMPLETED,
-        /** Holder key unwrapped and signing completed in hybrid two-step flow (US-04/US-08). */
+        /** Holder key unwrapped and signing completed in passkey-prf two-step flow (US-04/US-08). */
         UNWRAP_SIGN_COMPLETED,
-        /** Holder key unwrap failed during hybrid signing (US-04/US-08). */
+        /** Holder key unwrap failed during passkey-prf signing (US-04/US-08). */
         UNWRAP_FAILED,
-        /** Hybrid onboarding blocked — holder device does not support Passkey PRF (US-08, EUDISTACK-540). */
+        /** passkey+prf onboarding blocked — holder device does not support Passkey PRF (US-08, EUDISTACK-540). */
         ONBOARDING_BLOCKED_PRF_UNSUPPORTED
     }
 
@@ -191,7 +191,7 @@ public record KeyAuditEvent(
     }
 
     /**
-     * Factory for US-08 unwrap-sign-completed events — hybrid two-step signing handshake succeeded.
+     * Factory for US-08 unwrap-sign-completed events — passkey-prf two-step signing handshake succeeded.
      */
     public static KeyAuditEvent forUnwrapSignCompleted(
             String tenantId,
@@ -211,7 +211,7 @@ public record KeyAuditEvent(
     }
 
     /**
-     * Factory for US-08 unwrap-failed events — hybrid signing handshake failed.
+     * Factory for US-08 unwrap-failed events — passkey-prf signing handshake failed.
      *
      * <p>{@code jkt} may be {@code null} when {@code cnf.jwk} could not be parsed
      * (e.g. malformed submission) and the public key thumbprint was therefore not computable.</p>

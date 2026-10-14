@@ -46,11 +46,11 @@ public interface KeyManagerPort {
     // Added here as workaround per EUDISTACK-533 R-1 decision (user approved 2026-06-16).
 
     /**
-     * Initiates the hybrid (Passkey PRF) signing handshake.
+     * Initiates the passkey+prf signing handshake.
      *
      * <p>The default implementation rejects with {@link UnsupportedOperationException} so
      * that existing {@link KeyManagerPort} adapters ({@code DbKeyManagerService}) do not need
-     * to implement this method — it is only meaningful for {@code HybridKeyManagerAdapter}.</p>
+     * to implement this method — it is only meaningful for {@code PasskeyPrfKeyManagerAdapter}.</p>
      *
      * <p>Spec: EUDISTACK-533 FR-03, AC-03.</p>
      */
@@ -60,7 +60,7 @@ public interface KeyManagerPort {
     }
 
     /**
-     * Finalises the hybrid signing handshake and produces the key-binding JWT.
+     * Finalises the passkey-prf signing handshake and produces the key-binding JWT.
      *
      * <p>The default implementation rejects with {@link UnsupportedOperationException} so
      * that existing {@link KeyManagerPort} adapters do not need to implement this method.</p>

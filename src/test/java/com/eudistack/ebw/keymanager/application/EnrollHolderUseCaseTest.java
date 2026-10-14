@@ -9,7 +9,7 @@ import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
 import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
 import com.eudistack.ebw.keymanager.domain.model.KeyAuditEventAssertions;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
-import com.eudistack.ebw.keymanager.domain.port.HybridKeyManagerTelemetryPort;
+import com.eudistack.ebw.keymanager.domain.port.PasskeyPrfKeyManagerTelemetryPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
 import io.micrometer.tracing.Span;
@@ -66,7 +66,7 @@ class EnrollHolderUseCaseTest {
 
     @Mock private PrfSaltUseCase prfSaltUseCase;
     @Mock private WrappedKeyHandleRepository repository;
-    @Mock private HybridKeyManagerTelemetryPort telemetry;
+    @Mock private PasskeyPrfKeyManagerTelemetryPort telemetry;
     @Mock private KeyAuditPort auditPort;
     @Mock private Tracer tracer;
     @Mock private Span span;
@@ -213,7 +213,7 @@ class EnrollHolderUseCaseTest {
                 .verify();
     }
 
-    // AC-03 (cnf_jwk must not contain "d") is validated by HybridOnboardingController before
+    // AC-03 (cnf_jwk must not contain "d") is validated by PasskeyPrfOnboardingController before
     // reaching this use case — see EnrollHolderControllerIT for coverage.
 
     @Test

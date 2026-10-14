@@ -31,18 +31,18 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 
 /**
- * REST controller for the hybrid (Passkey PRF) onboarding flow.
+ * REST controller for the passkey+prf onboarding flow.
  *
  * <p>Endpoints:
  * <ul>
- *   <li>{@code POST /api/v1/keys/hybrid/onboarding/init} — returns the PRF salt and KDF
+ *   <li>{@code POST /api/v1/keys/passkey-prf/onboarding/init} — returns the PRF salt and KDF
  *       parameters so the Wallet PWA can derive the wrap key client-side (200 OK).</li>
- *   <li>{@code POST /api/v1/keys/hybrid/onboarding/commit} — receives and persists the
+ *   <li>{@code POST /api/v1/keys/passkey-prf/onboarding/commit} — receives and persists the
  *       AES-256-GCM-wrapped holder private key (201 Created).</li>
  * </ul>
  *
  * <p>Both endpoints reject with {@code 403} if the tenant's wallet profile is not
- * {@code (SERVER, HYBRID)}, preventing non-hybrid tenants from reaching these routes.</p>
+ * {@code (SERVER, PASSKEY_PRF)}, preventing non-passkey-prf tenants from reaching these routes.</p>
  *
  * <p>The {@code holder_id} is extracted from the DPoP-bound JWT session and MUST NOT be
  * accepted from the request body (AC-06; architecture.md §8.1).</p>
@@ -50,15 +50,15 @@ import java.util.Map;
  * <p>Spec: EUDISTACK-534 AC-01..AC-07, ES-01..ES-05; architecture.md §6.1.</p>
  */
 @RestController
-@RequestMapping("/api/v1/keys/hybrid/onboarding")
+@RequestMapping("/api/v1/keys/passkey-prf/onboarding")
 @Validated
-public class HybridOnboardingController {
+public class PasskeyPrfOnboardingController {
 
     private final EnrollHolderUseCase enrollHolderUseCase;
     private final WalletProfileQueryPort walletProfileQueryPort;
     private final ObjectMapper objectMapper;
 
-    public HybridOnboardingController(EnrollHolderUseCase enrollHolderUseCase,
+    public PasskeyPrfOnboardingController(EnrollHolderUseCase enrollHolderUseCase,
                                        WalletProfileQueryPort walletProfileQueryPort,
                                        ObjectMapper objectMapper) {
         this.enrollHolderUseCase = enrollHolderUseCase;
@@ -67,7 +67,7 @@ public class HybridOnboardingController {
     }
 
     /**
-     * Initialises the hybrid onboarding flow for a credential.
+     * Initialises the passkey-prf onboarding flow for a credential.
      *
      * <p>Returns the PRF salt (32 bytes, base64url) and static KDF parameters. The Wallet PWA
      * uses these to execute the WebAuthn PRF ceremony and derive the wrap key client-side.
@@ -85,7 +85,7 @@ public class HybridOnboardingController {
         String holderId = auth.getUserId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(this::requireHybridProfile)
+                .flatMap(this::requirePasskeyPrfProfile)
                 .flatMap(profile -> Mono.deferContextual(ctx -> {
                     String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
                     return enrollHolderUseCase.init(tenantId, holderId, request);
@@ -123,7 +123,7 @@ public class HybridOnboardingController {
         String holderId = auth.getUserId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(this::requireHybridProfile)
+                .flatMap(this::requirePasskeyPrfProfile)
                 .flatMap(profile -> Mono.deferContextual(ctx -> {
                     String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
                     return enrollHolderUseCase.commit(tenantId, holderId, request);
@@ -151,7 +151,7 @@ public class HybridOnboardingController {
         String holderId = auth.getUserId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(this::requireHybridProfile)
+                .flatMap(this::requirePasskeyPrfProfile)
                 .flatMap(profile -> Mono.deferContextual(ctx -> {
                     String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
                     return enrollHolderUseCase.recordPrfUnsupported(tenantId, holderId)
@@ -161,11 +161,11 @@ public class HybridOnboardingController {
     }
 
     /**
-     * Rejects tenants whose wallet profile is not {@code (SERVER, HYBRID)} with an opaque
+     * Rejects tenants whose wallet profile is not {@code (SERVER, PASSKEY_PRF)} with an opaque
      * {@link TenantWalletProfileUnsupportedException} (403), shared by every onboarding endpoint.
      */
-    private Mono<TenantWalletProfile> requireHybridProfile(TenantWalletProfile profile) {
-        if (profile.walletMode() != WalletMode.SERVER || profile.keyManager() != KeyManager.HYBRID) {
+    private Mono<TenantWalletProfile> requirePasskeyPrfProfile(TenantWalletProfile profile) {
+        if (profile.walletMode() != WalletMode.SERVER || profile.keyManager() != KeyManager.PASSKEY_PRF) {
             return Mono.deferContextual(ctx ->
                     Mono.error(new TenantWalletProfileUnsupportedException(
                             ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));

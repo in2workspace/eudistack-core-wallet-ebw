@@ -20,7 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Application use case for the hybrid (Passkey PRF) signing handshake — prepare step.
+ * Application use case for the passkey+prf signing handshake — prepare step.
  *
  * <p>Resolves the {@code prf_salt} (US-05) and the {@code wrapped key handle} (US-02) for the
  * requesting holder's credential, assembles the {@code signing_input} (JWS header.payload that
@@ -29,7 +29,7 @@ import java.util.Map;
  * {@link PrepareSignResponse} envelope.</p>
  *
  * <p>Holder isolation: the {@code holderId} is always extracted from the Reactor context
- * (set by {@code HybridKeyManagerController} from the DPoP-bound JWT) — never from the
+ * (set by {@code PasskeyPrfKeyManagerController} from the DPoP-bound JWT) — never from the
  * request body (ES-04).</p>
  *
  * <p>Error paths (all errors propagate as reactive signals — NFR-S-536-02):
@@ -68,7 +68,7 @@ public class PrepareSignUseCase {
     }
 
     /**
-     * Executes the prepare step of the hybrid signing handshake.
+     * Executes the prepare step of the passkey-prf signing handshake.
      *
      * <p>Reads {@code holderId} and {@code tenantId} from the Reactor context (written by the
      * controller from the DPoP JWT). Resolves {@code prf_salt} and the wrapped key handle in
@@ -170,6 +170,7 @@ public class PrepareSignUseCase {
             Map<String, Object> kdfMap = new LinkedHashMap<>();
             kdfMap.put("alg", handle.kdfAlgo());
             kdfMap.put("version", handle.kdfVersion());
+            // Frozen HKDF info label kept for compatibility with already wrapped keys.
             kdfMap.put("info", "hybrid-wrap-v1");
             kdfMap.put("L", 256);
             return objectMapper.writeValueAsString(kdfMap);

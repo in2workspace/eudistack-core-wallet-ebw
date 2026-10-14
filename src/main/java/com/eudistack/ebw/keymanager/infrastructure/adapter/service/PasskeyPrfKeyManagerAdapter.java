@@ -13,30 +13,30 @@ import com.eudistack.ebw.keymanager.domain.model.SignHolderKeyResult;
 import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
 import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionResponse;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
-import com.eudistack.ebw.keymanager.infrastructure.observability.HybridSignTelemetry;
+import com.eudistack.ebw.keymanager.infrastructure.observability.PasskeyPrfSignTelemetry;
 import reactor.core.publisher.Mono;
 
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * Hybrid (Passkey PRF) implementation of {@link KeyManagerPort}.
+ * PasskeyPrf (passkey+prf) implementation of {@link KeyManagerPort}.
  *
  * <p>US-01 (EUDISTACK-533) delivered the skeleton and format allow-list validation.
  * US-04 (EUDISTACK-536) wires the full signing handshake: {@link #prepareSign} delegates to
  * {@link PrepareSignUseCase} and {@link #submitSignedAssertion} delegates to
  * {@link SubmitSignedUseCase}. Telemetry (OTEL spans + Micrometer metrics) is attached here
- * via {@link HybridSignTelemetry} using {@code doOnSuccess}/{@code doOnError} hooks inside a
+ * via {@link PasskeyPrfSignTelemetry} using {@code doOnSuccess}/{@code doOnError} hooks inside a
  * {@code Mono.deferContextual} so {@code holderId} is read from context at subscription time
  * (NFR-S-536-03, NFR-S-536-04).</p>
  *
- * <p>Key generation ({@link #generateHolderKey}) is not applicable for the hybrid adapter —
+ * <p>Key generation ({@link #generateHolderKey}) is not applicable for the passkey-prf adapter —
  * key wrapping happens client-side during onboarding (US-02, EUDISTACK-534).</p>
  *
  * <p>Spec: EUDISTACK-474 FR-01..FR-04, AC-01, AC-03..AC-05, AC-09;
  * EUDISTACK-536 NFR-S-536-03, NFR-S-536-04; architecture.md §5.1, §6.1, §8.2.</p>
  */
-public class HybridKeyManagerAdapter implements KeyManagerPort {
+public class PasskeyPrfKeyManagerAdapter implements KeyManagerPort {
 
     private static final Set<String> SUPPORTED_FORMATS = Set.of(
             "vc+sd-jwt",    // SD-JWT VC presentation format identifier (OID4VP, AC-05)
@@ -45,11 +45,11 @@ public class HybridKeyManagerAdapter implements KeyManagerPort {
 
     private final PrepareSignUseCase prepareSignUseCase;
     private final SubmitSignedUseCase submitSignedUseCase;
-    private final HybridSignTelemetry telemetry;
+    private final PasskeyPrfSignTelemetry telemetry;
 
-    public HybridKeyManagerAdapter(PrepareSignUseCase prepareSignUseCase,
+    public PasskeyPrfKeyManagerAdapter(PrepareSignUseCase prepareSignUseCase,
                                     SubmitSignedUseCase submitSignedUseCase,
-                                    HybridSignTelemetry telemetry) {
+                                    PasskeyPrfSignTelemetry telemetry) {
         this.prepareSignUseCase = prepareSignUseCase;
         this.submitSignedUseCase = submitSignedUseCase;
         this.telemetry = telemetry;
@@ -58,13 +58,13 @@ public class HybridKeyManagerAdapter implements KeyManagerPort {
     @Override
     public Mono<HolderKeyResult> generateHolderKey(GenerateHolderKeyCommand command) {
         return Mono.error(new UnsupportedOperationException(
-                "generateHolderKey is not applicable for the hybrid adapter — use the onboarding flow."));
+                "generateHolderKey is not applicable for the passkey-prf adapter — use the onboarding flow."));
     }
 
     @Override
     public Mono<SignHolderKeyResult> signWithHolderKey(SignHolderKeyCommand cmd) {
         return Mono.error(new UnsupportedOperationException(
-                "signWithHolderKey is not applicable for the hybrid adapter — use prepareSign/submitSignedAssertion."));
+                "signWithHolderKey is not applicable for the passkey-prf adapter — use prepareSign/submitSignedAssertion."));
     }
 
     @Override

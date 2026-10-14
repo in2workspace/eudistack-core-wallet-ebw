@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Spec: EUDISTACK-535 T3; acceptance-criteria.md AC-03; NFR-S-535-02;
  * technical-design.md §3.5 AD-2.
  */
-class HybridWrappedKeyHandleColumnAllowlistTest {
+class PasskeyPrfWrappedKeyHandleColumnAllowlistTest {
 
     /**
      * Path to the migration file inside the test classpath.
@@ -40,7 +40,7 @@ class HybridWrappedKeyHandleColumnAllowlistTest {
             "db/tenant/V4__create_hybrid_wrapped_key_handle.sql";
 
     /**
-     * Columns allowed in {@code hybrid_wrapped_key_handle}.
+     * Columns allowed in the wrapped key handle table (created by V4 as {@code hybrid_wrapped_key_handle}, renamed by V7).
      * Any column NOT in this list triggers a test failure.
      *
      * <p>Note: {@code cnf_jwk} is included here because US-02 (EUDISTACK-534) added it

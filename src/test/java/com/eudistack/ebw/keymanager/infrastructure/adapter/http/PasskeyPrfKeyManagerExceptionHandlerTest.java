@@ -28,14 +28,14 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit tests for {@link HybridKeyManagerExceptionHandler} — status, problem type and machine-readable
- * {@code error} code returned to the hybrid onboarding / signing clients.
+ * Unit tests for {@link PasskeyPrfKeyManagerExceptionHandler} — status, problem type and machine-readable
+ * {@code error} code returned to the passkey-prf onboarding / signing clients.
  */
-class HybridKeyManagerExceptionHandlerTest {
+class PasskeyPrfKeyManagerExceptionHandlerTest {
 
-    private static final String TYPE_BASE = "urn:eudistack:error:keymanager:hybrid:";
+    private static final String TYPE_BASE = "urn:eudistack:error:keymanager:passkey-prf:";
 
-    private final HybridKeyManagerExceptionHandler handler = new HybridKeyManagerExceptionHandler();
+    private final PasskeyPrfKeyManagerExceptionHandler handler = new PasskeyPrfKeyManagerExceptionHandler();
 
     static Stream<Arguments> problems() {
         return Stream.of(
@@ -58,7 +58,7 @@ class HybridKeyManagerExceptionHandlerTest {
     @ParameterizedTest
     @MethodSource("problems")
     void problemHandlers_returnStatusTypeAndErrorCode(
-            Function<HybridKeyManagerExceptionHandler, ResponseEntity<ProblemDetail>> handlerCall,
+            Function<PasskeyPrfKeyManagerExceptionHandler, ResponseEntity<ProblemDetail>> handlerCall,
             HttpStatus expectedStatus, String expectedType, String expectedError) {
         // Act
         var response = handlerCall.apply(handler);
@@ -117,8 +117,8 @@ class HybridKeyManagerExceptionHandlerTest {
         assertThat(response.getBody().getType()).isEqualTo(URI.create(TYPE_BASE + "internal"));
     }
 
-    private static Function<HybridKeyManagerExceptionHandler, ResponseEntity<ProblemDetail>> call(
-            Function<HybridKeyManagerExceptionHandler, ResponseEntity<ProblemDetail>> handlerCall) {
+    private static Function<PasskeyPrfKeyManagerExceptionHandler, ResponseEntity<ProblemDetail>> call(
+            Function<PasskeyPrfKeyManagerExceptionHandler, ResponseEntity<ProblemDetail>> handlerCall) {
         return handlerCall;
     }
 }

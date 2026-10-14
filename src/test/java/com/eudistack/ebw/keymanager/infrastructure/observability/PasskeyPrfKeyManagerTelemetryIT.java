@@ -21,15 +21,15 @@ import java.util.Collection;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Integration tests for {@link HybridKeyManagerTelemetry} (US-09 / EUDISTACK-541).
+ * Integration tests for {@link PasskeyPrfKeyManagerTelemetry} (US-09 / EUDISTACK-541).
  *
  * <p>Covered criteria:
  * <ul>
- *   <li>recordPrfAttempt increments hybrid.prf_gate.attempts.total</li>
- *   <li>recordPrfPass increments hybrid.prf_gate.passes.total</li>
+ *   <li>recordPrfAttempt increments passkey_prf.prf_gate.attempts.total</li>
+ *   <li>recordPrfPass increments passkey_prf.prf_gate.passes.total</li>
  *   <li>Pass/attempts ratio is consistent with recorded values</li>
  *   <li>updateWrapHandlesTotal updates the wrap_handles gauge</li>
- *   <li>recordSignError increments hybrid.sign.errors.total</li>
+ *   <li>recordSignError increments passkey_prf.sign.errors.total</li>
  * </ul>
  */
 @Tag("integration")
@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @AutoConfigureWebTestClient
 @ActiveProfiles("integration")
 @Testcontainers
-class HybridKeyManagerTelemetryIT {
+class PasskeyPrfKeyManagerTelemetryIT {
 
     private static final String TENANT = "telemetryit";
 
@@ -65,25 +65,25 @@ class HybridKeyManagerTelemetryIT {
     }
 
     @Autowired
-    private HybridKeyManagerTelemetry telemetry;
+    private PasskeyPrfKeyManagerTelemetry telemetry;
 
     @Autowired
     private MeterRegistry meterRegistry;
 
     @Test
     void recordPrfAttempt_twice_incrementsAttemptCounterByTwo() {
-        double before = sumCounter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, TENANT);
+        double before = sumCounter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, TENANT);
         telemetry.recordPrfAttempt(TENANT);
         telemetry.recordPrfAttempt(TENANT);
-        double after = sumCounter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, TENANT);
+        double after = sumCounter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, TENANT);
         assertThat(after - before).isEqualTo(2.0);
     }
 
     @Test
     void recordPrfPass_once_incrementsPassCounterByOne() {
-        double before = sumCounter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES, TENANT);
+        double before = sumCounter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_PASSES, TENANT);
         telemetry.recordPrfPass(TENANT);
-        double after = sumCounter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES, TENANT);
+        double after = sumCounter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_PASSES, TENANT);
         assertThat(after - before).isEqualTo(1.0);
     }
 
@@ -93,8 +93,8 @@ class HybridKeyManagerTelemetryIT {
         telemetry.recordPrfAttempt(isolatedTenant);
         telemetry.recordPrfAttempt(isolatedTenant);
         telemetry.recordPrfPass(isolatedTenant);
-        double attempts = sumCounter(HybridKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, isolatedTenant);
-        double passes   = sumCounter(HybridKeyManagerTelemetry.METRIC_PRF_PASSES,   isolatedTenant);
+        double attempts = sumCounter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_ATTEMPTS, isolatedTenant);
+        double passes   = sumCounter(PasskeyPrfKeyManagerTelemetry.METRIC_PRF_PASSES,   isolatedTenant);
         assertThat(attempts).isEqualTo(2.0);
         assertThat(passes).isEqualTo(1.0);
         assertThat(passes / attempts).isEqualTo(0.5);
@@ -106,10 +106,10 @@ class HybridKeyManagerTelemetryIT {
 
         telemetry.updateWrapHandlesTotal(isolatedTenant, 42L);
 
-        Collection<Gauge> gauges = meterRegistry.find(HybridKeyManagerTelemetry.METRIC_WRAP_HANDLES)
-                .tag(HybridKeyManagerTelemetry.TAG_TENANT, isolatedTenant)
+        Collection<Gauge> gauges = meterRegistry.find(PasskeyPrfKeyManagerTelemetry.METRIC_WRAP_HANDLES)
+                .tag(PasskeyPrfKeyManagerTelemetry.TAG_TENANT, isolatedTenant)
                 .gauges();
-        assertThat(gauges).as("hybrid.wrap_handles.total gauge must be registered for the tenant").isNotEmpty();
+        assertThat(gauges).as("passkey_prf.wrap_handles.total gauge must be registered for the tenant").isNotEmpty();
         assertThat(gauges.iterator().next().value()).isEqualTo(42.0);
     }
 
@@ -121,10 +121,10 @@ class HybridKeyManagerTelemetryIT {
         telemetry.updateWrapHandlesTotal(tenantA, 5L);
         telemetry.updateWrapHandlesTotal(tenantB, 9L);
 
-        double valueA = meterRegistry.find(HybridKeyManagerTelemetry.METRIC_WRAP_HANDLES)
-                .tag(HybridKeyManagerTelemetry.TAG_TENANT, tenantA).gauge().value();
-        double valueB = meterRegistry.find(HybridKeyManagerTelemetry.METRIC_WRAP_HANDLES)
-                .tag(HybridKeyManagerTelemetry.TAG_TENANT, tenantB).gauge().value();
+        double valueA = meterRegistry.find(PasskeyPrfKeyManagerTelemetry.METRIC_WRAP_HANDLES)
+                .tag(PasskeyPrfKeyManagerTelemetry.TAG_TENANT, tenantA).gauge().value();
+        double valueB = meterRegistry.find(PasskeyPrfKeyManagerTelemetry.METRIC_WRAP_HANDLES)
+                .tag(PasskeyPrfKeyManagerTelemetry.TAG_TENANT, tenantB).gauge().value();
 
         assertThat(valueA).isEqualTo(5.0);
         assertThat(valueB).isEqualTo(9.0);
@@ -133,26 +133,26 @@ class HybridKeyManagerTelemetryIT {
     @Test
     void recordSignError_once_incrementsErrorCounterByOne() {
         String isolatedTenant = "signerr-" + System.nanoTime();
-        double before = sumCounter(HybridKeyManagerTelemetry.METRIC_SIGN_ERRORS, isolatedTenant);
+        double before = sumCounter(PasskeyPrfKeyManagerTelemetry.METRIC_SIGN_ERRORS, isolatedTenant);
         telemetry.recordSignError(isolatedTenant);
-        double after = sumCounter(HybridKeyManagerTelemetry.METRIC_SIGN_ERRORS, isolatedTenant);
+        double after = sumCounter(PasskeyPrfKeyManagerTelemetry.METRIC_SIGN_ERRORS, isolatedTenant);
         assertThat(after - before).isEqualTo(1.0);
     }
 
     @Test
     void recordSignLatency_recordsDurationInTimer() {
         String isolatedTenant = "signlat-" + System.nanoTime();
-        long countBefore = meterRegistry.find(HybridKeyManagerTelemetry.METRIC_SIGN_LATENCY)
+        long countBefore = meterRegistry.find(PasskeyPrfKeyManagerTelemetry.METRIC_SIGN_LATENCY)
                 .timers().stream()
                 .filter(t -> isolatedTenant.equals(
-                        t.getId().getTag(HybridKeyManagerTelemetry.TAG_TENANT)))
+                        t.getId().getTag(PasskeyPrfKeyManagerTelemetry.TAG_TENANT)))
                 .mapToLong(io.micrometer.core.instrument.Timer::count)
                 .sum();
         telemetry.recordSignLatency(Duration.ofMillis(123), isolatedTenant);
-        long countAfter = meterRegistry.find(HybridKeyManagerTelemetry.METRIC_SIGN_LATENCY)
+        long countAfter = meterRegistry.find(PasskeyPrfKeyManagerTelemetry.METRIC_SIGN_LATENCY)
                 .timers().stream()
                 .filter(t -> isolatedTenant.equals(
-                        t.getId().getTag(HybridKeyManagerTelemetry.TAG_TENANT)))
+                        t.getId().getTag(PasskeyPrfKeyManagerTelemetry.TAG_TENANT)))
                 .mapToLong(io.micrometer.core.instrument.Timer::count)
                 .sum();
         assertThat(countAfter - countBefore).isEqualTo(1L);
@@ -160,7 +160,7 @@ class HybridKeyManagerTelemetryIT {
 
     private double sumCounter(String metricName, String tenant) {
         return meterRegistry.find(metricName).counters().stream()
-                .filter(c -> tenant.equals(c.getId().getTag(HybridKeyManagerTelemetry.TAG_TENANT)))
+                .filter(c -> tenant.equals(c.getId().getTag(PasskeyPrfKeyManagerTelemetry.TAG_TENANT)))
                 .mapToDouble(Counter::count)
                 .sum();
     }

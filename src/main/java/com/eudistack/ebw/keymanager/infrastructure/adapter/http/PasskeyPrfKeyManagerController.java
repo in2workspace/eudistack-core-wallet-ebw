@@ -23,22 +23,22 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 /**
- * REST controller for the hybrid (Passkey PRF) two-step signing handshake and audit events.
+ * REST controller for the passkey+prf two-step signing handshake and audit events.
  *
  * <p>Endpoints:
  * <ul>
- *   <li>{@code POST /api/v1/keys/hybrid/sign/prepare} — initiates the handshake: the server
+ *   <li>{@code POST /api/v1/keys/passkey-prf/sign/prepare} — initiates the handshake: the server
  *       returns the PRF salt + wrapped-blob envelope so the PWA can derive the unwrap key
  *       client-side via Passkey PRF and sign the payload.</li>
- *   <li>{@code POST /api/v1/keys/hybrid/sign/submit} — finalises the handshake: the PWA
+ *   <li>{@code POST /api/v1/keys/passkey-prf/sign/submit} — finalises the handshake: the PWA
  *       submits the client-side signed assertion; the server verifies and produces the
  *       key-binding JWT.</li>
- *   <li>{@code POST /api/v1/keys/hybrid/constraint-accepted} — records the holder's acceptance
+ *   <li>{@code POST /api/v1/keys/passkey-prf/constraint-accepted} — records the holder's acceptance
  *       of the multi-device limitation in the audit log (US-06, EUDISTACK-538).</li>
  * </ul>
  *
  * <p>All endpoints reject with {@code 403} if the tenant's wallet profile is not
- * {@code (SERVER, HYBRID)}, preventing DB tenants from reaching hybrid routes.</p>
+ * {@code (SERVER, PASSKEY_PRF)}, preventing DB tenants from reaching passkey-prf routes.</p>
  *
  * <p>The {@code holder_id} is extracted from the DPoP-bound JWT and written to the Reactor
  * context so use cases can access it without it ever appearing in the request body (ES-04).</p>
@@ -48,24 +48,24 @@ import reactor.core.publisher.Mono;
  * EUDISTACK-538 (US-06) AC-02; architecture.md §6.1 (runtime flows).</p>
  */
 @RestController
-@RequestMapping("/api/v1/keys/hybrid")
+@RequestMapping("/api/v1/keys/passkey-prf")
 @Validated
-public class HybridKeyManagerController {
+public class PasskeyPrfKeyManagerController {
 
-    private final KeyManagerPort hybridAdapter;
+    private final KeyManagerPort passkeyPrfAdapter;
     private final WalletProfileQueryPort walletProfileQueryPort;
     private final EnrollHolderUseCase enrollHolderUseCase;
 
-    public HybridKeyManagerController(KeyManagerPort hybridAdapter,
+    public PasskeyPrfKeyManagerController(KeyManagerPort passkeyPrfAdapter,
                                        WalletProfileQueryPort walletProfileQueryPort,
                                        EnrollHolderUseCase enrollHolderUseCase) {
-        this.hybridAdapter = hybridAdapter;
+        this.passkeyPrfAdapter = passkeyPrfAdapter;
         this.walletProfileQueryPort = walletProfileQueryPort;
         this.enrollHolderUseCase = enrollHolderUseCase;
     }
 
     /**
-     * Initiates the hybrid signing handshake.
+     * Initiates the passkey-prf signing handshake.
      *
      * <p>Returns the PRF challenge metadata (salt, wrapped blob, IV, tag, KDF params, signing
      * input, correlation ID). The PWA uses these to derive the unwrap key via Passkey PRF,
@@ -83,14 +83,14 @@ public class HybridKeyManagerController {
         String holderId = auth.getUserId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(this::requireHybridProfile)
-                .flatMap(profile -> hybridAdapter.prepareSign(request))
+                .flatMap(this::requirePasskeyPrfProfile)
+                .flatMap(profile -> passkeyPrfAdapter.prepareSign(request))
                 .map(ResponseEntity::ok)
                 .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, holderId));
     }
 
     /**
-     * Finalises the hybrid signing handshake and produces the key-binding JWT.
+     * Finalises the passkey-prf signing handshake and produces the key-binding JWT.
      *
      * <p>The PWA echoes the {@code correlation_id} from the prepare response along with the
      * PRF-derived signature. The EBW verifies the assertion and returns the {@code kb+jwt}
@@ -109,8 +109,8 @@ public class HybridKeyManagerController {
         String holderId = auth.getUserId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(this::requireHybridProfile)
-                .flatMap(profile -> hybridAdapter.submitSignedAssertion(request))
+                .flatMap(this::requirePasskeyPrfProfile)
+                .flatMap(profile -> passkeyPrfAdapter.submitSignedAssertion(request))
                 .map(ResponseEntity::ok)
                 .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, holderId));
     }
@@ -119,7 +119,7 @@ public class HybridKeyManagerController {
      * Records the holder's acceptance of the multi-device constraint in the audit log.
      *
      * <p>The PWA calls this endpoint once, immediately after the user taps "accept" on the
-     * hybrid onboarding screen and before any holder key is generated (US-06, AC-02).
+     * passkey-prf onboarding screen and before any holder key is generated (US-06, AC-02).
      * The actor identity is taken from the authenticated JWT — no request body is needed.</p>
      *
      * @param auth the authenticated holder principal
@@ -129,7 +129,7 @@ public class HybridKeyManagerController {
     public Mono<ResponseEntity<Void>> acceptConstraint(JwtAuthenticationToken auth) {
 
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(this::requireHybridProfile)
+                .flatMap(this::requirePasskeyPrfProfile)
                 .flatMap(profile -> Mono.deferContextual(ctx -> {
                     String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
                     return enrollHolderUseCase.recordConsent(tenantId, auth.getUserId().toString());
@@ -138,11 +138,11 @@ public class HybridKeyManagerController {
     }
 
     /**
-     * Rejects tenants whose wallet profile is not {@code (SERVER, HYBRID)} with an opaque
-     * {@link TenantWalletProfileUnsupportedException} (403), shared by every hybrid endpoint.
+     * Rejects tenants whose wallet profile is not {@code (SERVER, PASSKEY_PRF)} with an opaque
+     * {@link TenantWalletProfileUnsupportedException} (403), shared by every passkey-prf endpoint.
      */
-    private Mono<TenantWalletProfile> requireHybridProfile(TenantWalletProfile profile) {
-        if (profile.walletMode() != WalletMode.SERVER || profile.keyManager() != KeyManager.HYBRID) {
+    private Mono<TenantWalletProfile> requirePasskeyPrfProfile(TenantWalletProfile profile) {
+        if (profile.walletMode() != WalletMode.SERVER || profile.keyManager() != KeyManager.PASSKEY_PRF) {
             return Mono.deferContextual(ctx ->
                     Mono.error(new TenantWalletProfileUnsupportedException(
                             ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));

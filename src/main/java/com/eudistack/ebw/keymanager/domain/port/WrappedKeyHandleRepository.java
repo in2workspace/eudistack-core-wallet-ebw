@@ -9,7 +9,7 @@ import java.util.Optional;
  * Write + read port for wrapped key handle persistence.
  *
  * <p>One handle per {@code (holderId, credentialId)} composite — enforced by
- * the {@code hybrid_wrapped_key_handle} primary key (US-03 / EUDISTACK-535 DDL).
+ * the {@code passkey_prf_wrapped_key_handle} primary key (US-03 / EUDISTACK-535 DDL).
  * Tenant isolation is via PostgreSQL {@code search_path} (architecture.md §5.3).
  * A duplicate INSERT propagates a {@link org.springframework.dao.DataIntegrityViolationException}
  * to the use case, which maps it to an
@@ -55,22 +55,22 @@ public interface WrappedKeyHandleRepository {
      *
      * <p>Tenant isolation is provided by the PostgreSQL {@code search_path} set on each
      * connection by {@code TenantAwareConnectionFactoryDecorator} (architecture.md §5.3).
-     * Used by {@code HybridHealthContributor} (US-09) to expose the {@code wrap_handles_total}
+     * Used by {@code PasskeyPrfHealthContributor} (US-09) to expose the {@code wrap_handles_total}
      * operational indicator.</p>
      *
-     * @return total row count in {@code hybrid_wrapped_key_handle} for the current tenant
+     * @return total row count in {@code passkey_prf_wrapped_key_handle} for the current tenant
      */
     Mono<Long> count();
 
     /**
-     * Returns the number of wrapped key handles that have no matching {@code hybrid_prf_salt}
+     * Returns the number of wrapped key handles that have no matching {@code passkey_prf_salt}
      * row for the same {@code (holderId, credentialId)} composite.
      *
      * <p>This is a defense-in-depth check: the {@code fk_hwkh_prf_salt} foreign key
      * (V4 Flyway tenant migration, US-03/EUDISTACK-535) already prevents this at the
      * database level for any insert going through the application, so a non-zero result
      * here signals a real anomaly (e.g. out-of-band data manipulation), not a normal
-     * application-level race. Used by {@code HybridHealthContributor} (US-09) to expose
+     * application-level race. Used by {@code PasskeyPrfHealthContributor} (US-09) to expose
      * the {@code salt_coherent} operational indicator.
      *
      * @return count of orphaned wrapped key handles for the current tenant; {@code 0} means coherent
