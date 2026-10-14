@@ -97,10 +97,8 @@ public class WalletAuthClient {
         }
         body.put("displayName", "Test device");
         return client.post().uri("/api/v1/auth/passkeys/registration").headers(tenantHeaders)
-                .headers(h -> {
-                    bearer(h, ticket);
-                    cookie(h, cookie);
-                })
+                .headers(h -> bearer(h, ticket))
+                .cookies(c -> cookie(c, cookie))
                 .bodyValue(body).exchange();
     }
 
@@ -138,10 +136,8 @@ public class WalletAuthClient {
     public WebTestClient.ResponseSpec openSessionSpec(String ticket, Object ceremonyId, Map<String, Object> credential,
                                                       String cookie) {
         return client.post().uri("/api/v1/auth/sessions").headers(tenantHeaders)
-                .headers(h -> {
-                    bearer(h, ticket);
-                    cookie(h, cookie);
-                })
+                .headers(h -> bearer(h, ticket))
+                .cookies(c -> cookie(c, cookie))
                 .bodyValue(Map.of("ceremonyId", ceremonyId, "credential", credential)).exchange();
     }
 
@@ -161,8 +157,8 @@ public class WalletAuthClient {
 
     public WebTestClient.ResponseSpec refreshSpec(String refreshToken, boolean walletRequestHeader) {
         return client.post().uri("/api/v1/auth/refresh").headers(tenantHeaders)
+                .cookies(c -> cookie(c, refreshToken))
                 .headers(h -> {
-                    cookie(h, refreshToken);
                     if (walletRequestHeader) {
                         h.add(WALLET_REQUEST, "1");
                     }
@@ -206,9 +202,9 @@ public class WalletAuthClient {
         }
     }
 
-    private static void cookie(HttpHeaders headers, String refreshToken) {
+    private static void cookie(org.springframework.util.MultiValueMap<String, String> cookies, String refreshToken) {
         if (refreshToken != null) {
-            headers.add(HttpHeaders.COOKIE, "wallet_refresh=" + refreshToken);
+            cookies.add("wallet_refresh", refreshToken);
         }
     }
 }
