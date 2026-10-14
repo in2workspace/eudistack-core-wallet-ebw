@@ -125,9 +125,9 @@ keymanager:
 
 email-branding:
   # Tenant-assets root of this environment (one per environment, set by platform-iac).
-  # Default targets STG on purpose: local SMTP sends real emails, and external mail
+  # Default targets DEV on purpose: local SMTP sends real emails, and external mail
   # clients (Gmail image proxy) cannot load images from 127.0.0.1.nip.io.
-  assets-base-url: ${EMAIL_ASSETS_BASE_URL:https://sandbox.stg.eudistack.net/assets/tenants}
+  assets-base-url: ${EMAIL_ASSETS_BASE_URL:https://sandbox.dev.eudistack.net/assets/tenants}
 
 logging:
   pattern:
