@@ -16,7 +16,11 @@ import java.util.UUID;
 
 import static com.eudistack.ebw.application.workflow.CredentialWorkflowFixtures.credential;
 import static com.eudistack.ebw.application.workflow.CredentialWorkflowFixtures.response;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -26,16 +30,33 @@ import static org.mockito.Mockito.when;
 class GetCredentialWorkflowTest {
 
     private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID PASSKEY_ID = UUID.randomUUID();
     private static final UUID CREDENTIAL_ID = UUID.randomUUID();
 
     @Mock private WalletCredentialRepository credentialRepository;
     @Mock private CredentialService credentialService;
+    @Mock private PasskeyCustodyPolicy custodyPolicy;
 
     private GetCredentialWorkflow workflow;
 
     @BeforeEach
     void setUp() {
-        workflow = new GetCredentialWorkflow(credentialRepository, credentialService);
+        workflow = new GetCredentialWorkflow(credentialRepository, credentialService, custodyPolicy);
+        lenient().when(custodyPolicy.isPasskeyCustody()).thenReturn(Mono.just(false));
+    }
+
+    @Test
+    void getCredential_passkeyCustodyAndCredentialOfAnotherPasskey_failsAsNotFound() {
+        // Arrange — EUD-11 AC-05
+        var ofOtherPasskey = CredentialWorkflowFixtures.credential(USER_ID, true, UUID.randomUUID());
+        when(custodyPolicy.isPasskeyCustody()).thenReturn(Mono.just(true));
+        when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.just(ofOtherPasskey));
+
+        // Act + Assert
+        StepVerifier.create(workflow.getCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID))
+                .expectError(CredentialNotFoundException.class)
+                .verify();
+        verify(credentialService, never()).toVerifiableCredential(any());
     }
 
     @Test
@@ -46,7 +67,7 @@ class GetCredentialWorkflowTest {
         when(credentialService.toVerifiableCredential(credential)).thenReturn(response(CREDENTIAL_ID.toString()));
 
         // Act
-        var result = workflow.getCredential(USER_ID, CREDENTIAL_ID);
+        var result = workflow.getCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID);
 
         // Assert
         StepVerifier.create(result.map(vc -> vc.id()))
@@ -60,7 +81,7 @@ class GetCredentialWorkflowTest {
         when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.empty());
 
         // Act
-        var result = workflow.getCredential(USER_ID, CREDENTIAL_ID);
+        var result = workflow.getCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID);
 
         // Assert
         StepVerifier.create(result)

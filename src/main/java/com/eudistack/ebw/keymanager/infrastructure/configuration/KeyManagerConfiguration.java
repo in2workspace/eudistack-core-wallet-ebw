@@ -22,6 +22,7 @@ import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerExcept
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HolderKeyR2dbcAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.PasskeyPrfWrappedKeyHandleR2dbcAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.PrfSaltRepository;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.SessionPasskeyCredentialR2dbcAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.DbKeyManagerService;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.PasskeyPrfKeyManagerAdapter;
@@ -152,11 +153,18 @@ public class KeyManagerConfiguration {
     }
 
     @Bean
+    SessionPasskeyCredentialPort sessionPasskeyCredentialPort(DatabaseClient databaseClient) {
+        return new SessionPasskeyCredentialR2dbcAdapter(databaseClient);
+    }
+
+    @Bean
     PrepareSignUseCase prepareSignUseCase(PrfSaltUseCase prfSaltUseCase,
                                           WrappedKeyHandleRepository wrappedKeyHandleRepository,
                                           PreparedSignStore preparedSignStore,
-                                          ObjectMapper objectMapper) {
-        return new PrepareSignUseCase(prfSaltUseCase, wrappedKeyHandleRepository, preparedSignStore, objectMapper);
+                                          ObjectMapper objectMapper,
+                                          SessionPasskeyCredentialPort sessionPasskeyCredentialPort) {
+        return new PrepareSignUseCase(prfSaltUseCase, wrappedKeyHandleRepository, preparedSignStore, objectMapper,
+                sessionPasskeyCredentialPort);
     }
 
     @Bean

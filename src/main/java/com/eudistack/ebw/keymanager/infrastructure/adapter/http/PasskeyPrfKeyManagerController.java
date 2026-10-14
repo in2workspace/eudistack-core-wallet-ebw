@@ -81,12 +81,14 @@ public class PasskeyPrfKeyManagerController {
             JwtAuthenticationToken auth) {
 
         String holderId = auth.getUserId().toString();
+        String passkeyId = auth.getPasskeyId().toString();
 
         return walletProfileQueryPort.queryByCurrentTenant()
                 .flatMap(this::requirePasskeyPrfProfile)
                 .flatMap(profile -> passkeyPrfAdapter.prepareSign(request))
                 .map(ResponseEntity::ok)
-                .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, holderId));
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, holderId)
+                        .put(ReactorContextKeys.PASSKEY_ID, passkeyId));
     }
 
     /**

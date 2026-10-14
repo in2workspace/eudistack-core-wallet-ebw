@@ -55,7 +55,7 @@ class CredentialIssuanceControllerTest {
                 metadata, "hk-1", "did:key:holder#0");
         var stored = credential();
         when(storeCredentialWorkflow.storeCredential(USER_ID, "raw-1", "dc+sd-jwt", "cfg-1", "did:key:holder#0",
-                metadata, "hk-1")).thenReturn(Mono.just(stored));
+                metadata, "hk-1", auth.getPasskeyId())).thenReturn(Mono.just(stored));
 
         // Act
         var result = controller.finalizeIssuance(request, auth);
@@ -71,7 +71,7 @@ class CredentialIssuanceControllerTest {
         // Arrange
         var request = request(List.of(new CredentialItem("raw-1")), null, null, null);
         var stored = credential();
-        when(storeCredentialWorkflow.storeCredential(USER_ID, "raw-1", "dc+sd-jwt", "cfg-1", "", Map.of(), null))
+        when(storeCredentialWorkflow.storeCredential(USER_ID, "raw-1", "dc+sd-jwt", "cfg-1", "", Map.of(), null, auth.getPasskeyId()))
                 .thenReturn(Mono.just(stored));
 
         // Act
@@ -118,6 +118,6 @@ class CredentialIssuanceControllerTest {
     private static WalletCredential credential() {
         var now = Instant.now();
         return new WalletCredential(UUID.randomUUID(), USER_ID, "raw-1", CredentialFormat.DC_SD_JWT, "cfg-1", "",
-                "Type", null, "https://issuer", "did:sub", now, null, CredentialStatus.VALID, Map.of(), "hk-1", now, now);
+                "Type", null, "https://issuer", "did:sub", now, null, CredentialStatus.VALID, Map.of(), "hk-1", now, now, null, false);
     }
 }

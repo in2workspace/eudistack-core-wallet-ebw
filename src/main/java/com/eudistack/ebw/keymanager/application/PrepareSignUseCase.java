@@ -56,15 +56,18 @@ public class PrepareSignUseCase {
     private final WrappedKeyHandleRepository wrappedKeyHandleRepository;
     private final PreparedSignStore preparedSignStore;
     private final ObjectMapper objectMapper;
+    private final SessionPasskeyCredentialPort sessionPasskeyCredentialPort;
 
     public PrepareSignUseCase(PrfSaltUseCase prfSaltUseCase,
                                WrappedKeyHandleRepository wrappedKeyHandleRepository,
                                PreparedSignStore preparedSignStore,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               SessionPasskeyCredentialPort sessionPasskeyCredentialPort) {
         this.prfSaltUseCase = prfSaltUseCase;
         this.wrappedKeyHandleRepository = wrappedKeyHandleRepository;
         this.preparedSignStore = preparedSignStore;
         this.objectMapper = objectMapper;
+        this.sessionPasskeyCredentialPort = sessionPasskeyCredentialPort;
     }
 
     /**
@@ -82,19 +85,32 @@ public class PrepareSignUseCase {
         return Mono.deferContextual(ctx -> {
             String holderId = ctx.get(ReactorContextKeys.HOLDER_ID);
             String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
+            String passkeyId = ctx.getOrDefault(ReactorContextKeys.PASSKEY_ID, null);
 
-            Mono<byte[]> prfSaltMono = prfSaltUseCase.getForHolder(tenantId, holderId, request.credentialId());
-            Mono<WrappedKeyHandle> handleMono = wrappedKeyHandleRepository
-                    .findBy(holderId, request.credentialId())
-                    .flatMap(opt -> opt
-                            .<Mono<WrappedKeyHandle>>map(Mono::just)
-                            .orElseGet(() -> Mono.error(
-                                    new PrfSaltNotFoundException(request.credentialId()))));
-
-            return Mono.zip(prfSaltMono, handleMono)
-                    .flatMap(tuple -> buildAndStore(
-                            request, holderId, tenantId, correlationId, tuple.getT1(), tuple.getT2()));
+            // EUD-11 FR-14: the salt is only delivered for an attestation obtained with the session's
+            // passkey. Anything else is answered exactly like an unknown credential (no oracle).
+            // The issuance proof is signed during onboarding, so this handshake always refers to a
+            // stored attestation.
+            return sessionPasskeyCredentialPort.isObtainedWithPasskey(holderId, request.credentialId(), passkeyId)
+                    .flatMap(obtained -> Boolean.TRUE.equals(obtained)
+                            ? prepare(request, correlationId, holderId, tenantId)
+                            : Mono.error(new PrfSaltNotFoundException(request.credentialId())));
         });
+    }
+
+    private Mono<PrepareSignResponse> prepare(PrepareSignRequest request, String correlationId, String holderId,
+                                              String tenantId) {
+        Mono<byte[]> prfSaltMono = prfSaltUseCase.getForHolder(tenantId, holderId, request.credentialId());
+        Mono<WrappedKeyHandle> handleMono = wrappedKeyHandleRepository
+                .findBy(holderId, request.credentialId())
+                .flatMap(opt -> opt
+                        .<Mono<WrappedKeyHandle>>map(Mono::just)
+                        .orElseGet(() -> Mono.error(
+                                new PrfSaltNotFoundException(request.credentialId()))));
+
+        return Mono.zip(prfSaltMono, handleMono)
+                .flatMap(tuple -> buildAndStore(
+                        request, holderId, tenantId, correlationId, tuple.getT1(), tuple.getT2()));
     }
 
     private Mono<PrepareSignResponse> buildAndStore(PrepareSignRequest request,

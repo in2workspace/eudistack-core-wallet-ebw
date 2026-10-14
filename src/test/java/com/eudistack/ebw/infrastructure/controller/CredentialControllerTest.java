@@ -62,7 +62,7 @@ class CredentialControllerTest {
         // Arrange
         var credential = credential(CredentialStatus.VALID);
         var metadata = Map.<String, Object>of("credential_issuer", "https://issuer");
-        when(storeCredentialWorkflow.storeCredential(USER_ID, "raw", "dc+sd-jwt", "cfg-1", "kid-1", metadata, null))
+        when(storeCredentialWorkflow.storeCredential(USER_ID, "raw", "dc+sd-jwt", "cfg-1", "kid-1", metadata, null, auth.getPasskeyId()))
                 .thenReturn(Mono.just(credential));
 
         // Act
@@ -87,7 +87,7 @@ class CredentialControllerTest {
         // Arrange
         var vc = new VerifiableCredentialResponse(List.of(), "id-1", List.of("VerifiableCredential"), "VALID",
                 null, null, null, null, null, Map.of(), null, null, "dc+sd-jwt", null, null);
-        when(listCredentialsWorkflow.listCredentials(USER_ID, "VALID", "cfg-1", "https://issuer"))
+        when(listCredentialsWorkflow.listCredentials(USER_ID, auth.getPasskeyId(), "VALID", "cfg-1", "https://issuer"))
                 .thenReturn(Flux.just(vc));
 
         // Act
@@ -103,7 +103,7 @@ class CredentialControllerTest {
         var id = UUID.randomUUID();
         var vc = new VerifiableCredentialResponse(List.of(), id.toString(), List.of(), "VALID",
                 null, null, null, null, null, Map.of(), null, null, "jwt_vc_json", null, null);
-        when(getCredentialWorkflow.getCredential(USER_ID, id)).thenReturn(Mono.just(vc));
+        when(getCredentialWorkflow.getCredential(USER_ID, auth.getPasskeyId(), id)).thenReturn(Mono.just(vc));
 
         // Act
         var result = controller.getById(id, auth);
@@ -146,6 +146,6 @@ class CredentialControllerTest {
         var now = Instant.now();
         return new WalletCredential(UUID.randomUUID(), USER_ID, "raw", CredentialFormat.DC_SD_JWT, "cfg-1", "kid-1",
                 "LEARCredentialEmployee", "urn:vct", "https://issuer", "did:sub", now, null, status,
-                Map.of(), "hk-1", now, now);
+                Map.of(), "hk-1", now, now, null, false);
     }
 }

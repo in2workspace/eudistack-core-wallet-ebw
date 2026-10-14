@@ -32,6 +32,8 @@ public class WalletCredentialEntity implements Persistable<UUID> {
     private String holderKeyId;
     private Instant createdAt;
     private Instant updatedAt;
+    private UUID passkeyId;
+    private boolean bound;
 
     @Transient
     private boolean isNew = false;
@@ -77,4 +79,8 @@ public class WalletCredentialEntity implements Persistable<UUID> {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+    public UUID getPasskeyId() { return passkeyId; }
+    public void setPasskeyId(UUID passkeyId) { this.passkeyId = passkeyId; }
+    public boolean isBound() { return bound; }
+    public void setBound(boolean bound) { this.bound = bound; }
 }

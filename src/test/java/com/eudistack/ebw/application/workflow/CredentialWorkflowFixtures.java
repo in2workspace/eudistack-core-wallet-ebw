@@ -21,7 +21,14 @@ final class CredentialWorkflowFixtures {
         var now = Instant.now();
         return new WalletCredential(id, userId, "raw-credential", CredentialFormat.DC_SD_JWT, "cfg-1", "kid-1",
                 "LEARCredentialEmployee", "urn:vct:lear", "https://issuer", "did:sub", now, null,
-                status, Map.of(), "hk-1", now, now);
+                status, Map.of(), "hk-1", now, now, null, false);
+    }
+
+    static WalletCredential credential(UUID userId, boolean bound, UUID passkeyId) {
+        var now = Instant.now();
+        return new WalletCredential(UUID.randomUUID(), userId, "raw-credential", CredentialFormat.DC_SD_JWT, "cfg-1",
+                "kid-1", "LEARCredentialEmployee", "urn:vct:lear", "https://issuer", "did:sub", now, null,
+                CredentialStatus.VALID, Map.of(), bound ? "hk-1" : null, now, now, passkeyId, bound);
     }
 
     static VerifiableCredentialResponse response(String id) {
