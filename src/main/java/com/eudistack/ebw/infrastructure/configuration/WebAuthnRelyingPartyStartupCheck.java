@@ -10,6 +10,8 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
+
 /**
  * At startup, after the tenant migrations, logs an ERROR for every active tenant without
  * {@code ebw.webauthn.rp_id}: those tenants cannot register passkeys nor sign in until it is
@@ -31,27 +33,32 @@ public class WebAuthnRelyingPartyStartupCheck implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        tenantDirectory.activeTenants()
+        tenantsWithoutRelyingParty().subscribe();
+    }
+
+    /** Emits the active tenants without {@code ebw.webauthn.rp_id}, each logged as ERROR. */
+    public Mono<List<String>> tenantsWithoutRelyingParty() {
+        return tenantDirectory.activeTenants()
                 .concatMap(tenant -> tenantConfigRepository.findByConfigKey(WalletAuthSettingsService.RP_ID)
                         .filter(config -> config.configValue() != null && !config.configValue().isBlank())
                         .hasElement()
-                        .doOnNext(configured -> {
-                            if (!configured) {
-                                log.error("Tenant '{}' has no tenant_config '{}': passkey registration and "
-                                        + "sign-in will fail for it", tenant, WalletAuthSettingsService.RP_ID);
-                            }
+                        .filter(configured -> !configured)
+                        .map(missing -> {
+                            log.error("Tenant '{}' has no tenant_config '{}': passkey registration and "
+                                    + "sign-in will fail for it", tenant, WalletAuthSettingsService.RP_ID);
+                            return tenant;
                         })
                         .onErrorResume(e -> {
                             log.warn("Could not check '{}' for tenant '{}': {}", WalletAuthSettingsService.RP_ID,
-                                    tenant, e.getMessage());
+                                    tenant, e.getClass().getSimpleName());
                             return Mono.empty();
                         })
                         .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, tenant)))
+                .collectList()
                 .onErrorResume(e -> {
                     log.warn("Could not list the active tenants to check the WebAuthn configuration: {}",
-                            e.getMessage());
-                    return Mono.empty();
-                })
-                .subscribe();
+                            e.getClass().getSimpleName());
+                    return Mono.just(List.of());
+                });
     }
 }

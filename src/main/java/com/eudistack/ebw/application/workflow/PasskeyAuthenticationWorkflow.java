@@ -100,11 +100,11 @@ public class PasskeyAuthenticationWorkflow {
                                         .doOnNext(passkeyRef::set)
                                         .flatMap(passkey -> accountOf(passkey, ticket, assertion)
                                                 .flatMap(user -> verify(command, ceremony, passkey)
-                                                        .then(consumeTicket(ticket))
-                                                        .then(sessionOpener.open(user, passkey.getId(),
-                                                                command.replacedRefreshToken(),
+                                                        .then(Mono.defer(() -> consumeTicket(ticket)))
+                                                        .then(Mono.defer(() -> sessionOpener.open(user,
+                                                                passkey.getId(), command.replacedRefreshToken(),
                                                                 ticket.isPresent() ? "passkey_with_ticket"
-                                                                        : "passkey")))))))
+                                                                        : "passkey"))))))))
                 .onErrorResume(e -> e instanceof AuthenticationFailedException
                                 || e instanceof UnknownCredentialException,
                         e -> auditRejection(command.ceremonyId(), passkeyRef.get(), e).then(Mono.error(e)));
