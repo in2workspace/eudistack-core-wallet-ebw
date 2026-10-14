@@ -50,7 +50,7 @@ class PasskeyPrfOnboardingControllerTest {
     void setUp() {
         controller = new PasskeyPrfOnboardingController(
                 enrollHolderUseCase, walletProfileQueryPort, new ObjectMapper());
-        auth = new JwtAuthenticationToken(USER_ID, "holder@example.com", List.of());
+        auth = new JwtAuthenticationToken(USER_ID, "holder@example.com", UUID.randomUUID(), UUID.randomUUID(), List.of());
     }
 
     private void givenProfile(WalletMode mode, KeyManager keyManager) {
