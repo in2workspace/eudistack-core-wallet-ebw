@@ -18,6 +18,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 /**
  * Writes the rendered verification-code email to {@code build/email-previews/*.html} for manual review in a
  * browser, without and with branding. Disabled by default; run with
@@ -39,7 +41,7 @@ class EmailPreviewGeneratorTest {
         SpringTemplateEngine engine = VerificationCodeEmailTemplateTest.engine();
         Files.createDirectories(OUTPUT_DIR);
 
-        String assets = System.getProperty("email.previews.assets", DEFAULT_ASSETS).replaceAll("/+$", "");
+        String assets = stripTrailingSlashes(System.getProperty("email.previews.assets", DEFAULT_ASSETS));
         Map<String, EmailBranding> brandings = Map.of(
                 "default", EmailBranding.NONE,
                 "dome", new EmailBranding(
@@ -57,8 +59,21 @@ class EmailPreviewGeneratorTest {
             context.setVariable("tenantDisplayName", brand.getKey().equals("dome") ? "DOME" : "EUDIStack Sandbox");
             String html = CID.matcher(engine.process("verification-code-email", context))
                     .replaceAll(match -> "data:image/png;base64," + Base64.getEncoder().encodeToString(icon(match.group(1))));
-            Files.writeString(OUTPUT_DIR.resolve("verification-code-" + brand.getKey() + "-en.html"), html, StandardCharsets.UTF_8);
+            Path preview = OUTPUT_DIR.resolve("verification-code-" + brand.getKey() + "-en.html");
+            Files.writeString(preview, html, StandardCharsets.UTF_8);
+
+            assertThat(Files.readString(preview, StandardCharsets.UTF_8))
+                    .contains("482193")
+                    .doesNotContain("cid:");
         }
+    }
+
+    private static String stripTrailingSlashes(String url) {
+        int end = url.length();
+        while (end > 0 && url.charAt(end - 1) == '/') {
+            end--;
+        }
+        return url.substring(0, end);
     }
 
     private static byte[] icon(String name) {
