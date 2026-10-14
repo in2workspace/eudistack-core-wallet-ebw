@@ -11,6 +11,8 @@ public interface RefreshTokenRepository {
 
     Mono<RefreshToken> insert(RefreshToken token);
 
+    Mono<Void> deleteById(UUID id);
+
     /** Atomically revokes a non-revoked token. Emits {@code true} only for the caller that revoked it. */
     Mono<Boolean> revokeIfActive(UUID id);
 

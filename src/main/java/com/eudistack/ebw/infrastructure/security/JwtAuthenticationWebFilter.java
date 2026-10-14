@@ -5,7 +5,11 @@ import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.eudistack.ebw.infrastructure.controller.support.AuthProblems;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
@@ -31,6 +35,11 @@ import java.util.stream.Collectors;
  * themselves —, when the token belongs to another tenant than the request's
  * ({@link ReactorContextKeys#TENANT_DOMAIN}, set by {@code TenantDomainWebFilter}, which runs
  * before the security chain), or when it lacks the session claims {@code sid} and {@code pkid}.
+ *
+ * <p>On the sensitive routes ({@link #SENSITIVE_PATHS}: key manager, attestations, issuance,
+ * passkeys and ending other sessions) the token is also rejected with 401 {@code invalid_session}
+ * once its session has been ended, revoked or has expired, instead of staying valid until the
+ * access token expires ({@link ActiveSessionChecker}, cached for at most 10 seconds).
  */
 @Component
 public class JwtAuthenticationWebFilter implements WebFilter {
@@ -38,10 +47,19 @@ public class JwtAuthenticationWebFilter implements WebFilter {
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationWebFilter.class);
     private static final String BEARER_PREFIX = "Bearer ";
 
-    private final TokenSigner tokenSigner;
+    static final List<String> SENSITIVE_PATHS = List.of(
+            "/api/v1/keys/", "/api/v1/credentials", "/api/v1/openid-credential-offer/",
+            "/api/v1/auth/passkeys", "/api/v1/auth/sessions/others");
 
-    public JwtAuthenticationWebFilter(TokenSigner tokenSigner) {
+    private final TokenSigner tokenSigner;
+    private final ActiveSessionChecker activeSessionChecker;
+    private final ObjectMapper objectMapper;
+
+    public JwtAuthenticationWebFilter(TokenSigner tokenSigner, ActiveSessionChecker activeSessionChecker,
+                                      ObjectMapper objectMapper) {
         this.tokenSigner = tokenSigner;
+        this.activeSessionChecker = activeSessionChecker;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -62,9 +80,34 @@ public class JwtAuthenticationWebFilter implements WebFilter {
                 .defaultIfEmpty(Optional.empty())
                 .onErrorResume(InvalidTokenException.class, e -> Mono.just(Optional.empty()))
                 .flatMap(authentication -> authentication
-                        .map(auth -> chain.filter(exchange)
-                                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth)))
+                        .map(auth -> requireActiveSession(exchange, auth)
+                                .flatMap(active -> Boolean.TRUE.equals(active)
+                                        ? chain.filter(exchange)
+                                                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth))
+                                        : invalidSession(exchange)))
                         .orElseGet(() -> chain.filter(exchange)));
+    }
+
+    private Mono<Boolean> requireActiveSession(ServerWebExchange exchange, JwtAuthenticationToken auth) {
+        var path = exchange.getRequest().getPath().pathWithinApplication().value();
+        if (SENSITIVE_PATHS.stream().noneMatch(path::startsWith)) {
+            return Mono.just(true);
+        }
+        return activeSessionChecker.isActive(auth.getSessionId());
+    }
+
+    private Mono<Void> invalidSession(ServerWebExchange exchange) {
+        log.debug("Access token rejected: its session is no longer active");
+        var response = exchange.getResponse();
+        response.setStatusCode(HttpStatus.UNAUTHORIZED);
+        response.getHeaders().setContentType(MediaType.APPLICATION_PROBLEM_JSON);
+        byte[] body;
+        try {
+            body = objectMapper.writeValueAsBytes(AuthProblems.of(HttpStatus.UNAUTHORIZED, AuthProblems.INVALID_SESSION));
+        } catch (Exception e) {
+            body = new byte[0];
+        }
+        return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
     }
 
     private JwtAuthenticationToken toAuthentication(Map<String, Object> claims, String requestTenant) {

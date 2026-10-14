@@ -42,6 +42,12 @@ class SecurityWebFilterChainTest {
     private WebTestClient client;
     private SecurityConfig config;
 
+    private static com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessions() {
+        var checker = mock(com.eudistack.ebw.infrastructure.security.ActiveSessionChecker.class);
+        when(checker.isActive(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.just(true));
+        return checker;
+    }
+
     private static Map<String, Object> claims(String tenant) {
         return Map.of("sub", UUID.randomUUID().toString(), "email", "holder@example.com", "tenant", tenant,
                 "sid", UUID.randomUUID().toString(), "pkid", UUID.randomUUID().toString());
@@ -60,7 +66,8 @@ class SecurityWebFilterChainTest {
         when(tokenSigner.verify("registration-ticket")).thenThrow(new InvalidTokenException("Malformed JWT"));
         var corsOriginsLoader = mock(CorsOriginsLoader.class);
         when(corsOriginsLoader.loadOrigins()).thenReturn(List.of(WALLET_ORIGIN));
-        config = new SecurityConfig(new JwtAuthenticationWebFilter(tokenSigner), corsOriginsLoader,
+        config = new SecurityConfig(new JwtAuthenticationWebFilter(tokenSigner, activeSessions(),
+                        new ObjectMapper()), corsOriginsLoader,
                 new RefreshCookies(), new ObjectMapper());
         // An absolute base URL is required: the CORS processor compares the Origin with the request's scheme/host.
         // The tenant filter runs before the security chain, as in the application (TenantDomainWebFilter.ORDER).

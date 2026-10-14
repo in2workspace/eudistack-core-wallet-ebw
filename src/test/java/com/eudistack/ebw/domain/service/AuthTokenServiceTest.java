@@ -201,11 +201,15 @@ class AuthTokenServiceTest {
         when(refreshTokenRepository.revokeIfActive(existing.getId())).thenReturn(Mono.just(false));
         when(refreshTokenRepository.hasActiveToken(existing.getSessionId())).thenReturn(Mono.just(true));
         when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.empty());
+        when(refreshTokenRepository.deleteById(any())).thenReturn(Mono.empty());
 
         // Act + Assert
         StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
                 .expectError(TokenFamilyCompromisedException.class).verify();
-        verify(refreshTokenRepository, never()).insert(any());
+        // The token stored for the lost renewal is removed again.
+        var stored = org.mockito.ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokenRepository).insert(stored.capture());
+        verify(refreshTokenRepository).deleteById(stored.getValue().getId());
     }
 
     @Test

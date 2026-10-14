@@ -67,9 +67,19 @@ import static org.mockito.Mockito.when;
 @WithMockUser
 class PasskeyPrfKeyManagerControllerIT {
 
+    @org.junit.jupiter.api.BeforeEach
+    void stubActiveSessions() {
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+    }
+
     private static final String PREPARE_URL             = "/api/v1/keys/passkey-prf/sign/prepare";
     private static final String SUBMIT_URL              = "/api/v1/keys/passkey-prf/sign/submit";
     private static final String CONSTRAINT_ACCEPTED_URL = "/api/v1/keys/passkey-prf/constraint-accepted";
+
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
 
     @MockitoBean
     KeyManagerPort passkeyPrfAdapter;

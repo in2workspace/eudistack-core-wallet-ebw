@@ -39,6 +39,7 @@ class JwtAuthenticationWebFilterTest {
     private static final String TENANT = "sandbox";
 
     private TokenSigner tokenSigner;
+    private ActiveSessionChecker activeSessionChecker;
     private JwtAuthenticationWebFilter filter;
     private AtomicReference<JwtAuthenticationToken> seenAuthentication;
     private WebFilterChain chain;
@@ -46,7 +47,11 @@ class JwtAuthenticationWebFilterTest {
     @BeforeEach
     void setUp() {
         tokenSigner = mock(TokenSigner.class);
-        filter = new JwtAuthenticationWebFilter(tokenSigner);
+        activeSessionChecker = mock(ActiveSessionChecker.class);
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Mono.just(true));
+        filter = new JwtAuthenticationWebFilter(tokenSigner, activeSessionChecker,
+                new com.fasterxml.jackson.databind.ObjectMapper());
         seenAuthentication = new AtomicReference<>();
         chain = exchange -> ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
@@ -205,5 +210,38 @@ class JwtAuthenticationWebFilterTest {
     private static MockServerWebExchange exchangeWithAuthorization(String value) {
         return MockServerWebExchange.from(MockServerHttpRequest.get("/api/v1/credentials")
                 .header(HttpHeaders.AUTHORIZATION, value));
+    }
+
+    @Test
+    void filter_endedSessionOnSensitiveRoute_returnsInvalidSessionProblem() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+        when(activeSessionChecker.isActive(SESSION_ID)).thenReturn(Mono.just(false));
+        var exchange = exchangeWithAuthorization("Bearer good-token");
+
+        // Act
+        var result = filter.filter(exchange, chain);
+
+        // Assert
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
+        assertThat(seenAuthentication.get()).isNull();
+        assertThat(exchange.getResponse().getStatusCode().value()).isEqualTo(401);
+        StepVerifier.create(exchange.getResponse().getBodyAsString())
+                .assertNext(body -> assertThat(body).contains("invalid_session")).verifyComplete();
+    }
+
+    @Test
+    void filter_endedSessionOnNonSensitiveRoute_isNotChecked() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/v1/activity")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer good-token"));
+
+        // Act
+        StepVerifier.create(inTenant(filter.filter(exchange, chain), TENANT)).verifyComplete();
+
+        // Assert
+        verifyNoInteractions(activeSessionChecker);
+        assertThat(seenAuthentication.get()).isNotNull();
     }
 }

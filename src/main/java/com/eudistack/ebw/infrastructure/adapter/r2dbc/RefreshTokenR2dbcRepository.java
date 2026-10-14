@@ -31,6 +31,11 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
     }
 
     @Override
+    public Mono<Void> deleteById(UUID id) {
+        return springRepository.deleteById(id);
+    }
+
+    @Override
     public Mono<Boolean> revokeIfActive(UUID id) {
         return springRepository.revokeIfActive(id).map(rows -> rows > 0).defaultIfEmpty(false);
     }

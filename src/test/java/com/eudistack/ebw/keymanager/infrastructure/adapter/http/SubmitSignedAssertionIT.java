@@ -121,6 +121,10 @@ class SubmitSignedAssertionIT {
         registry.add("spring.flyway.default-schema", () -> "public");
     }
 
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
+
     @MockitoBean TokenSigner tokenSigner;
 
     /** Attestations are stored with the session passkey: covered by PrepareSignUseCaseTest. */
@@ -167,6 +171,8 @@ class SubmitSignedAssertionIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         when(sessionPasskeyCredentialPort.isObtainedWithPasskey(any(), any(), any()))
                 .thenReturn(Mono.just(true));
         webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();

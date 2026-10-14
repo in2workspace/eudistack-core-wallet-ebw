@@ -98,6 +98,10 @@ class PasskeyRevocationIsolationIT {
         registry.add("spring.flyway.default-schema", () -> "public");
     }
 
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
+
     @MockitoBean
     TokenSigner tokenSigner;
 
@@ -135,6 +139,8 @@ class PasskeyRevocationIsolationIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
         webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         cleanTables(SCHEMA_1);
         cleanTables(SCHEMA_2);

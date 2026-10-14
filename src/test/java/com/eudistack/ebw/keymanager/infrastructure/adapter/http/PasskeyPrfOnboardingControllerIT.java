@@ -60,6 +60,12 @@ import static org.mockito.Mockito.when;
 @WithMockUser
 class PasskeyPrfOnboardingControllerIT {
 
+    @org.junit.jupiter.api.BeforeEach
+    void stubActiveSessions() {
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+    }
+
     private static final String COMMIT_URL = "/api/v1/keys/passkey-prf/onboarding/commit";
     private static final String BLOCK_URL  = "/api/v1/keys/passkey-prf/onboarding/block";
 
@@ -71,6 +77,10 @@ class PasskeyPrfOnboardingControllerIT {
     private static final String BLOB_B64 = Base64.getUrlEncoder().withoutPadding().encodeToString(BLOB_BYTES);
     private static final String IV_B64   = Base64.getUrlEncoder().withoutPadding().encodeToString(IV_BYTES);
     private static final String TAG_B64  = Base64.getUrlEncoder().withoutPadding().encodeToString(TAG_BYTES);
+
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
 
     @MockitoBean EnrollHolderUseCase enrollHolderUseCase;
     @MockitoBean WalletProfileQueryPort walletProfileQueryPort;

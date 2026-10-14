@@ -97,15 +97,19 @@ public class AuthTokenService {
                     .then(Mono.error(new SessionExpiredException(existing.getSessionId(), user.getId(),
                             SessionExpiredException.Reason.IDLE_TIMEOUT)));
         }
-        return refreshTokenRepository.revokeIfActive(existing.getId())
+        // The new token is stored before the old one is revoked, so the session always has an
+        // active token (the access-token session check never sees a gap during a renewal).
+        var next = newToken(user, existing.getPasskeyId(), existing.getSessionId(), existing.getSessionStartedAt(),
+                now, settings, tenant);
+        return refreshTokenRepository.insert(next.token())
+                .then(refreshTokenRepository.revokeIfActive(existing.getId()))
                 .flatMap(revoked -> {
                     if (!Boolean.TRUE.equals(revoked)) {
                         // Another request rotated it first: the same token was presented twice.
-                        return rejectRevoked(existing);
+                        return refreshTokenRepository.deleteById(next.token().getId())
+                                .then(rejectRevoked(existing));
                     }
-                    return touchPasskey(existing.getPasskeyId())
-                            .then(issue(user, existing.getPasskeyId(), existing.getSessionId(),
-                                    existing.getSessionStartedAt(), now, settings, tenant));
+                    return touchPasskey(existing.getPasskeyId()).thenReturn(next.session());
                 });
     }
 
@@ -129,6 +133,14 @@ public class AuthTokenService {
 
     private Mono<IssuedSession> issue(WalletUser user, UUID passkeyId, UUID sessionId, Instant sessionStartedAt,
                                       Instant now, SessionSettings settings, String tenant) {
+        var next = newToken(user, passkeyId, sessionId, sessionStartedAt, now, settings, tenant);
+        return refreshTokenRepository.insert(next.token()).thenReturn(next.session());
+    }
+
+    private record NextToken(RefreshToken token, IssuedSession session) {}
+
+    private NextToken newToken(WalletUser user, UUID passkeyId, UUID sessionId, Instant sessionStartedAt,
+                               Instant now, SessionSettings settings, String tenant) {
         var accessExp = now.plus(accessTokenTtl);
         var claims = Map.<String, Object>of(
                 "sub", user.getId().toString(),
@@ -151,9 +163,16 @@ public class AuthTokenService {
         var refreshToken = RefreshToken.create(user.getId(), passkeyId, sessionId, sessionStartedAt,
                 hashProvider.sha256(rawRefreshToken), refreshExpiresAt);
 
-        return refreshTokenRepository.insert(refreshToken)
-                .thenReturn(new IssuedSession(accessToken, accessTokenTtl.toSeconds(), rawRefreshToken,
-                        sessionId, passkeyId, sessionExpiresAt));
+        return new NextToken(refreshToken, new IssuedSession(accessToken, accessTokenTtl.toSeconds(), rawRefreshToken,
+                sessionId, passkeyId, sessionExpiresAt));
+    }
+
+    /**
+     * Whether the session of an access token is still alive: it has a token that can renew it
+     * (not revoked, not past its inactivity period, which is capped at the maximum duration).
+     */
+    public Mono<Boolean> isSessionActive(UUID sessionId) {
+        return refreshTokenRepository.hasActiveToken(sessionId);
     }
 
     /**

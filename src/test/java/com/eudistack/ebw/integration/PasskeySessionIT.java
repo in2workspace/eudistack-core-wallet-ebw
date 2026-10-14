@@ -318,4 +318,55 @@ class PasskeySessionIT extends IntegrationTestBase {
         assertThat(query("SELECT 1 FROM refresh_token WHERE passkey_id = '" + ended.passkeyId() + "'")).isEmpty();
         assertThat(query("SELECT 1 FROM refresh_token WHERE passkey_id = '" + active.passkeyId() + "'")).isNotEmpty();
     }
+
+    // ------------------------------------------------------------------ session check on sensitive routes
+
+    private org.springframework.test.web.reactive.server.WebTestClient.ResponseSpec credentials(String accessToken) {
+        return webClient.get().uri("/api/v1/credentials").headers(h -> h.setBearerAuth(accessToken)).exchange();
+    }
+
+    @Test
+    void accessToken_afterSignOut_isRejectedOnSensitiveRoutes() {
+        var session = auth.signUp(email("ses-check-logout"), new SoftwareAuthenticator(TEST_ORIGIN));
+        credentials(session.accessToken()).expectStatus().isOk();
+
+        auth.endSessionSpec("current", session.accessToken(), true).expectStatus().isNoContent();
+
+        credentials(session.accessToken()).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
+        webClient.get().uri("/api/v1/auth/passkeys").headers(h -> h.setBearerAuth(session.accessToken()))
+                .exchange().expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void accessToken_ofASessionEndedByCloseOthers_isRejected() {
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
+        var other = auth.signUp(email("ses-check-others"), authenticator);
+        var current = auth.signIn(authenticator);
+
+        auth.endSessionSpec("others", current.accessToken(), true).expectStatus().isNoContent();
+
+        credentials(other.accessToken()).expectStatus().isUnauthorized();
+        credentials(current.accessToken()).expectStatus().isOk();
+    }
+
+    @Test
+    void accessToken_ofASessionEndedByReuseDetection_isRejected() {
+        var session = auth.signUp(email("ses-check-reuse"), new SoftwareAuthenticator(TEST_ORIGIN));
+        var renewed = auth.refresh(session.refreshToken());
+
+        auth.refreshSpec(session.refreshToken(), true).expectStatus().isUnauthorized();
+
+        credentials(renewed.accessToken()).expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void accessToken_afterRenewal_keepsWorking() {
+        var session = auth.signUp(email("ses-check-renewal"), new SoftwareAuthenticator(TEST_ORIGIN));
+
+        var renewed = auth.refresh(session.refreshToken());
+
+        credentials(session.accessToken()).expectStatus().isOk();
+        credentials(renewed.accessToken()).expectStatus().isOk();
+    }
 }

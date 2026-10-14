@@ -10,6 +10,7 @@ import com.eudistack.ebw.infrastructure.controller.dto.SessionResponse;
 import com.eudistack.ebw.infrastructure.controller.support.BearerTickets;
 import com.eudistack.ebw.infrastructure.controller.support.RefreshCookies;
 import com.eudistack.ebw.infrastructure.controller.support.WalletRequestHeader;
+import com.eudistack.ebw.infrastructure.security.ActiveSessionChecker;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
@@ -36,15 +37,18 @@ public class SessionController {
     private final EndSessionWorkflow endSessionWorkflow;
     private final RefreshCookies refreshCookies;
     private final ObjectMapper objectMapper;
+    private final ActiveSessionChecker activeSessionChecker;
 
     public SessionController(PasskeyAuthenticationWorkflow authenticationWorkflow,
                              RefreshTokenWorkflow refreshTokenWorkflow, EndSessionWorkflow endSessionWorkflow,
-                             RefreshCookies refreshCookies, ObjectMapper objectMapper) {
+                             RefreshCookies refreshCookies, ObjectMapper objectMapper,
+                             ActiveSessionChecker activeSessionChecker) {
         this.authenticationWorkflow = authenticationWorkflow;
         this.refreshTokenWorkflow = refreshTokenWorkflow;
         this.endSessionWorkflow = endSessionWorkflow;
         this.refreshCookies = refreshCookies;
         this.objectMapper = objectMapper;
+        this.activeSessionChecker = activeSessionChecker;
     }
 
     @PostMapping("/sessions/options")
@@ -81,6 +85,7 @@ public class SessionController {
     public Mono<ResponseEntity<Void>> endCurrentSession(ServerHttpRequest request, JwtAuthenticationToken auth) {
         WalletRequestHeader.require(request);
         return endSessionWorkflow.endCurrentSession(auth.getUserId(), auth.getSessionId())
+                .then(activeSessionChecker.forget(auth.getSessionId()))
                 .thenReturn(ResponseEntity.noContent()
                         .header(HttpHeaders.SET_COOKIE, refreshCookies.clear().toString())
                         .<Void>build());
