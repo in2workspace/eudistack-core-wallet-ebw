@@ -86,13 +86,13 @@ public class CredentialController {
     public Mono<CredentialDetailResponse> updateStatus(@PathVariable UUID id,
                                                         @Valid @RequestBody UpdateStatusRequest request,
                                                         JwtAuthenticationToken auth) {
-        return updateCredentialStatusWorkflow.updateStatus(auth.getUserId(), id, request.status())
+        return updateCredentialStatusWorkflow.updateStatus(auth.getUserId(), auth.getPasskeyId(), id, request.status())
                 .map(CredentialDetailResponse::from);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> delete(@PathVariable UUID id, JwtAuthenticationToken auth) {
-        return deleteCredentialWorkflow.deleteCredential(auth.getUserId(), id);
+        return deleteCredentialWorkflow.deleteCredential(auth.getUserId(), auth.getPasskeyId(), id);
     }
 }

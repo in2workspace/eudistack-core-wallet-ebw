@@ -1,11 +1,14 @@
 package com.eudistack.ebw.application.workflow;
 
+import com.eudistack.ebw.domain.model.WalletCredential;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+
+import java.util.UUID;
 
 /**
  * Whether the current tenant has passkey custody of the holder keys (wallet profile
@@ -18,6 +21,17 @@ public class PasskeyCustodyPolicy {
 
     public PasskeyCustodyPolicy(WalletProfileQueryPort walletProfileQueryPort) {
         this.walletProfileQueryPort = walletProfileQueryPort;
+    }
+
+    /**
+     * The attestation if the session may see it: always without passkey custody; with it, only
+     * unbound attestations and those of the session's passkey (EUD-11 FR-14). Empty otherwise.
+     */
+    public Mono<WalletCredential> visibleToSession(WalletCredential credential, UUID sessionPasskeyId) {
+        if (credential.isVisibleToPasskey(sessionPasskeyId)) {
+            return Mono.just(credential);
+        }
+        return isPasskeyCustody().flatMap(custody -> custody ? Mono.empty() : Mono.just(credential));
     }
 
     public Mono<Boolean> isPasskeyCustody() {

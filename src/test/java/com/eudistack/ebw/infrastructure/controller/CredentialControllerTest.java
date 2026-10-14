@@ -116,7 +116,7 @@ class CredentialControllerTest {
     void updateStatus_newStatus_returnsTheUpdatedDetail() {
         // Arrange
         var credential = credential(CredentialStatus.REVOKED);
-        when(updateCredentialStatusWorkflow.updateStatus(USER_ID, credential.getId(), "REVOKED"))
+        when(updateCredentialStatusWorkflow.updateStatus(USER_ID, auth.getPasskeyId(), credential.getId(), "REVOKED"))
                 .thenReturn(Mono.just(credential));
 
         // Act
@@ -132,14 +132,14 @@ class CredentialControllerTest {
     void delete_ownedCredential_delegatesToTheWorkflow() {
         // Arrange
         var id = UUID.randomUUID();
-        when(deleteCredentialWorkflow.deleteCredential(USER_ID, id)).thenReturn(Mono.empty());
+        when(deleteCredentialWorkflow.deleteCredential(USER_ID, auth.getPasskeyId(), id)).thenReturn(Mono.empty());
 
         // Act
         var result = controller.delete(id, auth);
 
         // Assert
         StepVerifier.create(result).verifyComplete();
-        verify(deleteCredentialWorkflow).deleteCredential(USER_ID, id);
+        verify(deleteCredentialWorkflow).deleteCredential(USER_ID, auth.getPasskeyId(), id);
     }
 
     private static WalletCredential credential(CredentialStatus status) {

@@ -33,17 +33,21 @@ import static org.mockito.Mockito.when;
 class UpdateCredentialStatusWorkflowTest {
 
     private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID PASSKEY_ID = UUID.randomUUID();
     private static final UUID CREDENTIAL_ID = UUID.randomUUID();
 
     @Mock private WalletCredentialRepository credentialRepository;
     @Mock private CredentialService credentialService;
     @Mock private AuditService auditService;
+    @Mock private PasskeyCustodyPolicy custodyPolicy;
 
     private UpdateCredentialStatusWorkflow workflow;
 
     @BeforeEach
     void setUp() {
-        workflow = new UpdateCredentialStatusWorkflow(credentialRepository, credentialService, auditService);
+        workflow = new UpdateCredentialStatusWorkflow(credentialRepository, credentialService, auditService, custodyPolicy);
+        org.mockito.Mockito.lenient().when(custodyPolicy.visibleToSession(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
     }
 
     @Test
@@ -57,7 +61,7 @@ class UpdateCredentialStatusWorkflowTest {
         when(auditService.record(any(), any(), any(), any(), any())).thenReturn(Mono.empty());
 
         // Act
-        var result = workflow.updateStatus(USER_ID, CREDENTIAL_ID, "SUSPENDED");
+        var result = workflow.updateStatus(USER_ID, PASSKEY_ID, CREDENTIAL_ID, "SUSPENDED");
 
         // Assert
         StepVerifier.create(result)
@@ -74,7 +78,7 @@ class UpdateCredentialStatusWorkflowTest {
     @Test
     void updateStatus_unknownStatusValue_failsWithIllegalArgumentWithoutLookup() {
         // Act
-        var result = workflow.updateStatus(USER_ID, CREDENTIAL_ID, "ARCHIVED");
+        var result = workflow.updateStatus(USER_ID, PASSKEY_ID, CREDENTIAL_ID, "ARCHIVED");
 
         // Assert
         StepVerifier.create(result)
@@ -90,7 +94,7 @@ class UpdateCredentialStatusWorkflowTest {
         when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.empty());
 
         // Act
-        var result = workflow.updateStatus(USER_ID, CREDENTIAL_ID, "REVOKED");
+        var result = workflow.updateStatus(USER_ID, PASSKEY_ID, CREDENTIAL_ID, "REVOKED");
 
         // Assert
         StepVerifier.create(result)
@@ -108,7 +112,7 @@ class UpdateCredentialStatusWorkflowTest {
                 .when(credentialService).validateStatusTransition(CredentialStatus.REVOKED, CredentialStatus.VALID);
 
         // Act
-        var result = workflow.updateStatus(USER_ID, CREDENTIAL_ID, "VALID");
+        var result = workflow.updateStatus(USER_ID, PASSKEY_ID, CREDENTIAL_ID, "VALID");
 
         // Assert
         StepVerifier.create(result)
@@ -117,5 +121,19 @@ class UpdateCredentialStatusWorkflowTest {
         assertThat(credential.getStatus()).isEqualTo(CredentialStatus.REVOKED);
         verify(credentialRepository, never()).update(any());
         verifyNoInteractions(auditService);
+    }
+
+    @Test
+    void updateStatus_credentialOfAnotherPasskeyWithPasskeyCustody_failsAsNotFound() {
+        // Arrange — EUD-11 FR-14
+        var hidden = CredentialWorkflowFixtures.credential(USER_ID, true, java.util.UUID.randomUUID());
+        when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.just(hidden));
+        when(custodyPolicy.visibleToSession(hidden, PASSKEY_ID)).thenReturn(Mono.empty());
+
+        // Act + Assert
+        StepVerifier.create(workflow.updateStatus(USER_ID, PASSKEY_ID, CREDENTIAL_ID, "SUSPENDED"))
+                .expectError(com.eudistack.ebw.domain.model.exception.CredentialNotFoundException.class)
+                .verify();
+        org.mockito.Mockito.verify(credentialRepository, org.mockito.Mockito.never()).update(org.mockito.ArgumentMatchers.any());
     }
 }

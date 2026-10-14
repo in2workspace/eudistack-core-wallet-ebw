@@ -42,15 +42,15 @@ class GetCredentialWorkflowTest {
     @BeforeEach
     void setUp() {
         workflow = new GetCredentialWorkflow(credentialRepository, credentialService, custodyPolicy);
-        lenient().when(custodyPolicy.isPasskeyCustody()).thenReturn(Mono.just(false));
+        lenient().when(custodyPolicy.visibleToSession(any(), any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
     }
 
     @Test
     void getCredential_passkeyCustodyAndCredentialOfAnotherPasskey_failsAsNotFound() {
         // Arrange — EUD-11 AC-05
         var ofOtherPasskey = CredentialWorkflowFixtures.credential(USER_ID, true, UUID.randomUUID());
-        when(custodyPolicy.isPasskeyCustody()).thenReturn(Mono.just(true));
         when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.just(ofOtherPasskey));
+        when(custodyPolicy.visibleToSession(ofOtherPasskey, PASSKEY_ID)).thenReturn(Mono.empty());
 
         // Act + Assert
         StepVerifier.create(workflow.getCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID))

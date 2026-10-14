@@ -58,6 +58,13 @@ class CredentialPasskeyCustodyIT extends IntegrationTestBase {
             webClient.get().uri("/api/v1/credentials/" + bound)
                     .headers(h -> h.setBearerAuth(phoneSession.accessToken()))
                     .exchange().expectStatus().isNotFound();
+            webClient.patch().uri("/api/v1/credentials/" + bound + "/status")
+                    .headers(h -> h.setBearerAuth(phoneSession.accessToken()))
+                    .bodyValue(Map.of("status", "SUSPENDED"))
+                    .exchange().expectStatus().isNotFound();
+            webClient.delete().uri("/api/v1/credentials/" + bound)
+                    .headers(h -> h.setBearerAuth(phoneSession.accessToken()))
+                    .exchange().expectStatus().isNotFound();
         });
         // Other tenants are unchanged: without passkey custody every attestation is listed.
         assertThat(listIds(phoneSession.accessToken())).contains(bound, unbound);

@@ -32,9 +32,7 @@ public class GetCredentialWorkflow {
     /** With passkey custody, an attestation of another passkey is answered as not found (EUD-11 FR-14). */
     public Mono<VerifiableCredentialResponse> getCredential(UUID userId, UUID sessionPasskeyId, UUID credentialId) {
         return credentialRepository.findByIdAndUserId(credentialId, userId)
-                .filterWhen(credential -> credential.isVisibleToPasskey(sessionPasskeyId)
-                        ? Mono.just(true)
-                        : custodyPolicy.isPasskeyCustody().map(passkeyCustody -> !passkeyCustody))
+                .flatMap(credential -> custodyPolicy.visibleToSession(credential, sessionPasskeyId))
                 .switchIfEmpty(Mono.error(new CredentialNotFoundException()))
                 .flatMap(credential -> Mono
                         .fromCallable(() -> credentialService.toVerifiableCredential(credential))
