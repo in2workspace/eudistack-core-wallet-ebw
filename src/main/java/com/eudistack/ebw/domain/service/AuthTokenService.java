@@ -85,7 +85,7 @@ public class AuthTokenService {
         }
         var now = Instant.now();
         if (existing.isRevoked()) {
-            return endFamilyOnReuse(existing);
+            return rejectRevoked(existing);
         }
         if (existing.isPastMaxDuration(now, settings.maxDuration())) {
             return refreshTokenRepository.revokeBySessionId(existing.getSessionId())
@@ -101,7 +101,7 @@ public class AuthTokenService {
                 .flatMap(revoked -> {
                     if (!Boolean.TRUE.equals(revoked)) {
                         // Another request rotated it first: the same token was presented twice.
-                        return endFamilyOnReuse(existing);
+                        return rejectRevoked(existing);
                     }
                     return touchPasskey(existing.getPasskeyId())
                             .then(issue(user, existing.getPasskeyId(), existing.getSessionId(),
@@ -154,6 +154,18 @@ public class AuthTokenService {
         return refreshTokenRepository.insert(refreshToken)
                 .thenReturn(new IssuedSession(accessToken, accessTokenTtl.toSeconds(), rawRefreshToken,
                         sessionId, passkeyId, sessionExpiresAt));
+    }
+
+    /**
+     * A revoked token is a reuse only while its session can still be renewed with another token
+     * (RFC 9700): then the whole session is ended. A token of an already ended or expired session
+     * is just an invalid session, without the reuse alarm.
+     */
+    private <T> Mono<T> rejectRevoked(RefreshToken existing) {
+        return refreshTokenRepository.hasActiveToken(existing.getSessionId())
+                .flatMap(active -> Boolean.TRUE.equals(active)
+                        ? this.<T>endFamilyOnReuse(existing)
+                        : Mono.<T>error(new InvalidSessionException()));
     }
 
     private <T> Mono<T> endFamilyOnReuse(RefreshToken existing) {

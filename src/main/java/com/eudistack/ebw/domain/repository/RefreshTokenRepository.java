@@ -14,6 +14,9 @@ public interface RefreshTokenRepository {
     /** Atomically revokes a non-revoked token. Emits {@code true} only for the caller that revoked it. */
     Mono<Boolean> revokeIfActive(UUID id);
 
+    /** Whether the session still has a token that can renew it (not revoked, not expired). */
+    Mono<Boolean> hasActiveToken(UUID sessionId);
+
     /** Ends a session: revokes every token of its family. */
     Mono<Void> revokeBySessionId(UUID sessionId);
 

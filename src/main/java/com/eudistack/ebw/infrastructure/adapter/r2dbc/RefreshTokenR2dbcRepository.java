@@ -36,6 +36,11 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
     }
 
     @Override
+    public Mono<Boolean> hasActiveToken(UUID sessionId) {
+        return springRepository.hasActiveToken(sessionId).defaultIfEmpty(false);
+    }
+
+    @Override
     public Mono<Void> revokeBySessionId(UUID sessionId) {
         return springRepository.revokeBySessionId(sessionId).then();
     }

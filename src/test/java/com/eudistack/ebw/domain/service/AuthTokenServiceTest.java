@@ -173,6 +173,7 @@ class AuthTokenServiceTest {
     void rotateRefreshToken_revokedToken_endsTheWholeSession() {
         // Arrange
         var existing = token(Instant.now(), Instant.now().plusSeconds(600), true);
+        when(refreshTokenRepository.hasActiveToken(existing.getSessionId())).thenReturn(Mono.just(true));
         when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.empty());
 
         // Act + Assert
@@ -182,10 +183,23 @@ class AuthTokenServiceTest {
     }
 
     @Test
+    void rotateRefreshToken_revokedTokenOfAnEndedSession_isInvalidSessionWithoutReuseAlarm() {
+        // Arrange
+        var existing = token(Instant.now(), Instant.now().plusSeconds(600), true);
+        when(refreshTokenRepository.hasActiveToken(existing.getSessionId())).thenReturn(Mono.just(false));
+
+        // Act + Assert
+        StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
+                .expectError(InvalidSessionException.class).verify();
+        verify(refreshTokenRepository, never()).revokeBySessionId(any());
+    }
+
+    @Test
     void rotateRefreshToken_concurrentRotationLost_treatedAsReuse() {
         // Arrange
         var existing = token(Instant.now(), Instant.now().plusSeconds(600), false);
         when(refreshTokenRepository.revokeIfActive(existing.getId())).thenReturn(Mono.just(false));
+        when(refreshTokenRepository.hasActiveToken(existing.getSessionId())).thenReturn(Mono.just(true));
         when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.empty());
 
         // Act + Assert

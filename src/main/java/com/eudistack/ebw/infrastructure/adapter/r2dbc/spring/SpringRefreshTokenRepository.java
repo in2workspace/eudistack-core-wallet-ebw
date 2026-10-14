@@ -16,6 +16,10 @@ public interface SpringRefreshTokenRepository extends ReactiveCrudRepository<Ref
     @Query("UPDATE refresh_token SET revoked = true WHERE id = :id AND revoked = false")
     Mono<Long> revokeIfActive(UUID id);
 
+    @Query("SELECT EXISTS (SELECT 1 FROM refresh_token "
+            + "WHERE session_id = :sessionId AND revoked = false AND expires_at > NOW())")
+    Mono<Boolean> hasActiveToken(UUID sessionId);
+
     @Modifying
     @Query("UPDATE refresh_token SET revoked = true WHERE session_id = :sessionId AND revoked = false")
     Mono<Long> revokeBySessionId(UUID sessionId);
