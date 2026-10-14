@@ -3,6 +3,7 @@ package com.eudistack.ebw.application.workflow;
 import com.eudistack.ebw.domain.model.RegistrationTicket;
 import com.eudistack.ebw.domain.model.RegistrationTicketIssued;
 import com.eudistack.ebw.domain.model.WalletUser;
+import com.eudistack.ebw.domain.model.exception.DuplicateAccountException;
 import com.eudistack.ebw.domain.model.exception.InvalidOtpException;
 import com.eudistack.ebw.domain.model.exception.OtpExpiredException;
 import com.eudistack.ebw.domain.model.exception.TooManyAttemptsException;
@@ -74,7 +75,10 @@ public class VerifyEmailWorkflow {
                         .save(WalletUser.create(email, randomGenerator.generateBytes(WalletUser.USER_HANDLE_LENGTH)))
                         .flatMap(created -> auditService.record(AuthAuditEvents.ENTITY_USER, created.getId(),
                                         AuthAuditEvents.ACCOUNT_CREATED, created.getId(), Map.of())
-                                .thenReturn(created))));
+                                .thenReturn(created))
+                        // Two verifications of the same email at once: the second reuses the account.
+                        .onErrorResume(DuplicateAccountException.class, e -> userRepository.findByEmail(email)
+                                .switchIfEmpty(Mono.error(e)))));
     }
 
     private static boolean isCodeRejection(Throwable e) {

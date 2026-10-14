@@ -44,7 +44,7 @@ ALTER TABLE wallet_user
 -- -----------------------------------------------------------------------------
 -- user_passkey: WebAuthn credential record
 -- -----------------------------------------------------------------------------
-ALTER TABLE user_passkey DROP CONSTRAINT user_passkey_user_id_credential_id_key;
+ALTER TABLE user_passkey DROP CONSTRAINT IF EXISTS user_passkey_user_id_credential_id_key;
 
 ALTER TABLE user_passkey
     ADD COLUMN attested_credential_data BYTEA       NOT NULL,
@@ -71,7 +71,7 @@ ALTER TABLE refresh_token
     ADD COLUMN session_id         UUID        NOT NULL,
     ADD COLUMN session_started_at TIMESTAMPTZ NOT NULL;
 
-ALTER TABLE refresh_token DROP CONSTRAINT refresh_token_passkey_id_fkey;
+ALTER TABLE refresh_token DROP CONSTRAINT IF EXISTS refresh_token_passkey_id_fkey;
 ALTER TABLE refresh_token ALTER COLUMN passkey_id SET NOT NULL;
 ALTER TABLE refresh_token
     ADD CONSTRAINT fk_refresh_token_passkey
@@ -79,6 +79,11 @@ ALTER TABLE refresh_token
 
 CREATE INDEX idx_refresh_token_session_id ON refresh_token (session_id);
 CREATE INDEX idx_refresh_token_user_id ON refresh_token (user_id);
+
+-- -----------------------------------------------------------------------------
+-- email_verification: a code replaced by a newer one is answered as expired_code
+-- -----------------------------------------------------------------------------
+ALTER TABLE email_verification ADD COLUMN replaced_at TIMESTAMPTZ;
 
 -- -----------------------------------------------------------------------------
 -- webauthn_ceremony: challenge issued by the service, single use, 5 minutes

@@ -31,7 +31,7 @@ class EmailVerificationR2dbcRepositoryTest {
     @BeforeEach
     void setUp() {
         springRepository = mock(SpringEmailVerificationRepository.class);
-        repository = new EmailVerificationR2dbcRepository(springRepository);
+        repository = new EmailVerificationR2dbcRepository(springRepository, mock(org.springframework.r2dbc.core.DatabaseClient.class));
     }
 
     @Test

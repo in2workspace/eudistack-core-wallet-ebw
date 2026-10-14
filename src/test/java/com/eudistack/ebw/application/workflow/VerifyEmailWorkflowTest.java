@@ -2,6 +2,7 @@ package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.domain.model.EmailVerification;
 import com.eudistack.ebw.domain.model.WalletUser;
+import com.eudistack.ebw.domain.model.exception.DuplicateAccountException;
 import com.eudistack.ebw.domain.model.exception.InvalidOtpException;
 import com.eudistack.ebw.domain.model.exception.OtpExpiredException;
 import com.eudistack.ebw.domain.model.exception.TooManyAttemptsException;
@@ -154,5 +155,20 @@ class VerifyEmailWorkflowTest {
         StepVerifier.create(workflow.verifyEmail(EMAIL, CODE)).expectError(TooManyAttemptsException.class).verify();
         verify(auditService).record(eq("email_verification"), any(), eq(AuthAuditEvents.EMAIL_CODE_REJECTED),
                 eq(null), eq(Map.of("reason", "too_many_attempts")));
+    }
+
+    @Test
+    void verifyEmail_accountCreatedConcurrently_reusesTheExistingAccount() {
+        // Arrange
+        validCode();
+        var existing = TestPasskeys.user(EMAIL);
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.empty(), Mono.just(existing));
+        when(randomGenerator.generateBytes(32)).thenReturn(TestPasskeys.randomBytes(32));
+        when(userRepository.save(any())).thenReturn(Mono.error(new DuplicateAccountException()));
+        when(passkeyRepository.countByUserId(existing.getId())).thenReturn(Mono.just(0L));
+
+        // Act + Assert
+        StepVerifier.create(workflow.verifyEmail(EMAIL, CODE)).expectNextCount(1).verifyComplete();
+        verify(ticketService).issue(existing.getId());
     }
 }

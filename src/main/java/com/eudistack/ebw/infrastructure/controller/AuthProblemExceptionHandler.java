@@ -122,7 +122,8 @@ public class AuthProblemExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnexpected(Exception ex) {
-        log.error("Unhandled exception in the registration and access API: {}", ex.getClass().getName(), ex);
+        // Class only: database messages may carry personal data (for instance the email of a unique key).
+        log.error("Unhandled exception in the registration and access API: {}", ex.getClass().getName());
         return problem(HttpStatus.INTERNAL_SERVER_ERROR, AuthProblems.SERVER_ERROR);
     }
 

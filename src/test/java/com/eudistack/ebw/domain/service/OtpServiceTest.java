@@ -11,6 +11,7 @@ import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -19,6 +20,7 @@ import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class OtpServiceTest {
@@ -74,7 +76,7 @@ class OtpServiceTest {
         var verification = EmailVerification.create(email, "bcrypt-hash", Instant.now().plusSeconds(600));
         when(verificationRepository.findLatestUnusedByEmail(email)).thenReturn(Mono.just(verification));
         when(hashProvider.verify("482916", "bcrypt-hash")).thenReturn(Mono.just(true));
-        when(verificationRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(verificationRepository.markUsedIfUsable(verification.getId(), 5)).thenReturn(Mono.just(true));
 
         // Act
         var result = otpService.verify(email, "482916");
@@ -95,7 +97,8 @@ class OtpServiceTest {
         var verification = EmailVerification.create(email, "bcrypt-hash", Instant.now().plusSeconds(600));
         when(verificationRepository.findLatestUnusedByEmail(email)).thenReturn(Mono.just(verification));
         when(hashProvider.verify("000000", "bcrypt-hash")).thenReturn(Mono.just(false));
-        when(verificationRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(verificationRepository.incrementAttempts(verification.getId())).thenReturn(Mono.just(1));
+        when(verificationRepository.findReplacedSince(eq(email), any())).thenReturn(Flux.empty());
 
         // Act
         var result = otpService.verify(email, "000000");
@@ -104,7 +107,36 @@ class OtpServiceTest {
         StepVerifier.create(result)
                 .expectError(InvalidOtpException.class)
                 .verify();
-        assertThat(verification.getAttempts()).isEqualTo(1);
+        verify(verificationRepository).incrementAttempts(verification.getId());
+    }
+
+    @Test
+    void verify_codeReplacedByANewerOne_throwsOtpExpiredException() {
+        // Arrange
+        var email = "user@example.com";
+        var current = EmailVerification.create(email, "new-hash", Instant.now().plusSeconds(600));
+        var replaced = EmailVerification.create(email, "old-hash", Instant.now().plusSeconds(300));
+        when(verificationRepository.findLatestUnusedByEmail(email)).thenReturn(Mono.just(current));
+        when(hashProvider.verify("111111", "new-hash")).thenReturn(Mono.just(false));
+        when(hashProvider.verify("111111", "old-hash")).thenReturn(Mono.just(true));
+        when(verificationRepository.incrementAttempts(current.getId())).thenReturn(Mono.just(1));
+        when(verificationRepository.findReplacedSince(eq(email), any())).thenReturn(Flux.just(replaced));
+
+        // Act + Assert
+        StepVerifier.create(otpService.verify(email, "111111")).expectError(OtpExpiredException.class).verify();
+    }
+
+    @Test
+    void verify_validCodeUsedConcurrently_throwsInvalidOtpException() {
+        // Arrange
+        var email = "user@example.com";
+        var verification = EmailVerification.create(email, "bcrypt-hash", Instant.now().plusSeconds(600));
+        when(verificationRepository.findLatestUnusedByEmail(email)).thenReturn(Mono.just(verification));
+        when(hashProvider.verify("482916", "bcrypt-hash")).thenReturn(Mono.just(true));
+        when(verificationRepository.markUsedIfUsable(verification.getId(), 5)).thenReturn(Mono.just(false));
+
+        // Act + Assert
+        StepVerifier.create(otpService.verify(email, "482916")).expectError(InvalidOtpException.class).verify();
     }
 
     @Test
@@ -165,7 +197,7 @@ class OtpServiceTest {
                 Instant.now().plusSeconds(600), false, Instant.now());
         when(verificationRepository.findLatestUnusedByEmail(email)).thenReturn(Mono.just(verification));
         when(hashProvider.verify("000000", "bcrypt-hash")).thenReturn(Mono.just(false));
-        when(verificationRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(verificationRepository.incrementAttempts(verification.getId())).thenReturn(Mono.just(5));
 
         // Act
         var result = otpService.verify(email, "000000");
@@ -174,6 +206,5 @@ class OtpServiceTest {
         StepVerifier.create(result)
                 .expectError(TooManyAttemptsException.class)
                 .verify();
-        assertThat(verification.getAttempts()).isEqualTo(5);
     }
 }
