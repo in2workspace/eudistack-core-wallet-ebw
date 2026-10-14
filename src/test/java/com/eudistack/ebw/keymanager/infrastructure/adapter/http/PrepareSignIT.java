@@ -1,5 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.keymanager.application.SessionPasskeyCredentialPort;
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.keymanager.application.PrfSaltUseCase;
 import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException;
@@ -107,6 +109,10 @@ class PrepareSignIT {
     }
 
     @MockitoBean TokenSigner tokenSigner;
+
+    /** Attestations are stored with the session passkey: covered by PrepareSignUseCaseTest. */
+
+    @MockitoBean SessionPasskeyCredentialPort sessionPasskeyCredentialPort;
     @MockitoBean PrfSaltUseCase prfSaltUseCase;
     @MockitoBean WrappedKeyHandleRepository wrappedKeyHandleRepository;
 
@@ -145,10 +151,12 @@ class PrepareSignIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        when(sessionPasskeyCredentialPort.isObtainedWithPasskey(any(), any(), any()))
+                .thenReturn(Mono.just(true));
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         seedWalletProfile(PASSKEY_PRF_TENANT, "server", "passkey-prf");
         seedWalletProfile(DB_TENANT, "server", "db");
-        when(tokenSigner.verify(BEARER)).thenReturn(
-                Map.of("sub", HOLDER_UUID.toString(), "email", "test@test.com"));
+        when(tokenSigner.verify(BEARER)).thenAnswer(TestSessions.sessionOfRequestTenant(HOLDER_UUID.toString(), "test@test.com"));
         when(prfSaltUseCase.getForHolder(any(), any(), any())).thenReturn(Mono.just(PRF_SALT));
         when(wrappedKeyHandleRepository.findBy(any(), any()))
                 .thenReturn(Mono.just(Optional.of(validHandle())));

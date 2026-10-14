@@ -1,0 +1,252 @@
+package com.eudistack.ebw.integration;
+
+import com.eudistack.ebw.support.SoftwareAuthenticator;
+import com.eudistack.ebw.support.WalletAuthClient;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * EUD-8 sign-in and session (FR-12 to FR-21): verified passkey sign-in, unknown credential,
+ * anomalous use, refresh cookie with inactivity and maximum duration, reuse detection, sign-out
+ * and the X-Wallet-Request header on the cookie endpoints.
+ */
+class PasskeySessionIT extends IntegrationTestBase {
+
+    private WalletAuthClient auth;
+
+    @BeforeEach
+    void setUp() {
+        setupEmailCapture();
+        capturedOtps.clear();
+        auth = authClient();
+    }
+
+    private static String email(String name) {
+        return name + "-" + System.nanoTime() + "@example.com";
+    }
+
+    @Test
+    void signIn_discoverablePasskey_opensSessionBoundToItWithoutEmail() {
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
+        var registered = auth.signUp(email("ses-signin"), authenticator);
+
+        var session = auth.signIn(authenticator);
+
+        assertThat(session.passkeyId()).isEqualTo(registered.passkeyId());
+        assertThat(query("SELECT sign_count, last_used_at FROM user_passkey WHERE id = '" + session.passkeyId() + "'"))
+                .singleElement().satisfies(row -> assertThat(((Number) row.get("sign_count")).longValue()).isEqualTo(1));
+        webClient.get().uri("/api/v1/credentials").headers(h -> h.setBearerAuth(session.accessToken()))
+                .exchange().expectStatus().isOk();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void signIn_withoutTicket_optionsHaveNoAllowCredentials() {
+        var options = auth.authenticationOptions(null);
+
+        var publicKey = (Map<String, Object>) options.get("publicKey");
+        assertThat(publicKey).containsEntry("rpId", TEST_RP_ID).containsEntry("timeout", 60000)
+                .containsEntry("userVerification", "required");
+        assertThat((java.util.List<Object>) publicKey.get("allowCredentials")).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void signIn_withTicket_allowsTheAccountPasskeysAndConsumesTheTicket() {
+        var email = email("ses-ticket");
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
+        auth.signUp(email, authenticator);
+        var ticket = auth.ticket(email);
+        assertThat((java.util.List<Map<String, Object>>) ((Map<String, Object>) auth.authenticationOptions(ticket)
+                .get("publicKey")).get("allowCredentials")).extracting(c -> c.get("id"))
+                .containsExactly(authenticator.credentialIdBase64Url());
+
+        auth.signInSpec(authenticator, ticket, null).expectStatus().isCreated();
+
+        auth.authenticationOptionsSpec(ticket).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_ticket");
+    }
+
+    @Test
+    void signIn_withTicketOfAnotherAccount_isRejected() {
+        var mine = new SoftwareAuthenticator(TEST_ORIGIN);
+        auth.signUp(email("ses-other-a"), mine);
+        var otherTicket = auth.ticket(email("ses-other-b"));
+
+        auth.signInSpec(mine, otherTicket, null).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("authentication_failed");
+    }
+
+    @Test
+    void signIn_unknownPasskey_returnsUnknownCredential() {
+        auth.signInSpec(new SoftwareAuthenticator(TEST_ORIGIN).withUserHandle(new byte[32]), null, null)
+                .expectStatus().isUnauthorized()
+                .expectHeader().contentType("application/problem+json")
+                .expectBody().jsonPath("$.type").isEqualTo("unknown_credential");
+    }
+
+    @Test
+    void signIn_userHandleOfAnotherAccount_isRejected() {
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
+        auth.signUp(email("ses-handle"), authenticator);
+        authenticator.withUserHandle(new byte[32]);
+
+        auth.signInSpec(authenticator, null, null).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("authentication_failed");
+    }
+
+    @Test
+    void signIn_counterGoingBackwards_isRejectedAndAudited() {
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN).withSignCount(10);
+        var registered = auth.signUp(email("ses-counter"), authenticator);
+        authenticator.withSignCount(2);
+
+        auth.signInSpec(authenticator, null, null).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("authentication_failed");
+
+        assertThat(query("SELECT metadata FROM audit_log WHERE action = 'ACCESS_REJECTED' AND metadata LIKE '%"
+                + registered.passkeyId() + "%'")).isNotEmpty();
+    }
+
+    @Test
+    void signIn_notBackupEligiblePasskeyBecomingEligible_isRejected() {
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN).withBackupEligible(false).withBackupState(false);
+        auth.signUp(email("ses-be"), authenticator);
+        authenticator.withBackupEligible(true);
+
+        auth.signInSpec(authenticator, null, null).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("authentication_failed");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void signIn_ceremonyUsedTwice_secondIsRejected() {
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
+        auth.signUp(email("ses-ceremony"), authenticator);
+        var options = auth.authenticationOptions(null);
+        var credential = authenticator.authenticate((Map<String, Object>) options.get("publicKey"));
+        auth.openSessionSpec(null, options.get("ceremonyId"), credential, null).expectStatus().isCreated();
+
+        auth.openSessionSpec(null, options.get("ceremonyId"), credential, null).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("authentication_failed");
+    }
+
+    @Test
+    void refresh_validCookieWithHeader_rotatesTheToken() {
+        var session = auth.signUp(email("ses-refresh"), new SoftwareAuthenticator(TEST_ORIGIN));
+
+        var renewed = auth.refresh(session.refreshToken());
+
+        assertThat(renewed.refreshToken()).isNotEqualTo(session.refreshToken());
+        assertThat(renewed.passkeyId()).isEqualTo(session.passkeyId());
+    }
+
+    @Test
+    void refresh_withoutWalletRequestHeader_isForbidden() {
+        var session = auth.signUp(email("ses-csrf"), new SoftwareAuthenticator(TEST_ORIGIN));
+
+        auth.refreshSpec(session.refreshToken(), false).expectStatus().isForbidden()
+                .expectBody().jsonPath("$.type").isEqualTo("forbidden");
+    }
+
+    @Test
+    void refresh_withoutCookie_isInvalidSessionAndClearsCookie() {
+        auth.refreshSpec(null, true).expectStatus().isUnauthorized()
+                .expectHeader().value(HttpHeaders.SET_COOKIE, c -> assertThat(c).contains("Max-Age=0"))
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
+    }
+
+    @Test
+    void refresh_reusedToken_endsTheWholeSession() {
+        var session = auth.signUp(email("ses-reuse"), new SoftwareAuthenticator(TEST_ORIGIN));
+        var renewed = auth.refresh(session.refreshToken());
+
+        auth.refreshSpec(session.refreshToken(), true).expectStatus().isUnauthorized();
+
+        auth.refreshSpec(renewed.refreshToken(), true).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
+    }
+
+    @Test
+    void refresh_afterInactivityPeriod_isRejected() {
+        var session = auth.signUp(email("ses-idle"), new SoftwareAuthenticator(TEST_ORIGIN));
+        sql("UPDATE refresh_token SET expires_at = now() - interval '1 second' WHERE passkey_id = '"
+                + session.passkeyId() + "'");
+
+        auth.refreshSpec(session.refreshToken(), true).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
+        assertThat(query("SELECT 1 FROM audit_log WHERE action = 'SESSION_EXPIRED' AND metadata LIKE '%idle_timeout%'"))
+                .isNotEmpty();
+    }
+
+    @Test
+    void refresh_pastMaximumDurationDespiteActivity_isRejected() {
+        var session = auth.signUp(email("ses-max"), new SoftwareAuthenticator(TEST_ORIGIN));
+        sql("UPDATE refresh_token SET session_started_at = now() - interval '9 hours' WHERE passkey_id = '"
+                + session.passkeyId() + "'");
+
+        auth.refreshSpec(session.refreshToken(), true).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
+    }
+
+    @Test
+    void endCurrentSession_thenRefresh_isRejectedAndCookieCleared() {
+        var session = auth.signUp(email("ses-logout"), new SoftwareAuthenticator(TEST_ORIGIN));
+
+        auth.endSessionSpec("current", session.accessToken(), true).expectStatus().isNoContent()
+                .expectHeader().value(HttpHeaders.SET_COOKIE, c -> assertThat(c).contains("Max-Age=0"));
+
+        auth.refreshSpec(session.refreshToken(), true).expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void endCurrentSession_withoutWalletRequestHeader_isForbidden() {
+        var session = auth.signUp(email("ses-logout-csrf"), new SoftwareAuthenticator(TEST_ORIGIN));
+
+        auth.endSessionSpec("current", session.accessToken(), false).expectStatus().isForbidden();
+    }
+
+    @Test
+    void endCurrentSession_withoutSession_isInvalidSession() {
+        auth.endSessionSpec("current", null, true).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
+    }
+
+    @Test
+    void endOtherSessions_keepsTheCurrentOne() {
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
+        var first = auth.signUp(email("ses-others"), authenticator);
+        var second = auth.signIn(authenticator);
+
+        auth.endSessionSpec("others", second.accessToken(), true).expectStatus().isNoContent();
+
+        auth.refreshSpec(first.refreshToken(), true).expectStatus().isUnauthorized();
+        auth.refreshSpec(second.refreshToken(), true).expectStatus().isOk();
+    }
+
+    @Test
+    void signIn_withCookieOfAnotherSession_endsThatSession() {
+        // FR-21: one session per container; the new sign-in ends the session of the cookie it carries.
+        var first = auth.signUp(email("ses-replace-a"), new SoftwareAuthenticator(TEST_ORIGIN));
+        var other = new SoftwareAuthenticator(TEST_ORIGIN);
+        auth.signUp(email("ses-replace-b"), other);
+
+        WalletAuthClient.session(auth.signInSpec(other, null, first.refreshToken()).expectStatus().isCreated());
+
+        auth.refreshSpec(first.refreshToken(), true).expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void accessToken_fromTheEmailCodeAlone_doesNotExist() {
+        // FR-16 / AC-10: the code only gives a ticket, which is not a session.
+        var ticket = auth.ticket(email("ses-no-session"));
+
+        webClient.get().uri("/api/v1/credentials").headers(h -> h.setBearerAuth(ticket))
+                .exchange().expectStatus().isUnauthorized();
+    }
+}

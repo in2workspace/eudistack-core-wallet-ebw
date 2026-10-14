@@ -32,6 +32,10 @@ UPDATE wallet_user
    SET webauthn_user_handle = uuid_send(gen_random_uuid()) || uuid_send(gen_random_uuid());
 
 ALTER TABLE wallet_user ALTER COLUMN webauthn_user_handle SET NOT NULL;
+-- The service always generates the handle; the default is only a safety net for rows written
+-- outside it (manual provisioning, fixtures), with the same random source as the backfill.
+ALTER TABLE wallet_user
+    ALTER COLUMN webauthn_user_handle SET DEFAULT (uuid_send(gen_random_uuid()) || uuid_send(gen_random_uuid()));
 ALTER TABLE wallet_user
     ADD CONSTRAINT uq_wallet_user_webauthn_user_handle UNIQUE (webauthn_user_handle);
 ALTER TABLE wallet_user

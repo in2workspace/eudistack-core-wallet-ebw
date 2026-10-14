@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedJwsAlgorithmException;
 import com.eudistack.ebw.keymanager.domain.model.HolderKeyId;
@@ -140,10 +141,10 @@ class KeyManagerControllerIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         seedWalletProfile(SERVER_DB_TENANT, "server", "db");
         seedWalletProfile(BROWSER_TENANT, "browser", null);
-        when(tokenSigner.verify(BEARER)).thenReturn(
-                Map.of("sub", HOLDER_ID.toString(), "email", "test@test.com"));
+        when(tokenSigner.verify(BEARER)).thenAnswer(TestSessions.sessionOfRequestTenant(HOLDER_ID.toString(), "test@test.com"));
     }
 
     private void seedWalletProfile(String tenant, String walletMode, String keyManager)

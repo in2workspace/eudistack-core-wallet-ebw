@@ -2,6 +2,8 @@ package com.eudistack.ebw.integration;
 
 import com.eudistack.ebw.domain.spi.EmailSender;
 import com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilter;
+import com.eudistack.ebw.support.SoftwareAuthenticator;
+import com.eudistack.ebw.support.WalletAuthClient;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -25,6 +27,7 @@ import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 
 /**
  * Base class for integration tests.
@@ -106,6 +109,13 @@ public abstract class IntegrationTestBase {
                 .baselineOnMigrate(true)
                 .load()
                 .migrate();
+
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
+            WalletAuthClient.configureRelyingParty(conn, TEST_TENANT_SCHEMA, TEST_TENANT + ".eudistack.test",
+                    "https://" + TEST_TENANT + ".eudistack.test");
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to configure the WebAuthn Relying Party", e);
+        }
     }
 
     @DynamicPropertySource
@@ -151,27 +161,57 @@ public abstract class IntegrationTestBase {
             capturedOtps.put(email, code);
             return Mono.empty();
         }).when(emailSender).sendOtp(anyString(), anyString());
+        lenient().when(emailSender.sendNewPasskeyNotice(anyString())).thenReturn(Mono.empty());
     }
 
-    @SuppressWarnings("unchecked")
-    protected String getAccessToken(String email) {
+    /** Origin of the Wallet App of {@link #TEST_TENANT}; its Relying Party is {@link #TEST_RP_ID}. */
+    protected static final String TEST_ORIGIN = "https://" + TEST_TENANT + ".eudistack.test";
+    protected static final String TEST_RP_ID = TEST_TENANT + ".eudistack.test";
+
+    /** Client of the registration and access API for {@link #TEST_TENANT}. */
+    protected WalletAuthClient authClient() {
         setupEmailCapture();
+        return new WalletAuthClient(webClient, capturedOtps, h -> { }, TEST_ORIGIN);
+    }
 
-        // Register
-        webClient.post().uri("/api/v1/auth/register")
-                .bodyValue(Map.of("email", email))
-                .exchange()
-                .expectStatus().isOk();
+    /**
+     * Access token of a session opened through the real flow: email code, registration ticket and a
+     * verified passkey registration with a software authenticator.
+     */
+    protected String getAccessToken(String email) {
+        return authClient().signUp(email, new SoftwareAuthenticator(TEST_ORIGIN)).accessToken();
+    }
 
-        // Verify
-        var otp = capturedOtps.get(email);
-        var tokens = webClient.post().uri("/api/v1/auth/verify-email")
-                .bodyValue(Map.of("email", email, "code", otp))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(Map.class)
-                .returnResult().getResponseBody();
+    /** Runs SQL in the test tenant schema (fixtures and assertions on rows the API does not expose). */
+    protected static void sql(String statement) {
+        try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("SET search_path TO " + TEST_TENANT_SCHEMA);
+            stmt.execute(statement);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
 
-        return (String) tokens.get("accessToken");
+    /** Query in the test tenant schema; one map per row, keyed by lower-case column label. */
+    protected static java.util.List<Map<String, Object>> query(String select) {
+        try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("SET search_path TO " + TEST_TENANT_SCHEMA);
+            try (var rs = stmt.executeQuery(select)) {
+                var rows = new java.util.ArrayList<Map<String, Object>>();
+                var meta = rs.getMetaData();
+                while (rs.next()) {
+                    var row = new java.util.HashMap<String, Object>();
+                    for (int i = 1; i <= meta.getColumnCount(); i++) {
+                        row.put(meta.getColumnLabel(i).toLowerCase(), rs.getObject(i));
+                    }
+                    rows.add(row);
+                }
+                return rows;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

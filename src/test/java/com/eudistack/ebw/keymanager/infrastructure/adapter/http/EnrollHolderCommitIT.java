@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.keymanager.application.PrfSaltUseCase;
 import org.flywaydb.core.Flyway;
@@ -167,10 +168,10 @@ class EnrollHolderCommitIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         seedWalletProfile(PASSKEY_PRF_TENANT, "server", "passkey-prf");
         seedWalletProfile(DB_TENANT, "server", "db");
-        when(tokenSigner.verify(BEARER)).thenReturn(
-                Map.of("sub", HOLDER_UUID.toString(), "email", "test@test.com"));
+        when(tokenSigner.verify(BEARER)).thenAnswer(TestSessions.sessionOfRequestTenant(HOLDER_UUID.toString(), "test@test.com"));
         clearHandleTable(PASSKEY_PRF_TENANT + SCHEMA_SUFFIX);
     }
 

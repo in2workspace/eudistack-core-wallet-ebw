@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.keymanager.application.PrfSaltService;
 import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException;
@@ -121,9 +122,9 @@ class PrfSaltIsolationIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         seedWalletProfile();
-        when(tokenSigner.verify(BEARER)).thenReturn(
-                Map.of("sub", HOLDER_UUID.toString(), "email", "test@test.com"));
+        when(tokenSigner.verify(BEARER)).thenAnswer(TestSessions.sessionOfRequestTenant(HOLDER_UUID.toString(), "test@test.com"));
     }
 
     private void seedWalletProfile() throws SQLException {

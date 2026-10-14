@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.flywaydb.core.Flyway;
@@ -88,12 +89,12 @@ class ConcurrentDifferentCredentialsIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         holderId = UUID.randomUUID();
         tenant = "t" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
         schema = tenant + SCHEMA_SUFFIX;
         provisionTenantSchemaWithServerDbProfile();
-        when(tokenSigner.verify(BEARER)).thenReturn(
-                Map.of("sub", holderId.toString(), "email", "holder@test.com"));
+        when(tokenSigner.verify(BEARER)).thenAnswer(TestSessions.sessionOfRequestTenant(holderId.toString(), "holder@test.com"));
     }
 
     // -------------------------------------------------------------------------

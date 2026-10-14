@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.controller;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
@@ -117,9 +118,9 @@ class DeletePasskeyWorkflowIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         cleanTables();
-        when(tokenSigner.verify(VALID_TOKEN)).thenReturn(
-                Map.of("sub", USER_A.toString(), "email", "user-a@test.com"));
+        when(tokenSigner.verify(VALID_TOKEN)).thenAnswer(TestSessions.sessionOfRequestTenant(USER_A.toString(), "user-a@test.com"));
     }
 
     // -------------------------------------------------------------------------
@@ -147,9 +148,9 @@ class DeletePasskeyWorkflowIT {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
                     "INSERT INTO " + SCHEMA + ".user_passkey "
-                    + "(id, user_id, credential_id, display_name, user_agent, created_at) VALUES ('"
+                    + "(id, user_id, credential_id, display_name, user_agent, created_at, attested_credential_data, sign_count, uv_initialized, backup_eligible, backup_state, prf_enabled) VALUES ('"
                     + id + "', '" + userId + "', '" + credentialId + "', '" + displayName
-                    + "', 'test-agent', NOW())");
+                    + "', 'test-agent', NOW(), decode('010203', 'hex'), 0, true, true, true, true)");
         }
     }
 
@@ -157,9 +158,9 @@ class DeletePasskeyWorkflowIT {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
                     "INSERT INTO " + SCHEMA + ".refresh_token "
-                    + "(id, user_id, passkey_id, token_hash, expires_at, revoked) VALUES ('"
+                    + "(id, user_id, passkey_id, token_hash, expires_at, revoked, session_id, session_started_at) VALUES ('"
                     + id + "', '" + userId + "', '" + passkeyId + "', '" + tokenHash
-                    + "', NOW() + INTERVAL '30 days', FALSE)");
+                    + "', NOW() + INTERVAL '30 days', FALSE, gen_random_uuid(), NOW())");
         }
     }
 
