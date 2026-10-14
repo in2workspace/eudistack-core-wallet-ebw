@@ -9,9 +9,11 @@ import com.eudistack.ebw.application.workflow.UpdatePasskeyWorkflow;
 import com.eudistack.ebw.domain.model.UserPasskey;
 import com.eudistack.ebw.infrastructure.controller.dto.ConfirmSessionRequest;
 import com.eudistack.ebw.infrastructure.controller.dto.RegisterPasskeyRequest;
+import com.eudistack.ebw.infrastructure.controller.dto.UpdatePasskeyRequest;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -38,6 +40,10 @@ class PasskeyControllerTest {
 
     private RegisterPasskeyWorkflow registerPasskeyWorkflow;
     private ConfirmPasskeySessionWorkflow confirmPasskeySessionWorkflow;
+    private ListPasskeysWorkflow listPasskeysWorkflow;
+    private UpdatePasskeyWorkflow updatePasskeyWorkflow;
+    private DeletePasskeyWorkflow deletePasskeyWorkflow;
+    private RevokePasskeySessionsWorkflow revokePasskeySessionsWorkflow;
     private PasskeyController controller;
 
     private UUID userId;
@@ -47,12 +53,16 @@ class PasskeyControllerTest {
     void setUp() {
         registerPasskeyWorkflow = mock(RegisterPasskeyWorkflow.class);
         confirmPasskeySessionWorkflow = mock(ConfirmPasskeySessionWorkflow.class);
+        listPasskeysWorkflow = mock(ListPasskeysWorkflow.class);
+        updatePasskeyWorkflow = mock(UpdatePasskeyWorkflow.class);
+        deletePasskeyWorkflow = mock(DeletePasskeyWorkflow.class);
+        revokePasskeySessionsWorkflow = mock(RevokePasskeySessionsWorkflow.class);
         controller = new PasskeyController(
                 registerPasskeyWorkflow,
-                mock(ListPasskeysWorkflow.class),
-                mock(UpdatePasskeyWorkflow.class),
-                mock(DeletePasskeyWorkflow.class),
-                mock(RevokePasskeySessionsWorkflow.class),
+                listPasskeysWorkflow,
+                updatePasskeyWorkflow,
+                deletePasskeyWorkflow,
+                revokePasskeySessionsWorkflow,
                 confirmPasskeySessionWorkflow);
 
         userId = UUID.randomUUID();
@@ -124,5 +134,71 @@ class PasskeyControllerTest {
         StepVerifier.create(result)
                 .expectErrorMessage("not found")
                 .verify();
+    }
+
+    @Test
+    void list_passkeysWithSessions_mapsActiveSessionCounts() {
+        // Arrange
+        var passkey = UserPasskey.create(userId, "cred-1", "My PC", "ua");
+        when(listPasskeysWorkflow.listPasskeys(userId))
+                .thenReturn(Flux.just(new ListPasskeysWorkflow.PasskeyWithSessions(passkey, 2)));
+
+        // Act
+        var result = controller.list(auth);
+
+        // Assert
+        StepVerifier.create(result)
+                .assertNext(list -> {
+                    assertThat(list).hasSize(1);
+                    assertThat(list.get(0).id()).isEqualTo(passkey.getId());
+                    assertThat(list.get(0).activeSessions()).isEqualTo(2);
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void update_newDisplayName_returnsTheRenamedPasskey() {
+        // Arrange
+        var passkey = UserPasskey.create(userId, "cred-1", "Renamed", "ua");
+        when(updatePasskeyWorkflow.updatePasskey(userId, passkey.getId(), "Renamed")).thenReturn(Mono.just(passkey));
+
+        // Act
+        var result = controller.update(passkey.getId(), new UpdatePasskeyRequest("Renamed"), auth);
+
+        // Assert
+        StepVerifier.create(result)
+                .assertNext(response -> {
+                    assertThat(response.displayName()).isEqualTo("Renamed");
+                    assertThat(response.activeSessions()).isZero();
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void delete_delegatesToTheWorkflowWithTheCallersUserId() {
+        // Arrange
+        var passkeyId = UUID.randomUUID();
+        when(deletePasskeyWorkflow.deletePasskey(userId, passkeyId)).thenReturn(Mono.empty());
+
+        // Act
+        var result = controller.delete(passkeyId, auth);
+
+        // Assert
+        StepVerifier.create(result).verifyComplete();
+        verify(deletePasskeyWorkflow).deletePasskey(userId, passkeyId);
+    }
+
+    @Test
+    void revokeSessions_delegatesToTheWorkflowWithTheCallersUserId() {
+        // Arrange
+        var passkeyId = UUID.randomUUID();
+        when(revokePasskeySessionsWorkflow.revokeSessions(userId, passkeyId)).thenReturn(Mono.empty());
+
+        // Act
+        var result = controller.revokeSessions(passkeyId, auth);
+
+        // Assert
+        StepVerifier.create(result).verifyComplete();
+        verify(revokePasskeySessionsWorkflow).revokeSessions(userId, passkeyId);
     }
 }
