@@ -1,6 +1,11 @@
 spring:
   application:
     name: eudistack-core-wallet-ebw
+  config:
+    import:
+      # Email branding per tenant (image flags, social links). Each environment can replace the whole file:
+      # EMAIL_BRANDING_PATH=file:/path/email-branding.yaml (the bundled one is then not loaded).
+      - ${EMAIL_BRANDING_PATH:classpath:email-branding.yaml}
   webflux:
     base-path: /business-wallet
   r2dbc:
@@ -117,6 +122,12 @@ keymanager:
     # Default approximates p50 of warm signing path. MUST be calibrated empirically in STG
     # before production (NFR-S-407-03). See OpaqueRejectionConstantTimeIT.
     opaque-rejection-delay-millis: ${KEYMANAGER_SIGN_OPAQUE_REJECTION_DELAY_MS:80}
+
+email-branding:
+  # Tenant-assets root of this environment (one per environment, set by platform-iac).
+  # Default targets STG on purpose: local SMTP sends real emails, and external mail
+  # clients (Gmail image proxy) cannot load images from 127.0.0.1.nip.io.
+  assets-base-url: ${EMAIL_ASSETS_BASE_URL:https://sandbox.stg.eudistack.net/assets/tenants}
 
 logging:
   pattern:

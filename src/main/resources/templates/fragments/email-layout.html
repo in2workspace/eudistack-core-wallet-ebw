@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="en">
+<!--
+  Shared layout of the transactional emails (header / footer). Brand-specific items come from the
+  `branding` variable (EmailBranding); colours are common to all tenants.
+  Copy of eudistack-core-issuer's templates/fragments/email-layout.html: keep both in sync so the
+  emails of every EUDIStack service look the same.
+-->
+<head th:fragment="head(title)">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Asks clients not to recolour the email in dark mode (Apple Mail honours it; Gmail ignores it). -->
+    <meta name="color-scheme" content="light only" />
+    <meta name="supported-color-schemes" content="light only" />
+    <title th:text="${title}">Email</title>
+    <!-- Gmail and Outlook desktop ignore web fonts: the Arial fallback is expected there. -->
+    <link href="https://fonts.googleapis.com/css2?family=Blinker:wght@400;600;700&amp;display=swap" rel="stylesheet" />
+    <style>
+        :root { color-scheme: light only; supported-color-schemes: light only; }
+        /* Repeated per element: some clients do not inherit the font into nested tables. */
+        body, table, td, p, span, a { font-family: 'Blinker', Arial, Helvetica, sans-serif; }
+        @media (max-width: 480px) {
+            .email-box { width: 100% !important; }
+        }
+    </style>
+    <!-- Outlook desktop falls back to Times New Roman (not Arial) when the first font is not installed. -->
+    <!-- .break-long: Outlook desktop wraps long tokens with word-break: break-word, which works there; other
+         clients use the standard overflow-wrap set inline (break-word is deprecated and buggy elsewhere). -->
+    <!--[if mso]>
+    <style>
+        body, table, td, p, span, a { font-family: Arial, Helvetica, sans-serif !important; }
+        .break-long { word-break: break-word !important; }
+        .button-cell { padding: 12px 72px !important; }
+    </style>
+    <![endif]-->
+</head>
+<body>
+
+<!--
+  HEADER: optional logo and greeting on a white background, with an optional background image (e.g. DOME's
+  shape in the top-left corner). The logo and the background are independent: each shows only when the
+  branding has its URL. Without a logo the greeting moves up to the top padding; with a background the cell
+  is exactly as tall as the image (header-bg.png is 640x190) so it is neither cropped nor tiled, and the greeting sits at
+  the bottom. That cell has no top padding: some clients (e.g. Thunderbird) add it to the height and tile the image. greetingStyle carries the per-template font size, line height and the gap to the first body
+  line (margin-bottom); the body cell that follows adds a 12px top padding.
+-->
+<tr th:fragment="header(branding, greeting, greetingStyle)">
+    <td align="center" valign="bottom" bgcolor="#ffffff"
+        th:with="hasLogo=${!#strings.isEmpty(branding.logoUrl)}, hasBackground=${!#strings.isEmpty(branding.headerBackgroundUrl)}"
+        th:attr="background=${hasBackground ? branding.headerBackgroundUrl : null}, height=${hasBackground ? '190' : null}"
+        th:style="'padding: ' + (${hasBackground} ? '0' : '30px') + ' 24px 0 24px; background-color: #ffffff;' + (${hasBackground} ? ' height: 190px; background-image: url(' + ${branding.headerBackgroundUrl} + '); background-repeat: no-repeat; background-size: contain; background-position: top left;' : '')"
+        style="padding: 30px 24px 0 24px; background-color: #ffffff;">
+        <img th:if="${hasLogo}" th:src="${branding.logoUrl}"
+             th:alt="${#strings.isEmpty(tenantDisplayName) ? 'EUDIStack' : tenantDisplayName}"
+             alt="EUDIStack" height="54"
+             style="display: block; margin: 0 auto; height: 54px; border: 0;" />
+        <!-- 54px = the former 30px header bottom padding + 24px body top padding between logo and greeting. -->
+        <p th:style="'margin: ' + (${hasLogo} ? '54px' : '0') + ' 0 0 0; font-family: \'Blinker\', Arial, Helvetica, sans-serif; font-weight: 400; color: #000000; text-align: center; ' + ${greetingStyle}"
+           style="margin: 54px 0 0 0; color: #000000; text-align: center;"
+           th:text="${greeting}">Hello,</p>
+    </td>
+</tr>
+
+<!-- FOOTER: divider, per-template text (a fragment, may contain links) and optional social icons. -->
+<tr th:fragment="footer(branding, text)">
+    <td align="center" style="padding: 8px 40px 32px 40px; font-family: 'Blinker', Arial, Helvetica, sans-serif; text-align: center;">
+        <table role="presentation" width="66%" align="center" cellspacing="0" cellpadding="0" border="0" style="width: 66%; margin: 0 auto;">
+            <tr>
+                <td height="1" style="border-top: 2px solid #B6CAEC; font-size: 1px; line-height: 1px;">&nbsp;</td>
+            </tr>
+        </table>
+        <p style="margin: 20px 0 0 0; font-family: 'Blinker', Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.6; color: #000000; text-align: center;">
+            <th:block th:replace="${text}"></th:block>
+        </p>
+        <!-- The 20px gap above the icons is cell padding, not table margin: Outlook desktop ignores margins on tables. -->
+        <table role="presentation" align="center" cellspacing="0" cellpadding="0" border="0"
+               th:if="${!#lists.isEmpty(branding.socialLinks)}" style="margin: 0 auto;">
+            <tr>
+                <td th:each="link : ${branding.socialLinks}" style="padding: 20px 6px 0 6px;">
+                    <a th:href="${link.url}" target="_blank" rel="noopener noreferrer">
+                        <img th:src="'cid:icon-' + ${link.type} + '.png'" th:alt="${link.type}" alt="social" width="32" height="32"
+                             style="display: block; width: 32px; height: 32px; border: 0;" />
+                    </a>
+                </td>
+            </tr>
+        </table>
+    </td>
+</tr>
+</body>
+</html>
