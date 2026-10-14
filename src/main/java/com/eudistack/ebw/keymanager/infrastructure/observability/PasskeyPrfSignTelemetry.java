@@ -131,7 +131,7 @@ public class PasskeyPrfSignTelemetry {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(holderId.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash).substring(0, 12);
-        } catch (NoSuchAlgorithmException e) {
+        } catch (NoSuchAlgorithmException _) {
             return "hash-unavailable";
         }
     }

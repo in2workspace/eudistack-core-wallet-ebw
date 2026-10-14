@@ -53,6 +53,8 @@ import reactor.core.publisher.Mono;
 @RequiredArgsConstructor
 public class PasskeyPrfHealthContributor implements ReactiveHealthIndicator {
 
+    private static final String PRF_GATE_PASS_RATE = "prf_gate_pass_rate";
+
     private final WalletProfileQueryPort walletProfileQueryPort;
     private final WrappedKeyHandleRepository wrappedKeyHandleRepository;
     private final MeterRegistry meterRegistry;
@@ -99,16 +101,16 @@ public class PasskeyPrfHealthContributor implements ReactiveHealthIndicator {
 
         if (attempts == 0.0) {
             return Health.up()
-                    .withDetail("prf_gate_pass_rate", 1.0)
+                    .withDetail(PRF_GATE_PASS_RATE, 1.0)
                     .withDetail("prf_gate_pass_rate_note", "no attempts yet")
                     .build();
         }
 
         double rate = passes / attempts;
         if (rate >= 0.75) {
-            return Health.up().withDetail("prf_gate_pass_rate", rate).build();
+            return Health.up().withDetail(PRF_GATE_PASS_RATE, rate).build();
         }
-        return Health.down().withDetail("prf_gate_pass_rate", rate).build();
+        return Health.down().withDetail(PRF_GATE_PASS_RATE, rate).build();
     }
 
     private Mono<Health> saltCoherentHealth() {

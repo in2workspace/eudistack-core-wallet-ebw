@@ -184,10 +184,10 @@ class PasskeyPrfWrappedKeyHandleSchemaIT {
             assertThat(actual)
                     .as("Column '%s' must exist in the table", expected.getKey())
                     .containsKey(expected.getKey());
-            assertThat(actual.get(expected.getKey()))
+            assertThat(actual)
                     .as("Column '%s' must have type '%s' (got '%s')",
                         expected.getKey(), expected.getValue(), actual.get(expected.getKey()))
-                    .isEqualTo(expected.getValue());
+                    .containsEntry(expected.getKey(), expected.getValue());
         }
     }
 

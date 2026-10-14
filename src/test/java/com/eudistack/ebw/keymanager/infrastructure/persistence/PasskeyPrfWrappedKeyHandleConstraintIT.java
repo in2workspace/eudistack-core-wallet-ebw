@@ -12,10 +12,11 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.fail;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Verifies the CHECK constraints and NOT NULL invariants on
@@ -82,19 +83,11 @@ class PasskeyPrfWrappedKeyHandleConstraintIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.setAutoCommit(false);
             conn.createStatement().execute("SET search_path TO " + testSchema);
-            try {
-                conn.createStatement().execute(insertSql(
+            assertRejected(conn, insertSql(
                         holderId, credId,
-                        shortBlob, validIv(), validTag()));
-                fail("Expected SQLSTATE " + SQLSTATE_CHECK_VIOLATION
-                        + " for wrapped_blob < 48 bytes but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("wrapped_blob < 48B must be rejected with SQLSTATE 23514 (check_violation)")
-                        .isEqualTo(SQLSTATE_CHECK_VIOLATION);
-            } finally {
-                conn.rollback();
-            }
+                        shortBlob, validIv(), validTag()),
+                    "wrapped_blob < 48B must be rejected with SQLSTATE 23514 (check_violation)",
+                    SQLSTATE_CHECK_VIOLATION);
         }
         assertNoRow(credId);
     }
@@ -110,19 +103,11 @@ class PasskeyPrfWrappedKeyHandleConstraintIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.setAutoCommit(false);
             conn.createStatement().execute("SET search_path TO " + testSchema);
-            try {
-                conn.createStatement().execute(insertSql(
+            assertRejected(conn, insertSql(
                         holderId, credId,
-                        validBlob(), wrongIv, validTag()));
-                fail("Expected SQLSTATE " + SQLSTATE_CHECK_VIOLATION
-                        + " for iv != 12 bytes but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("iv != 12 bytes must be rejected with SQLSTATE 23514 (check_violation)")
-                        .isEqualTo(SQLSTATE_CHECK_VIOLATION);
-            } finally {
-                conn.rollback();
-            }
+                        validBlob(), wrongIv, validTag()),
+                    "iv != 12 bytes must be rejected with SQLSTATE 23514 (check_violation)",
+                    SQLSTATE_CHECK_VIOLATION);
         }
         assertNoRow(credId);
     }
@@ -134,19 +119,11 @@ class PasskeyPrfWrappedKeyHandleConstraintIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.setAutoCommit(false);
             conn.createStatement().execute("SET search_path TO " + testSchema);
-            try {
-                conn.createStatement().execute(insertSql(
+            assertRejected(conn, insertSql(
                         holderId, credId,
-                        validBlob(), wrongIv, validTag()));
-                fail("Expected SQLSTATE " + SQLSTATE_CHECK_VIOLATION
-                        + " for iv = 13 bytes but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("iv = 13 bytes must be rejected with SQLSTATE 23514 (check_violation)")
-                        .isEqualTo(SQLSTATE_CHECK_VIOLATION);
-            } finally {
-                conn.rollback();
-            }
+                        validBlob(), wrongIv, validTag()),
+                    "iv = 13 bytes must be rejected with SQLSTATE 23514 (check_violation)",
+                    SQLSTATE_CHECK_VIOLATION);
         }
         assertNoRow(credId);
     }
@@ -162,19 +139,11 @@ class PasskeyPrfWrappedKeyHandleConstraintIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.setAutoCommit(false);
             conn.createStatement().execute("SET search_path TO " + testSchema);
-            try {
-                conn.createStatement().execute(insertSql(
+            assertRejected(conn, insertSql(
                         holderId, credId,
-                        validBlob(), validIv(), shortTag));
-                fail("Expected SQLSTATE " + SQLSTATE_CHECK_VIOLATION
-                        + " for tag != 16 bytes but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("tag != 16 bytes must be rejected with SQLSTATE 23514 (check_violation)")
-                        .isEqualTo(SQLSTATE_CHECK_VIOLATION);
-            } finally {
-                conn.rollback();
-            }
+                        validBlob(), validIv(), shortTag),
+                    "tag != 16 bytes must be rejected with SQLSTATE 23514 (check_violation)",
+                    SQLSTATE_CHECK_VIOLATION);
         }
         assertNoRow(credId);
     }
@@ -188,23 +157,15 @@ class PasskeyPrfWrappedKeyHandleConstraintIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.setAutoCommit(false);
             conn.createStatement().execute("SET search_path TO " + testSchema);
-            try {
-                conn.createStatement().execute(
-                        "INSERT INTO passkey_prf_wrapped_key_handle "
+            assertRejected(conn, "INSERT INTO passkey_prf_wrapped_key_handle "
                         + "(holder_id, credential_id, wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk) "
                         + "VALUES ('" + holderId + "', 'cred-null-blob', "
                         + " NULL, "
                         + " decode('" + hex(validIv()) + "', 'hex'), "
                         + " decode('" + hex(validTag()) + "', 'hex'), "
-                        + " 'HKDF-SHA-256', 1, '{\"kty\":\"EC\"}')");
-                fail("Expected NOT NULL violation for wrapped_blob = NULL but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("wrapped_blob = NULL must be rejected with SQLSTATE 23502 (not_null_violation)")
-                        .isEqualTo(SQLSTATE_NOT_NULL_VIOLATION);
-            } finally {
-                conn.rollback();
-            }
+                        + " 'HKDF-SHA-256', 1, '{\"kty\":\"EC\"}')",
+                    "wrapped_blob = NULL must be rejected with SQLSTATE 23502 (not_null_violation)",
+                    SQLSTATE_NOT_NULL_VIOLATION);
         }
         assertNoRow("cred-null-blob");
     }
@@ -230,18 +191,10 @@ class PasskeyPrfWrappedKeyHandleConstraintIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.setAutoCommit(false);
             conn.createStatement().execute("SET search_path TO " + testSchema);
-            try {
-                conn.createStatement().execute(insertSql(holderId, credId,
-                        validBlob(), validIv(), validTag()));
-                fail("Expected SQLSTATE " + SQLSTATE_UNIQUE_VIOLATION
-                        + " for duplicate PK but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("duplicate (holder_id, credential_id) must be rejected with SQLSTATE 23505")
-                        .isEqualTo(SQLSTATE_UNIQUE_VIOLATION);
-            } finally {
-                conn.rollback();
-            }
+            assertRejected(conn, insertSql(holderId, credId,
+                        validBlob(), validIv(), validTag()),
+                    "duplicate (holder_id, credential_id) must be rejected with SQLSTATE 23505",
+                    SQLSTATE_UNIQUE_VIOLATION);
         }
 
         // Exactly one row must remain
@@ -377,5 +330,16 @@ class PasskeyPrfWrappedKeyHandleConstraintIT {
             sb.append(String.format("%02x", b));
         }
         return sb.toString();
+    }
+
+    private static void assertRejected(Connection conn, String sql, String reason, String expectedSqlState)
+            throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            assertThatThrownBy(() -> stmt.execute(sql))
+                    .isInstanceOfSatisfying(SQLException.class, ex ->
+                            assertThat(ex.getSQLState()).as(reason).isEqualTo(expectedSqlState));
+        } finally {
+            conn.rollback();
+        }
     }
 }
