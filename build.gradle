@@ -92,9 +92,10 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-// webauthn4j-core uses Jackson 3 (tools.jackson), which needs jackson-annotations 2.22. Spring Boot 3.5
-// manages the Jackson 2 BOM at 2.19 and would downgrade it; the annotations are backward compatible with
-// jackson-databind 2.19, so only that artifact is raised.
+// webauthn4j-core brings Jackson 3 (tools.jackson.core 3.2.3), which shares jackson-annotations with
+// Jackson 2 and needs 2.22. Spring Boot 3.5 pins the Jackson 2 BOM at 2.19.4, so only jackson-annotations
+// is raised: it resolves to 2.22, while jackson-core and jackson-databind 2.x stay at 2.19.4 (annotations are
+// backward compatible with them).
 dependencyManagement {
     dependencies {
         dependency 'com.fasterxml.jackson.core:jackson-annotations:2.22'

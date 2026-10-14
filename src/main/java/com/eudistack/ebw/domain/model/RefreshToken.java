@@ -18,7 +18,7 @@ public class RefreshToken {
     private final Instant sessionStartedAt;
     private final String tokenHash;
     private final Instant expiresAt;
-    private boolean revoked;
+    private final boolean revoked;
     private final Instant createdAt;
 
     @SuppressWarnings("java:S107")
@@ -49,10 +49,6 @@ public class RefreshToken {
     /** Absolute limit: the session cannot be renewed past its maximum duration. */
     public boolean isPastMaxDuration(Instant now, Duration maxDuration) {
         return now.isAfter(sessionStartedAt.plus(maxDuration));
-    }
-
-    public void revoke() {
-        this.revoked = true;
     }
 
     public UUID getId() { return id; }

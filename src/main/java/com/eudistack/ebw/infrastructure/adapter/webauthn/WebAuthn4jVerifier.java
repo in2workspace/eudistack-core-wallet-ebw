@@ -42,16 +42,13 @@ import java.util.stream.Collectors;
 @Component
 public class WebAuthn4jVerifier implements WebAuthnVerifier {
 
-    /** COSE algorithms offered in {@code pubKeyCredParams}, in preference order. */
-    public static final List<Long> SUPPORTED_ALGORITHMS = List.of(-7L, -8L, -257L);
-
     /** Longest credential id that fits {@code user_passkey.credential_id} (VARCHAR(1024)) in base64url. */
     private static final int MAX_CREDENTIAL_ID_BASE64URL_LENGTH = 1024;
 
-    private static final List<PublicKeyCredentialParameters> PUB_KEY_CRED_PARAMS = List.of(
-            new PublicKeyCredentialParameters(PublicKeyCredentialType.PUBLIC_KEY, COSEAlgorithmIdentifier.ES256),
-            new PublicKeyCredentialParameters(PublicKeyCredentialType.PUBLIC_KEY, COSEAlgorithmIdentifier.EdDSA),
-            new PublicKeyCredentialParameters(PublicKeyCredentialType.PUBLIC_KEY, COSEAlgorithmIdentifier.RS256));
+    private static final List<PublicKeyCredentialParameters> PUB_KEY_CRED_PARAMS = SUPPORTED_ALGORITHMS.stream()
+            .map(alg -> new PublicKeyCredentialParameters(PublicKeyCredentialType.PUBLIC_KEY,
+                    COSEAlgorithmIdentifier.create(alg)))
+            .toList();
 
     private static final Set<String> KNOWN_TRANSPORTS = Set.of("ble", "hybrid", "internal", "nfc", "smart-card", "usb");
 

@@ -6,6 +6,8 @@ import com.eudistack.ebw.domain.model.UserPasskey;
 import com.eudistack.ebw.domain.model.VerifiedPasskeyAssertion;
 import com.eudistack.ebw.domain.model.VerifiedPasskeyRegistration;
 
+import java.util.List;
+
 /**
  * Verification of WebAuthn responses (JSON serialization of WebAuthn Level 3). Pure
  * computation, no I/O. Every failure is a
@@ -15,6 +17,9 @@ import com.eudistack.ebw.domain.model.VerifiedPasskeyRegistration;
  * <p>User presence and user verification are always required.
  */
 public interface WebAuthnVerifier {
+
+    /** COSE algorithms accepted for new passkeys, in preference order: ES256, EdDSA, RS256. */
+    List<Long> SUPPORTED_ALGORITHMS = List.of(-7L, -8L, -257L);
 
     /** Verifies a {@code RegistrationResponseJSON} against the ceremony challenge. */
     VerifiedPasskeyRegistration verifyRegistration(String registrationResponseJson, byte[] challenge,

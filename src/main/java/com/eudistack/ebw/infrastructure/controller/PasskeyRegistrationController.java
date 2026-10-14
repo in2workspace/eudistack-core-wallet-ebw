@@ -2,7 +2,7 @@ package com.eudistack.ebw.infrastructure.controller;
 
 import com.eudistack.ebw.application.workflow.PasskeyRegistrationWorkflow;
 import com.eudistack.ebw.application.workflow.PasskeyRegistrationWorkflow.RegisterPasskeyCommand;
-import com.eudistack.ebw.infrastructure.adapter.webauthn.WebAuthn4jVerifier;
+import com.eudistack.ebw.domain.spi.WebAuthnVerifier;
 import com.eudistack.ebw.infrastructure.controller.dto.RegisterPasskeyRequest;
 import com.eudistack.ebw.infrastructure.controller.dto.RegistrationOptionsResponse;
 import com.eudistack.ebw.infrastructure.controller.dto.SessionResponse;
@@ -44,7 +44,7 @@ public class PasskeyRegistrationController {
     @PostMapping("/options")
     public Mono<RegistrationOptionsResponse> options(ServerHttpRequest request) {
         return registrationWorkflow.startRegistration(BearerTickets.read(request))
-                .map(options -> RegistrationOptionsResponse.from(options, WebAuthn4jVerifier.SUPPORTED_ALGORITHMS));
+                .map(options -> RegistrationOptionsResponse.from(options, WebAuthnVerifier.SUPPORTED_ALGORITHMS));
     }
 
     @PostMapping
