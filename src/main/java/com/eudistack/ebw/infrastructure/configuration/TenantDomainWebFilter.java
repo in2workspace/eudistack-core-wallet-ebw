@@ -3,6 +3,7 @@ package com.eudistack.ebw.infrastructure.configuration;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.Ordered;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
@@ -34,10 +35,16 @@ import java.net.InetSocketAddress;
  * <p>Only enable {@code trust-forwarded-host} when the service is exclusively
  * reachable through a trusted reverse proxy (e.g. AWS ALB) that controls these
  * headers — direct client access must be blocked at the network level.
+ *
+ * <p>Runs before the Spring Security filter chain ({@link #ORDER}), so the tenant is already
+ * in the Reactor context when the JWT filter checks the access token's {@code tenant} claim.
  */
 @Slf4j
 @Component
-public class TenantDomainWebFilter implements WebFilter {
+public class TenantDomainWebFilter implements WebFilter, Ordered {
+
+    /** Before {@code WebFilterChainProxy} (order -100). */
+    public static final int ORDER = -200;
 
     public static final String HEADER_X_FORWARDED_HOST = "X-Forwarded-Host";
     public static final String HEADER_X_TENANT = "X-Tenant";
@@ -49,6 +56,11 @@ public class TenantDomainWebFilter implements WebFilter {
     public TenantDomainWebFilter(
             @Value("${ebw.security.trust-forwarded-host:false}") boolean trustForwardedHost) {
         this.trustForwardedHost = trustForwardedHost;
+    }
+
+    @Override
+    public int getOrder() {
+        return ORDER;
     }
 
     @Override

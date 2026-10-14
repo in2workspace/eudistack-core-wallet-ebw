@@ -24,14 +24,25 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
     }
 
     @Override
-    public Mono<RefreshToken> save(RefreshToken token) {
-        return springRepository.existsById(token.getId())
-                .flatMap(exists -> {
-                    var entity = RefreshTokenMapper.toEntity(token);
-                    if (!exists) entity.markNew();
-                    return springRepository.save(entity);
-                })
-                .map(RefreshTokenMapper::toDomain);
+    public Mono<RefreshToken> insert(RefreshToken token) {
+        var entity = RefreshTokenMapper.toEntity(token);
+        entity.markNew();
+        return springRepository.save(entity).map(RefreshTokenMapper::toDomain);
+    }
+
+    @Override
+    public Mono<Boolean> revokeIfActive(UUID id) {
+        return springRepository.revokeIfActive(id).map(rows -> rows > 0).defaultIfEmpty(false);
+    }
+
+    @Override
+    public Mono<Void> revokeBySessionId(UUID sessionId) {
+        return springRepository.revokeBySessionId(sessionId).then();
+    }
+
+    @Override
+    public Mono<Long> revokeByUserIdExceptSession(UUID userId, UUID keptSessionId) {
+        return springRepository.revokeByUserIdExceptSession(userId, keptSessionId).defaultIfEmpty(0L);
     }
 
     @Override
@@ -40,17 +51,7 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
     }
 
     @Override
-    public Mono<Void> revokeByUserId(UUID userId) {
-        return springRepository.revokeByUserId(userId);
-    }
-
-    @Override
     public Mono<Long> countActiveByPasskeyId(UUID passkeyId) {
         return springRepository.countActiveByPasskeyId(passkeyId);
-    }
-
-    @Override
-    public Mono<Void> updatePasskeyIdByTokenHash(String tokenHash, UUID passkeyId) {
-        return springRepository.updatePasskeyIdByTokenHash(tokenHash, passkeyId);
     }
 }

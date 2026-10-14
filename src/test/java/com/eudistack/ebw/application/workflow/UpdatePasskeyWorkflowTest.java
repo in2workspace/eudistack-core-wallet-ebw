@@ -1,5 +1,6 @@
 package com.eudistack.ebw.application.workflow;
 
+import com.eudistack.ebw.support.TestPasskeys;
 import com.eudistack.ebw.domain.model.UserPasskey;
 import com.eudistack.ebw.domain.model.exception.PasskeyNotFoundException;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
@@ -39,9 +40,9 @@ class UpdatePasskeyWorkflowTest {
     @Test
     void updatePasskey_ownedPasskey_savesTheNewDisplayName() {
         // Arrange
-        var passkey = UserPasskey.create(USER_ID, "cred-1", "Old name", "ua");
+        var passkey = TestPasskeys.create(USER_ID, "cred-1", "Old name", "ua");
         when(passkeyRepository.findByIdAndUserId(passkey.getId(), USER_ID)).thenReturn(Mono.just(passkey));
-        when(passkeyRepository.save(passkey)).thenReturn(Mono.just(passkey));
+        when(passkeyRepository.updateDisplayName(passkey)).thenReturn(Mono.just(passkey));
 
         // Act
         var result = workflow.updatePasskey(USER_ID, passkey.getId(), "New name");
@@ -63,6 +64,6 @@ class UpdatePasskeyWorkflowTest {
 
         // Assert
         StepVerifier.create(result).expectError(PasskeyNotFoundException.class).verify();
-        verify(passkeyRepository, never()).save(any());
+        verify(passkeyRepository, never()).updateDisplayName(any());
     }
 }

@@ -94,7 +94,7 @@ class PasskeyPrfOnboardingControllerIT {
         // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
+                        new JwtAuthenticationToken(actorId, "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
                 .post().uri(BLOCK_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(BLOCK_BODY)
@@ -116,7 +116,7 @@ class PasskeyPrfOnboardingControllerIT {
         // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
+                        new JwtAuthenticationToken(actorId, "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
                 .post().uri(BLOCK_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(BLOCK_BODY)
@@ -136,7 +136,7 @@ class PasskeyPrfOnboardingControllerIT {
         // Act & Assert — audit failure must not mask the security rejection
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
+                        new JwtAuthenticationToken(actorId, "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
                 .post().uri(BLOCK_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(BLOCK_BODY)
@@ -159,7 +159,7 @@ class PasskeyPrfOnboardingControllerIT {
         // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
+                        new JwtAuthenticationToken(actorId, "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
                 .post().uri(COMMIT_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
@@ -202,7 +202,7 @@ class PasskeyPrfOnboardingControllerIT {
 
         @Bean
         RateLimitProperties rateLimitProperties() {
-            return new RateLimitProperties(100, 100, 100, 100, 100, 100, 100, Duration.ofMinutes(1));
+            return new RateLimitProperties(100, 100, 100, 100, 100, 100, 100, 100, Duration.ofMinutes(1));
         }
 
         @Bean

@@ -41,13 +41,21 @@ public class SmtpEmailSender implements EmailSender {
 
     @Override
     public Mono<Void> sendOtp(String email, String code) {
+        var context = new Context(Locale.getDefault());
+        context.setVariable("txCode", code);
+        return send(email, "verification-code-email", "email.tx-code.subject", context);
+    }
+
+    @Override
+    public Mono<Void> sendNewPasskeyNotice(String email) {
+        return send(email, "new-passkey-email", "email.new-passkey.subject", new Context(Locale.getDefault()));
+    }
+
+    private Mono<Void> send(String email, String template, String subjectKey, Context context) {
         return tenantConfigService.getStringOrDefault("ebw.mail_from", defaultMailFrom)
                 .flatMap(from -> Mono.fromCallable(() -> {
-                    var context = new Context(Locale.getDefault());
-                    context.setVariable("txCode", code);
-
-                    var html = templateEngine.process("verification-code-email", context);
-                    var subject = messageSource.getMessage("email.tx-code.subject", null, Locale.getDefault());
+                    var html = templateEngine.process(template, context);
+                    var subject = messageSource.getMessage(subjectKey, null, Locale.getDefault());
 
                     var mimeMessage = mailSender.createMimeMessage();
                     var helper = new MimeMessageHelper(mimeMessage, "UTF-8");

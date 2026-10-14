@@ -20,8 +20,7 @@ spring:
 ebw:
   jwt:
     private-key-path: src/test/resources/test-ec256-private.pem
-    access-token-ttl: 15m
-    refresh-token-ttl: 7d
+    access-token-ttl: 5m
     issuer: eudistack-ebw-test
   otp:
     length: 6
@@ -33,7 +32,8 @@ ebw:
     verify-per-email: 100
     verify-per-ip: 1000
     refresh-per-ip: 1000
-    logout-per-ip: 1000
+    passkey-registration-per-ip: 1000
+    session-per-ip: 1000
     passkey-prf-sign-per-ip: 1000
     window: 1h
   cors:

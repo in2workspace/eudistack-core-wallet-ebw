@@ -22,7 +22,7 @@ public class UpdatePasskeyWorkflow {
                 .switchIfEmpty(Mono.error(new PasskeyNotFoundException()))
                 .flatMap(passkey -> {
                     passkey.updateDisplayName(displayName);
-                    return passkeyRepository.save(passkey);
+                    return passkeyRepository.updateDisplayName(passkey);
                 });
     }
 }

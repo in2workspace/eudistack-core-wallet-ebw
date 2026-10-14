@@ -129,6 +129,13 @@ public class Es256TokenSigner implements TokenSigner {
             result.put("iss", claimsSet.getIssuer());
             result.put("iat", claimsSet.getIssueTime());
             result.put("exp", claimsSet.getExpirationTime());
+            // Session claims (EUD-308): tenant, session and passkey of the session.
+            for (var sessionClaim : new String[] {"tenant", "sid", "pkid"}) {
+                var value = claimsSet.getStringClaim(sessionClaim);
+                if (value != null) {
+                    result.put(sessionClaim, value);
+                }
+            }
             // Pass through PBAC powers and OAuth2-style scope claims if present so the
             // security filter can map them to granted authorities. Additive — no behaviour
             // change for existing tokens that carry neither claim.

@@ -22,6 +22,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component
 public class RateLimitWebFilter implements WebFilter, Ordered {
 
+    private static final String AUTH_PREFIX = "/api/v1/auth/";
+    private static final String PASSKEY_REGISTRATION_OPTIONS = "/api/v1/auth/passkeys/registration/options";
+    private static final String PASSKEY_REGISTRATION = "/api/v1/auth/passkeys/registration";
+    private static final String SESSION_OPTIONS = "/api/v1/auth/sessions/options";
+    private static final String SESSION = "/api/v1/auth/sessions";
     private static final String PASSKEY_PRF_ONBOARDING_INIT = "/api/v1/keys/passkey-prf/onboarding/init";
     private static final String PASSKEY_PRF_ONBOARDING_COMMIT = "/api/v1/keys/passkey-prf/onboarding/commit";
     private static final String PASSKEY_PRF_SIGN_PREPARE = "/api/v1/keys/passkey-prf/sign/prepare";
@@ -62,7 +67,10 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
                     .then(chain.filter(exchange));
             case "/api/v1/auth/refresh" -> checkRateLimit("refresh:ip:" + ip, properties.refreshPerIp())
                     .then(chain.filter(exchange));
-            case "/api/v1/auth/logout" -> checkRateLimit("logout:ip:" + ip, properties.logoutPerIp())
+            case PASSKEY_REGISTRATION_OPTIONS, PASSKEY_REGISTRATION ->
+                    checkRateLimit("passkey-registration:ip:" + ip, properties.passkeyRegistrationPerIp())
+                            .then(chain.filter(exchange));
+            case SESSION_OPTIONS, SESSION -> checkRateLimit("session:ip:" + ip, properties.sessionPerIp())
                     .then(chain.filter(exchange));
             case PASSKEY_PRF_ONBOARDING_INIT, PASSKEY_PRF_ONBOARDING_COMMIT, PASSKEY_PRF_SIGN_PREPARE, PASSKEY_PRF_SIGN_SUBMIT ->
                     checkRateLimit("passkey-prf:ip:" + ip, properties.passkeyPrfSignPerIp())
@@ -73,7 +81,8 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
         // A WebFilter runs outside the DispatcherHandler's exception-handling scope,
         // so @ControllerAdvice (GlobalExceptionHandler) never sees this error — it
         // must be turned into a response here, or it falls through to a generic 500.
-        return result.onErrorResume(RateLimitExceededException.class, ex -> writeRateLimitResponse(exchange, ex));
+        return result.onErrorResume(RateLimitExceededException.class,
+                ex -> writeRateLimitResponse(exchange, ex, path.startsWith(AUTH_PREFIX)));
     }
 
     private Mono<Void> checkRateLimit(String key, int limit) {
@@ -85,9 +94,14 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
         return Mono.empty();
     }
 
-    private Mono<Void> writeRateLimitResponse(ServerWebExchange exchange, RateLimitExceededException ex) {
+    /**
+     * The registration and access API answers the contract's {@code rate_limited} problem; the
+     * key manager endpoints keep their URN type.
+     */
+    private Mono<Void> writeRateLimitResponse(ServerWebExchange exchange, RateLimitExceededException ex,
+                                              boolean authEndpoint) {
         var problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
-        problem.setType(URI.create("urn:eudistack:error:rate-limit-exceeded"));
+        problem.setType(URI.create(authEndpoint ? "rate_limited" : "urn:eudistack:error:rate-limit-exceeded"));
 
         var response = exchange.getResponse();
         response.setStatusCode(HttpStatus.TOO_MANY_REQUESTS);

@@ -9,13 +9,18 @@ public interface RefreshTokenRepository {
 
     Mono<RefreshToken> findByTokenHash(String tokenHash);
 
-    Mono<RefreshToken> save(RefreshToken token);
+    Mono<RefreshToken> insert(RefreshToken token);
+
+    /** Atomically revokes a non-revoked token. Emits {@code true} only for the caller that revoked it. */
+    Mono<Boolean> revokeIfActive(UUID id);
+
+    /** Ends a session: revokes every token of its family. */
+    Mono<Void> revokeBySessionId(UUID sessionId);
+
+    /** Ends every session of the account except {@code keptSessionId}. Emits the number of revoked tokens. */
+    Mono<Long> revokeByUserIdExceptSession(UUID userId, UUID keptSessionId);
 
     Mono<Void> revokeByPasskeyId(UUID passkeyId);
 
-    Mono<Void> revokeByUserId(UUID userId);
-
     Mono<Long> countActiveByPasskeyId(UUID passkeyId);
-
-    Mono<Void> updatePasskeyIdByTokenHash(String tokenHash, UUID passkeyId);
 }

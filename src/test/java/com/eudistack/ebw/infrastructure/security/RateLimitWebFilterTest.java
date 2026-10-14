@@ -29,7 +29,7 @@ class RateLimitWebFilterTest {
 
     // registerPerIp=2, verifyPerIp=2, refreshPerIp=2, logoutPerIp=2, passkeyPrfSignPerIp=2, window=1h
     private static final RateLimitProperties PROPERTIES =
-            new RateLimitProperties(10, 2, 10, 2, 2, 2, 2, Duration.ofHours(1));
+            new RateLimitProperties(10, 2, 10, 2, 2, 2, 2, 2, Duration.ofHours(1));
 
     private RateLimitWebFilter filter;
     private AtomicInteger chainCalls;

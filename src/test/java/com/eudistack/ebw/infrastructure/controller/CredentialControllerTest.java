@@ -54,7 +54,7 @@ class CredentialControllerTest {
     void setUp() {
         controller = new CredentialController(storeCredentialWorkflow, listCredentialsWorkflow, getCredentialWorkflow,
                 updateCredentialStatusWorkflow, deleteCredentialWorkflow);
-        auth = new JwtAuthenticationToken(USER_ID, "holder@example.com", List.of());
+        auth = new JwtAuthenticationToken(USER_ID, "holder@example.com", UUID.randomUUID(), UUID.randomUUID(), List.of());
     }
 
     @Test

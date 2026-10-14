@@ -1,5 +1,6 @@
 package com.eudistack.ebw.application.workflow;
 
+import com.eudistack.ebw.support.TestPasskeys;
 import com.eudistack.ebw.domain.model.UserPasskey;
 import com.eudistack.ebw.domain.model.exception.PasskeyNotFoundException;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
@@ -42,7 +43,7 @@ class RevokePasskeySessionsWorkflowTest {
     @Test
     void revokeSessions_ownedPasskey_revokesItsTokensAndAudits() {
         // Arrange
-        var passkey = UserPasskey.create(USER_ID, "cred-1", "Phone", "ua");
+        var passkey = TestPasskeys.create(USER_ID, "cred-1", "Phone", "ua");
         when(passkeyRepository.findByIdAndUserId(passkey.getId(), USER_ID)).thenReturn(Mono.just(passkey));
         when(refreshTokenRepository.revokeByPasskeyId(passkey.getId())).thenReturn(Mono.empty());
         when(auditService.record("passkey", passkey.getId(), "SESSIONS_REVOKED", USER_ID, Map.of()))

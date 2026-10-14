@@ -102,7 +102,7 @@ class PasskeyPrfKeyManagerControllerIT {
         // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", List.of())))
+                        new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
                 .post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
@@ -144,7 +144,7 @@ class PasskeyPrfKeyManagerControllerIT {
         // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", List.of())))
+                        new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
                 .post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
@@ -167,7 +167,7 @@ class PasskeyPrfKeyManagerControllerIT {
         // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", List.of())))
+                        new JwtAuthenticationToken(UUID.randomUUID(), "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
                 .post().uri(SUBMIT_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("""
@@ -208,7 +208,7 @@ class PasskeyPrfKeyManagerControllerIT {
         // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
+                        new JwtAuthenticationToken(actorId, "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
                 .post().uri(CONSTRAINT_ACCEPTED_URL)
                 .exchange()
                 .expectStatus().isNoContent()
@@ -227,7 +227,7 @@ class PasskeyPrfKeyManagerControllerIT {
         // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
+                        new JwtAuthenticationToken(actorId, "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
                 .post().uri(CONSTRAINT_ACCEPTED_URL)
                 .exchange()
                 .expectStatus().isForbidden()
@@ -245,7 +245,7 @@ class PasskeyPrfKeyManagerControllerIT {
         // Act & Assert
         webTestClient
                 .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(actorId, "user@test.com", List.of())))
+                        new JwtAuthenticationToken(actorId, "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
                 .post().uri(CONSTRAINT_ACCEPTED_URL)
                 .exchange()
                 .expectStatus().is5xxServerError();
@@ -276,7 +276,7 @@ class PasskeyPrfKeyManagerControllerIT {
 
         @Bean
         RateLimitProperties rateLimitProperties() {
-            return new RateLimitProperties(100, 100, 100, 100, 100, 100, 100, Duration.ofMinutes(1));
+            return new RateLimitProperties(100, 100, 100, 100, 100, 100, 100, 100, Duration.ofMinutes(1));
         }
 
         @Bean

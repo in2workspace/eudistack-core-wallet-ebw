@@ -20,8 +20,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link RefreshTokenR2dbcRepository} — insert-vs-update dispatch and delegation of the
- * revocation / attribution queries (whose SQL is covered by the auth integration tests).
+ * Unit tests for {@link RefreshTokenR2dbcRepository}: insert dispatch, mapping and delegation of the
+ * revocation queries (whose SQL is covered by the session integration tests).
  */
 class RefreshTokenR2dbcRepositoryTest {
 
@@ -34,15 +34,19 @@ class RefreshTokenR2dbcRepositoryTest {
         repository = new RefreshTokenR2dbcRepository(springRepository);
     }
 
+    private static RefreshToken token() {
+        return RefreshToken.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), Instant.now(), "hash",
+                Instant.now().plusSeconds(60));
+    }
+
     @Test
-    void save_newToken_insertsAnEntityMarkedNewAndMapsItBack() {
+    void insert_newToken_savesAnEntityMarkedNewAndMapsItBack() {
         // Arrange
-        var token = RefreshToken.create(UUID.randomUUID(), UUID.randomUUID(), "hash", Instant.now().plusSeconds(60));
-        when(springRepository.existsById(token.getId())).thenReturn(Mono.just(false));
+        var token = token();
         when(springRepository.save(any(RefreshTokenEntity.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
         // Act
-        var result = repository.save(token);
+        var result = repository.insert(token);
 
         // Assert
         StepVerifier.create(result)
@@ -54,27 +58,9 @@ class RefreshTokenR2dbcRepositoryTest {
     }
 
     @Test
-    void save_existingToken_updatesWithoutMarkingNew() {
+    void findByTokenHash_existingRow_mapsSessionFields() {
         // Arrange
-        var token = RefreshToken.create(UUID.randomUUID(), null, "hash", Instant.now().plusSeconds(60));
-        token.revoke();
-        when(springRepository.existsById(token.getId())).thenReturn(Mono.just(true));
-        when(springRepository.save(any(RefreshTokenEntity.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-
-        // Act
-        var result = repository.save(token);
-
-        // Assert
-        StepVerifier.create(result).assertNext(saved -> assertThat(saved.isRevoked()).isTrue()).verifyComplete();
-        var saved = ArgumentCaptor.forClass(RefreshTokenEntity.class);
-        verify(springRepository).save(saved.capture());
-        assertThat(saved.getValue().isNew()).isFalse();
-    }
-
-    @Test
-    void findByTokenHash_existingRow_mapsItToTheDomain() {
-        // Arrange
-        var token = RefreshToken.create(UUID.randomUUID(), UUID.randomUUID(), "hash", Instant.now().plusSeconds(60));
+        var token = token();
         when(springRepository.findByTokenHash("hash")).thenReturn(Mono.just(RefreshTokenMapper.toEntity(token)));
 
         // Act
@@ -82,27 +68,50 @@ class RefreshTokenR2dbcRepositoryTest {
 
         // Assert
         StepVerifier.create(result)
-                .assertNext(found -> assertThat(found.getPasskeyId()).isEqualTo(token.getPasskeyId()))
+                .assertNext(found -> {
+                    assertThat(found.getSessionId()).isEqualTo(token.getSessionId());
+                    assertThat(found.getSessionStartedAt()).isEqualTo(token.getSessionStartedAt());
+                    assertThat(found.getPasskeyId()).isEqualTo(token.getPasskeyId());
+                })
                 .verifyComplete();
     }
 
     @Test
-    void revocationAndAttributionQueries_delegateToSpringData() {
+    void revokeIfActive_oneRowUpdated_emitsTrue() {
+        // Arrange
+        var id = UUID.randomUUID();
+        when(springRepository.revokeIfActive(id)).thenReturn(Mono.just(1L));
+
+        // Act + Assert
+        StepVerifier.create(repository.revokeIfActive(id)).expectNext(true).verifyComplete();
+    }
+
+    @Test
+    void revokeIfActive_noRowUpdated_emitsFalse() {
+        // Arrange
+        var id = UUID.randomUUID();
+        when(springRepository.revokeIfActive(id)).thenReturn(Mono.just(0L));
+
+        // Act + Assert
+        StepVerifier.create(repository.revokeIfActive(id)).expectNext(false).verifyComplete();
+    }
+
+    @Test
+    void revocationQueries_delegateToSpringData() {
         // Arrange
         var passkeyId = UUID.randomUUID();
+        var sessionId = UUID.randomUUID();
         var userId = UUID.randomUUID();
         when(springRepository.revokeByPasskeyId(passkeyId)).thenReturn(Mono.empty());
-        when(springRepository.revokeByUserId(userId)).thenReturn(Mono.empty());
+        when(springRepository.revokeBySessionId(sessionId)).thenReturn(Mono.just(2L));
+        when(springRepository.revokeByUserIdExceptSession(userId, sessionId)).thenReturn(Mono.just(3L));
         when(springRepository.countActiveByPasskeyId(passkeyId)).thenReturn(Mono.just(4L));
-        when(springRepository.updatePasskeyIdByTokenHash("hash", passkeyId)).thenReturn(Mono.empty());
 
         // Act + Assert
         StepVerifier.create(repository.revokeByPasskeyId(passkeyId)).verifyComplete();
-        StepVerifier.create(repository.revokeByUserId(userId)).verifyComplete();
+        StepVerifier.create(repository.revokeBySessionId(sessionId)).verifyComplete();
+        StepVerifier.create(repository.revokeByUserIdExceptSession(userId, sessionId)).expectNext(3L).verifyComplete();
         StepVerifier.create(repository.countActiveByPasskeyId(passkeyId)).expectNext(4L).verifyComplete();
-        StepVerifier.create(repository.updatePasskeyIdByTokenHash("hash", passkeyId)).verifyComplete();
-        verify(springRepository).revokeByPasskeyId(passkeyId);
-        verify(springRepository).revokeByUserId(userId);
-        verify(springRepository).updatePasskeyIdByTokenHash("hash", passkeyId);
+        verify(springRepository).revokeBySessionId(sessionId);
     }
 }

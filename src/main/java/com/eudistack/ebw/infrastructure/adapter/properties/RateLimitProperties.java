@@ -11,7 +11,8 @@ public record RateLimitProperties(
         int verifyPerEmail,
         int verifyPerIp,
         int refreshPerIp,
-        int logoutPerIp,
+        int passkeyRegistrationPerIp,
+        int sessionPerIp,
         int passkeyPrfSignPerIp,
         Duration window
 ) {

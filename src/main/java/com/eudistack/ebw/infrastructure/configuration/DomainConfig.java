@@ -4,13 +4,16 @@ import com.eudistack.ebw.domain.model.AuthTokenSettings;
 import com.eudistack.ebw.domain.repository.AuditLogRepository;
 import com.eudistack.ebw.domain.repository.EmailVerificationRepository;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
+import com.eudistack.ebw.domain.repository.RegistrationTicketRepository;
 import com.eudistack.ebw.domain.repository.TenantConfigRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.AuthTokenService;
 import com.eudistack.ebw.domain.service.CredentialService;
 import com.eudistack.ebw.domain.service.OtpService;
+import com.eudistack.ebw.domain.service.RegistrationTicketService;
 import com.eudistack.ebw.domain.service.TenantConfigService;
+import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
 import com.eudistack.ebw.domain.spi.EmailSender;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
@@ -42,8 +45,19 @@ public class DomainConfig {
                                              UserPasskeyRepository userPasskeyRepository,
                                              JwtProperties jwtProperties) {
         return new AuthTokenService(tokenSigner, hashProvider, randomGenerator, refreshTokenRepository,
-                userPasskeyRepository, new AuthTokenSettings(jwtProperties.accessTokenTtl(),
-                        jwtProperties.refreshTokenTtl(), jwtProperties.issuer()));
+                userPasskeyRepository, new AuthTokenSettings(jwtProperties.accessTokenTtl(), jwtProperties.issuer()));
+    }
+
+    @Bean
+    public WalletAuthSettingsService walletAuthSettingsService(TenantConfigService tenantConfigService) {
+        return new WalletAuthSettingsService(tenantConfigService);
+    }
+
+    @Bean
+    public RegistrationTicketService registrationTicketService(RegistrationTicketRepository ticketRepository,
+                                                               HashProvider hashProvider,
+                                                               SecureRandomGenerator randomGenerator) {
+        return new RegistrationTicketService(ticketRepository, hashProvider, randomGenerator);
     }
 
     @Bean

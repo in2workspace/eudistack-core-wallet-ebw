@@ -8,12 +8,22 @@ public final class RefreshTokenMapper {
     private RefreshTokenMapper() {}
 
     public static RefreshToken toDomain(RefreshTokenEntity entity) {
-        return new RefreshToken(entity.getId(), entity.getUserId(), entity.getPasskeyId(),
-                entity.getTokenHash(), entity.getExpiresAt(), entity.isRevoked(), entity.getCreatedAt());
+        return new RefreshToken(entity.getId(), entity.getUserId(), entity.getPasskeyId(), entity.getSessionId(),
+                entity.getSessionStartedAt(), entity.getTokenHash(), entity.getExpiresAt(), entity.isRevoked(),
+                entity.getCreatedAt());
     }
 
     public static RefreshTokenEntity toEntity(RefreshToken domain) {
-        return new RefreshTokenEntity(domain.getId(), domain.getUserId(), domain.getPasskeyId(),
-                domain.getTokenHash(), domain.getExpiresAt(), domain.isRevoked(), domain.getCreatedAt());
+        var entity = new RefreshTokenEntity();
+        entity.setId(domain.getId());
+        entity.setUserId(domain.getUserId());
+        entity.setPasskeyId(domain.getPasskeyId());
+        entity.setSessionId(domain.getSessionId());
+        entity.setSessionStartedAt(domain.getSessionStartedAt());
+        entity.setTokenHash(domain.getTokenHash());
+        entity.setExpiresAt(domain.getExpiresAt());
+        entity.setRevoked(domain.isRevoked());
+        entity.setCreatedAt(domain.getCreatedAt());
+        return entity;
     }
 }

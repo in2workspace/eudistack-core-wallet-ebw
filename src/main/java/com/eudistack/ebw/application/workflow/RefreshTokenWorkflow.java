@@ -1,43 +1,54 @@
 package com.eudistack.ebw.application.workflow;
 
-import com.eudistack.ebw.domain.model.AuthTokenPair;
-import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
+import com.eudistack.ebw.domain.model.IssuedSession;
+import com.eudistack.ebw.domain.model.exception.InvalidSessionException;
+import com.eudistack.ebw.domain.model.exception.SessionExpiredException;
+import com.eudistack.ebw.domain.model.exception.TokenFamilyCompromisedException;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
+import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.AuthTokenService;
-import com.eudistack.ebw.domain.spi.HashProvider;
-import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.util.Map;
+
+/**
+ * Renews the access token of the session of the refresh cookie (FR-18, FR-19). Any failure is
+ * {@link InvalidSessionException}: missing, inactive for too long, past its maximum duration,
+ * ended or reused (then the whole session is ended).
+ */
 @Service
 public class RefreshTokenWorkflow {
 
-    private static final Logger log = LoggerFactory.getLogger(RefreshTokenWorkflow.class);
-
     private final AuthTokenService authTokenService;
-    private final RefreshTokenRepository refreshTokenRepository;
     private final WalletUserRepository userRepository;
-    private final HashProvider hashProvider;
+    private final WalletAuthSettingsService settingsService;
+    private final AuditService auditService;
 
-    public RefreshTokenWorkflow(AuthTokenService authTokenService,
-                                RefreshTokenRepository refreshTokenRepository,
-                                WalletUserRepository userRepository,
-                                HashProvider hashProvider) {
+    public RefreshTokenWorkflow(AuthTokenService authTokenService, WalletUserRepository userRepository,
+                                WalletAuthSettingsService settingsService, AuditService auditService) {
         this.authTokenService = authTokenService;
-        this.refreshTokenRepository = refreshTokenRepository;
         this.userRepository = userRepository;
-        this.hashProvider = hashProvider;
+        this.settingsService = settingsService;
+        this.auditService = auditService;
     }
 
-    public Mono<AuthTokenPair> refreshToken(String rawToken) {
-        var tokenHash = hashProvider.sha256(rawToken);
-        return refreshTokenRepository.findByTokenHash(tokenHash)
-                .switchIfEmpty(Mono.error(new InvalidTokenException()))
-                .flatMap(existing -> userRepository.findById(existing.getUserId())
-                        .switchIfEmpty(Mono.error(new InvalidTokenException()))
-                )
-                .flatMap(user -> authTokenService.rotateRefreshToken(rawToken, user));
+    public Mono<IssuedSession> refresh(String rawRefreshToken) {
+        return authTokenService.findRefreshToken(rawRefreshToken)
+                .switchIfEmpty(Mono.error(new InvalidSessionException()))
+                .flatMap(token -> userRepository.findById(token.getUserId())
+                        .switchIfEmpty(Mono.error(new InvalidSessionException()))
+                        .flatMap(user -> Mono.zip(settingsService.session(), SessionOpener.currentTenant())
+                                .flatMap(tuple -> authTokenService.rotateRefreshToken(token, user,
+                                        tuple.getT1(), tuple.getT2()))))
+                .onErrorResume(SessionExpiredException.class, e -> auditService.record(
+                                AuthAuditEvents.ENTITY_SESSION, e.getSessionId(), AuthAuditEvents.SESSION_EXPIRED,
+                                e.getUserId(), Map.of("reason", e.getReason().name().toLowerCase()))
+                        .then(Mono.error(new InvalidSessionException())))
+                .onErrorResume(TokenFamilyCompromisedException.class, e -> auditService.record(
+                                AuthAuditEvents.ENTITY_SESSION, e.getSessionId(), AuthAuditEvents.SESSION_ENDED,
+                                e.getUserId(), Map.of("reason", "refresh_token_reuse"))
+                        .then(Mono.error(new InvalidSessionException())));
     }
 }

@@ -220,7 +220,7 @@ class Es256TokenSignerTest {
     }
 
     private static Es256TokenSigner signerWithKeyPath(String path) {
-        return new Es256TokenSigner(new JwtProperties(path, Duration.ofMinutes(15), Duration.ofDays(7), "https://ebw"));
+        return new Es256TokenSigner(new JwtProperties(path, Duration.ofMinutes(5), "https://ebw"));
     }
 
     private Path writeEcPrivateKeyPem() throws Exception {

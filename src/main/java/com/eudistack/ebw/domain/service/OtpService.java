@@ -13,6 +13,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.UUID;
 
 @RequiredArgsConstructor
 public class OtpService {
@@ -25,7 +26,11 @@ public class OtpService {
     private final Duration otpExpiration;
     private final int maxAttempts;
 
-    public Mono<Void> generateAndSend(String email) {
+    /**
+     * Generates a new code for the email (invalidating the previous one) and sends it.
+     * Emits the id of the verification, so it can be audited without the email.
+     */
+    public Mono<UUID> generateAndSend(String email) {
         var code = randomGenerator.generateOtp(otpLength);
         return hashProvider.hash(code)
                 .flatMap(codeHash -> {
@@ -34,7 +39,7 @@ public class OtpService {
                     return verificationRepository.invalidateByEmail(email)
                             .then(verificationRepository.save(verification));
                 })
-                .then(emailSender.sendOtp(email, code));
+                .flatMap(saved -> emailSender.sendOtp(email, code).thenReturn(saved.getId()));
     }
 
     public Mono<EmailVerification> verify(String email, String code) {

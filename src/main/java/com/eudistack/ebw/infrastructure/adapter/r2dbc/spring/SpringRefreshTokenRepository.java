@@ -13,17 +13,22 @@ public interface SpringRefreshTokenRepository extends ReactiveCrudRepository<Ref
     Mono<RefreshTokenEntity> findByTokenHash(String tokenHash);
 
     @Modifying
+    @Query("UPDATE refresh_token SET revoked = true WHERE id = :id AND revoked = false")
+    Mono<Long> revokeIfActive(UUID id);
+
+    @Modifying
+    @Query("UPDATE refresh_token SET revoked = true WHERE session_id = :sessionId AND revoked = false")
+    Mono<Long> revokeBySessionId(UUID sessionId);
+
+    @Modifying
+    @Query("UPDATE refresh_token SET revoked = true "
+            + "WHERE user_id = :userId AND session_id <> :sessionId AND revoked = false")
+    Mono<Long> revokeByUserIdExceptSession(UUID userId, UUID sessionId);
+
+    @Modifying
     @Query("UPDATE refresh_token SET revoked = true WHERE passkey_id = :passkeyId AND revoked = false")
     Mono<Void> revokeByPasskeyId(UUID passkeyId);
 
-    @Modifying
-    @Query("UPDATE refresh_token SET revoked = true WHERE user_id = :userId AND revoked = false")
-    Mono<Void> revokeByUserId(UUID userId);
-
     @Query("SELECT COUNT(*) FROM refresh_token WHERE passkey_id = :passkeyId AND revoked = false AND expires_at > NOW()")
     Mono<Long> countActiveByPasskeyId(UUID passkeyId);
-
-    @Modifying
-    @Query("UPDATE refresh_token SET passkey_id = :passkeyId WHERE token_hash = :tokenHash AND revoked = false")
-    Mono<Void> updatePasskeyIdByTokenHash(String tokenHash, UUID passkeyId);
 }
