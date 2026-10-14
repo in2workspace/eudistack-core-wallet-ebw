@@ -21,7 +21,8 @@ import java.util.List;
  *   <li>{@value #ORIGINS}: comma-separated full origins of the Wallet App, default
  *       {@code https://<rp_id>}.</li>
  *   <li>{@value #IDLE_TIMEOUT} / {@value #MAX_DURATION}: ISO-8601 durations, default
- *       {@code PT15M} / {@code PT8H}.</li>
+ *       {@code PT15M} / {@code PT8H}, at most {@code PT1H} / {@code PT24H}, and the inactivity
+ *       period not longer than the maximum duration.</li>
  * </ul>
  */
 public class WalletAuthSettingsService {
@@ -32,6 +33,9 @@ public class WalletAuthSettingsService {
     public static final String IDLE_TIMEOUT = "ebw.session.idle_timeout";
     public static final String MAX_DURATION = "ebw.session.max_duration";
     public static final String DEFAULT_RP_NAME = "EUDIStack Wallet";
+    /** Upper bounds of the tenant session limits; a longer value falls back to the default. */
+    public static final Duration MAX_IDLE_TIMEOUT = Duration.ofHours(1);
+    public static final Duration MAX_MAX_DURATION = Duration.ofHours(24);
 
     private static final Logger log = LoggerFactory.getLogger(WalletAuthSettingsService.class);
 
@@ -62,9 +66,18 @@ public class WalletAuthSettingsService {
         return Mono.zip(
                         tenantConfigService.getStringOrDefault(IDLE_TIMEOUT, ""),
                         tenantConfigService.getStringOrDefault(MAX_DURATION, ""))
-                .map(tuple -> new SessionSettings(
-                        parseDuration(IDLE_TIMEOUT, tuple.getT1(), SessionSettings.DEFAULT_IDLE_TIMEOUT),
-                        parseDuration(MAX_DURATION, tuple.getT2(), SessionSettings.DEFAULT_MAX_DURATION)));
+                .map(tuple -> {
+                    var idle = parseDuration(IDLE_TIMEOUT, tuple.getT1(), SessionSettings.DEFAULT_IDLE_TIMEOUT,
+                            MAX_IDLE_TIMEOUT);
+                    var max = parseDuration(MAX_DURATION, tuple.getT2(), SessionSettings.DEFAULT_MAX_DURATION,
+                            MAX_MAX_DURATION);
+                    if (idle.compareTo(max) > 0) {
+                        log.warn("tenant_config '{}' is longer than '{}'; using the defaults", IDLE_TIMEOUT,
+                                MAX_DURATION);
+                        return SessionSettings.defaults();
+                    }
+                    return new SessionSettings(idle, max);
+                });
     }
 
     private static List<String> parseOrigins(String raw, String rpId) {
@@ -76,14 +89,15 @@ public class WalletAuthSettingsService {
         return origins.isEmpty() ? List.of("https://" + rpId) : origins;
     }
 
-    private static Duration parseDuration(String key, String raw, Duration defaultValue) {
+    private static Duration parseDuration(String key, String raw, Duration defaultValue, Duration upperBound) {
         if (raw == null || raw.isBlank()) {
             return defaultValue;
         }
         try {
             var value = Duration.parse(raw.trim());
-            if (value.isNegative() || value.isZero()) {
-                log.warn("tenant_config '{}' must be a positive duration; using default {}", key, defaultValue);
+            if (value.isNegative() || value.isZero() || value.compareTo(upperBound) > 0) {
+                log.warn("tenant_config '{}' must be positive and at most {}; using default {}", key, upperBound,
+                        defaultValue);
                 return defaultValue;
             }
             return value;
