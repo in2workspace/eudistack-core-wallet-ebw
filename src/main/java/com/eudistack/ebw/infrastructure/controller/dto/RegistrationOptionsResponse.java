@@ -14,6 +14,12 @@ public record RegistrationOptionsResponse(UUID ceremonyId, PublicKey publicKey) 
     /** Milliseconds the browser waits for the user when creating a passkey. */
     public static final long TIMEOUT_MILLIS = 120_000;
 
+    /**
+     * WebAuthn L3 hints, descending preference, same as the Wallet App's {@code WEBAUTHN_CREATE_HINTS}:
+     * cross-device first so Edge does not jump straight to the Windows Hello prompt.
+     */
+    public static final List<String> HINTS = List.of("hybrid", "security-key", "client-device");
+
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record PublicKey(
             RelyingParty rp,
@@ -22,6 +28,7 @@ public record RegistrationOptionsResponse(UUID ceremonyId, PublicKey publicKey) 
             List<CredentialParameter> pubKeyCredParams,
             long timeout,
             List<CredentialDescriptorJson> excludeCredentials,
+            List<String> hints,
             AuthenticatorSelection authenticatorSelection,
             String attestation,
             Map<String, Object> extensions
@@ -44,6 +51,7 @@ public record RegistrationOptionsResponse(UUID ceremonyId, PublicKey publicKey) 
                 algorithms.stream().map(alg -> new CredentialParameter("public-key", alg)).toList(),
                 TIMEOUT_MILLIS,
                 options.excludeCredentials().stream().map(CredentialDescriptorJson::from).toList(),
+                HINTS,
                 new AuthenticatorSelection("required", "required"),
                 "none",
                 options.requestPrf() ? Map.of("prf", Map.of()) : null);

@@ -12,12 +12,16 @@ public record AuthenticationOptionsResponse(UUID ceremonyId, PublicKey publicKey
     /** Milliseconds the browser waits for the user when using a passkey. */
     public static final long TIMEOUT_MILLIS = 60_000;
 
+    /** WebAuthn L3 hints, same as the Wallet App's {@code WEBAUTHN_ASSERTION_HINTS}. */
+    public static final List<String> HINTS = List.of("client-device");
+
     public record PublicKey(
             String challenge,
             long timeout,
             String rpId,
             List<CredentialDescriptorJson> allowCredentials,
-            String userVerification
+            String userVerification,
+            List<String> hints
     ) {}
 
     public static AuthenticationOptionsResponse from(AuthenticationOptions options) {
@@ -26,7 +30,8 @@ public record AuthenticationOptionsResponse(UUID ceremonyId, PublicKey publicKey
                 TIMEOUT_MILLIS,
                 options.rpId(),
                 options.allowCredentials().stream().map(CredentialDescriptorJson::from).toList(),
-                "required");
+                "required",
+                HINTS);
         return new AuthenticationOptionsResponse(options.ceremonyId(), publicKey);
     }
 }

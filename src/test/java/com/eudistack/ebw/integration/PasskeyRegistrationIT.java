@@ -60,6 +60,7 @@ class PasskeyRegistrationIT extends IntegrationTestBase {
                 .containsEntry("displayName", email);
         assertThat((List<Map<String, Object>>) publicKey.get("pubKeyCredParams"))
                 .extracting(p -> p.get("alg")).containsExactly(-7, -8, -257);
+        assertThat((List<String>) publicKey.get("hints")).containsExactly("hybrid", "security-key", "client-device");
         assertThat(publicKey).containsEntry("timeout", 120000).containsEntry("attestation", "none")
                 .doesNotContainKey("extensions");
         assertThat((Map<String, Object>) publicKey.get("authenticatorSelection"))

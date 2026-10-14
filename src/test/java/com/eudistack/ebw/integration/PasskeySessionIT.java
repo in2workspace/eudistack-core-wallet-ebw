@@ -52,6 +52,7 @@ class PasskeySessionIT extends IntegrationTestBase {
         var publicKey = (Map<String, Object>) options.get("publicKey");
         assertThat(publicKey).containsEntry("rpId", TEST_RP_ID).containsEntry("timeout", 60000)
                 .containsEntry("userVerification", "required");
+        assertThat((java.util.List<String>) publicKey.get("hints")).containsExactly("client-device");
         assertThat((java.util.List<Object>) publicKey.get("allowCredentials")).isEmpty();
     }
 
