@@ -65,9 +65,10 @@ class SecurityWebFilterChainTest {
         // An absolute base URL is required: the CORS processor compares the Origin with the request's scheme/host.
         // The tenant filter runs before the security chain, as in the application (TenantDomainWebFilter.ORDER).
         client = WebTestClient.bindToController(new StubController())
-                .webFilter(new TenantDomainWebFilter(false), new WebFilterChainProxy(securityChain()))
+                .webFilter(new TenantDomainWebFilter(true), new WebFilterChainProxy(securityChain()))
                 .configureClient()
-                .baseUrl("https://" + TENANT + ".stg.eudistack.net")
+                .baseUrl("http://wallet-ebw.internal:8080")
+                .defaultHeader("X-Tenant", TENANT)
                 .build();
     }
 

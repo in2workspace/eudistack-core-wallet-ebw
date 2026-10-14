@@ -26,6 +26,7 @@ import com.webauthn4j.server.ServerProperty;
 import com.webauthn4j.util.Base64UrlUtil;
 import com.webauthn4j.verifier.exception.VerificationException;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
 
 import java.util.List;
 import java.util.Set;
@@ -89,7 +90,7 @@ public class WebAuthn4jVerifier implements WebAuthnVerifier {
                     authenticatorData.isFlagBE(),
                     authenticatorData.isFlagBS(),
                     attestationObject.getFormat());
-        } catch (VerificationException | DataConversionException | IllegalArgumentException e) {
+        } catch (VerificationException | DataConversionException | JacksonException | IllegalArgumentException e) {
             throw new WebAuthnVerificationException("registration: " + e.getClass().getSimpleName()
                     + " " + e.getMessage(), e);
         }
@@ -103,7 +104,7 @@ public class WebAuthn4jVerifier implements WebAuthnVerifier {
                 throw new WebAuthnVerificationException("missing credential id");
             }
             return new PasskeyAssertion(Base64UrlUtil.encodeToString(data.getCredentialId()), data.getUserHandle());
-        } catch (DataConversionException | IllegalArgumentException e) {
+        } catch (DataConversionException | JacksonException | IllegalArgumentException e) {
             throw new WebAuthnVerificationException("authentication: " + e.getClass().getSimpleName()
                     + " " + e.getMessage(), e);
         }
@@ -130,7 +131,7 @@ public class WebAuthn4jVerifier implements WebAuthnVerifier {
             var authenticatorData = data.getAuthenticatorData();
             return new VerifiedPasskeyAssertion(authenticatorData.getSignCount(), authenticatorData.isFlagUV(),
                     authenticatorData.isFlagBS());
-        } catch (VerificationException | DataConversionException | IllegalArgumentException e) {
+        } catch (VerificationException | DataConversionException | JacksonException | IllegalArgumentException e) {
             throw new WebAuthnVerificationException("authentication: " + e.getClass().getSimpleName()
                     + " " + e.getMessage(), e);
         }

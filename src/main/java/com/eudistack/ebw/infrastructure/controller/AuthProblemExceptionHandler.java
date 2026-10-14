@@ -16,6 +16,7 @@ import com.eudistack.ebw.infrastructure.controller.support.RefreshCookies;
 import com.eudistack.ebw.infrastructure.controller.support.WalletRequestHeader.MissingWalletRequestHeaderException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
@@ -41,8 +42,9 @@ public class AuthProblemExceptionHandler {
 
     private final RefreshCookies refreshCookies;
 
-    public AuthProblemExceptionHandler(RefreshCookies refreshCookies) {
-        this.refreshCookies = refreshCookies;
+    /** Built from the base path rather than injected, so web slice tests do not need the component. */
+    public AuthProblemExceptionHandler(@Value("${spring.webflux.base-path:}") String basePath) {
+        this.refreshCookies = new RefreshCookies(basePath);
     }
 
     @ExceptionHandler(ServerWebInputException.class)

@@ -92,6 +92,15 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+// webauthn4j-core uses Jackson 3 (tools.jackson), which needs jackson-annotations 2.22. Spring Boot 3.5
+// manages the Jackson 2 BOM at 2.19 and would downgrade it; the annotations are backward compatible with
+// jackson-databind 2.19, so only that artifact is raised.
+dependencyManagement {
+    dependencies {
+        dependency 'com.fasterxml.jackson.core:jackson-annotations:2.22'
+    }
+}
+
 // --- Quality & CI ---
 
 cyclonedxBom {

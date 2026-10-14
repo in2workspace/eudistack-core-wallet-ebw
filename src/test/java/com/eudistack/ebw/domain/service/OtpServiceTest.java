@@ -54,6 +54,7 @@ class OtpServiceTest {
 
         // Assert
         StepVerifier.create(result)
+                .assertNext(verificationId -> assertThat(verificationId).isNotNull())
                 .verifyComplete();
 
         verify(verificationRepository).invalidateByEmail(email);

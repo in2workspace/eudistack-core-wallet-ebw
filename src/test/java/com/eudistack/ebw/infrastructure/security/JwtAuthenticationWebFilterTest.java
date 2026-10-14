@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.security;
 
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +34,9 @@ import static org.mockito.Mockito.when;
 class JwtAuthenticationWebFilterTest {
 
     private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID SESSION_ID = UUID.randomUUID();
+    private static final UUID PASSKEY_ID = UUID.randomUUID();
+    private static final String TENANT = "sandbox";
 
     private TokenSigner tokenSigner;
     private JwtAuthenticationWebFilter filter;
@@ -56,6 +60,9 @@ class JwtAuthenticationWebFilterTest {
         var claims = new HashMap<String, Object>();
         claims.put("sub", USER_ID.toString());
         claims.put("email", "holder@example.com");
+        claims.put("tenant", TENANT);
+        claims.put("sid", SESSION_ID.toString());
+        claims.put("pkid", PASSKEY_ID.toString());
         claims.put("powers", List.of("Onboarding:Execute", 42, "Certification:Upload"));
         when(tokenSigner.verify("good-token")).thenReturn(claims);
 
@@ -63,9 +70,11 @@ class JwtAuthenticationWebFilterTest {
         var result = filter.filter(exchangeWithAuthorization("Bearer good-token"), chain);
 
         // Assert
-        StepVerifier.create(result).verifyComplete();
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
         var authentication = seenAuthentication.get();
         assertThat(authentication.getUserId()).isEqualTo(USER_ID);
+        assertThat(authentication.getSessionId()).isEqualTo(SESSION_ID);
+        assertThat(authentication.getPasskeyId()).isEqualTo(PASSKEY_ID);
         assertThat(authentication.getEmail()).isEqualTo("holder@example.com");
         assertThat(authentication.isAuthenticated()).isTrue();
         assertThat(authentication.getAuthorities()).extracting(GrantedAuthority::getAuthority)
@@ -75,14 +84,67 @@ class JwtAuthenticationWebFilterTest {
     @Test
     void filter_tokenWithoutPowers_authenticatesWithNoAuthorities() {
         // Arrange
-        when(tokenSigner.verify("good-token")).thenReturn(Map.of("sub", USER_ID.toString(), "email", "a@b.c"));
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+
+        // Act
+        var result = filter.filter(exchangeWithAuthorization("Bearer good-token"), chain);
+
+        // Assert
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
+        assertThat(seenAuthentication.get().getAuthorities()).isEmpty();
+    }
+
+    @Test
+    void filter_tokenOfAnotherTenant_continuesUnauthenticated() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims("othertenant"));
+
+        // Act
+        var result = filter.filter(exchangeWithAuthorization("Bearer good-token"), chain);
+
+        // Assert
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
+        assertThat(seenAuthentication.get()).isNull();
+    }
+
+    @Test
+    void filter_requestWithoutTenant_continuesUnauthenticated() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
 
         // Act
         var result = filter.filter(exchangeWithAuthorization("Bearer good-token"), chain);
 
         // Assert
         StepVerifier.create(result).verifyComplete();
-        assertThat(seenAuthentication.get().getAuthorities()).isEmpty();
+        assertThat(seenAuthentication.get()).isNull();
+    }
+
+    @Test
+    void filter_tokenWithoutSessionClaims_continuesUnauthenticated() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(Map.of("sub", USER_ID.toString(), "email", "a@b.c",
+                "tenant", TENANT));
+
+        // Act
+        var result = filter.filter(exchangeWithAuthorization("Bearer good-token"), chain);
+
+        // Assert
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
+        assertThat(seenAuthentication.get()).isNull();
+    }
+
+    @Test
+    void filter_registrationTicketBearer_continuesUnauthenticated() {
+        // Arrange
+        when(tokenSigner.verify("opaqueTicket")).thenThrow(new InvalidTokenException("Malformed JWT"));
+
+        // Act
+        var result = filter.filter(exchangeWithAuthorization("Bearer opaqueTicket"), chain);
+
+        // Assert
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
+        assertThat(seenAuthentication.get()).isNull();
     }
 
     @Test
@@ -129,6 +191,15 @@ class JwtAuthenticationWebFilterTest {
 
         // Assert
         StepVerifier.create(result).expectError(IllegalStateException.class).verify();
+    }
+
+    private static Map<String, Object> sessionClaims(String tenant) {
+        return Map.of("sub", USER_ID.toString(), "email", "a@b.c", "tenant", tenant,
+                "sid", SESSION_ID.toString(), "pkid", PASSKEY_ID.toString());
+    }
+
+    private static Mono<Void> inTenant(Mono<Void> result, String tenant) {
+        return result.contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, tenant));
     }
 
     private static MockServerWebExchange exchangeWithAuthorization(String value) {
