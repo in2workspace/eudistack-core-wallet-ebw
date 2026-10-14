@@ -74,8 +74,8 @@ class PasskeyRegistrationIT extends IntegrationTestBase {
         var session = authClient().signUp(email, authenticator);
 
         assertThat(session.accessToken()).isNotBlank();
-        assertThat(session.setCookie()).startsWith("wallet_refresh=").contains("HttpOnly").contains("Secure")
-                .contains("SameSite=Strict").contains("Path=/business-wallet/api/v1/auth").contains("Max-Age=");
+        assertThat(session.setCookie()).startsWith("__Host-wallet_refresh=").contains("HttpOnly").contains("Secure")
+                .contains("SameSite=Strict").contains("Path=/;").contains("Max-Age=").doesNotContain("Domain=");
         var passkey = query("SELECT * FROM user_passkey WHERE id = '" + session.passkeyId() + "'").get(0);
         assertThat(passkey.get("credential_id")).isEqualTo(authenticator.credentialIdBase64Url());
         assertThat((byte[]) passkey.get("attested_credential_data")).isNotEmpty();
@@ -210,7 +210,7 @@ class PasskeyRegistrationIT extends IntegrationTestBase {
         var email = email("reg-prf-ok");
         withPasskeyCustody(() -> auth.registerPasskeySpec(auth.ticket(email), new SoftwareAuthenticator(TEST_ORIGIN),
                 null).expectStatus().isCreated()
-                .expectHeader().value(HttpHeaders.SET_COOKIE, c -> assertThat(c).startsWith("wallet_refresh=")));
+                .expectHeader().value(HttpHeaders.SET_COOKIE, c -> assertThat(c).startsWith("__Host-wallet_refresh=")));
     }
 
     /** Runs with the test tenant in passkey custody (server + passkey-prf), then restores it. */

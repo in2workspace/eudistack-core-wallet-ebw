@@ -3,7 +3,8 @@ package com.eudistack.ebw.infrastructure.controller.support;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 
 /**
- * CSRF protection of the endpoints that use the refresh cookie: they require
+ * CSRF protection of the endpoints that use the refresh cookie (renewal, sign-out, and the
+ * registration and sign-in that end the cookie's session): they require
  * {@code X-Wallet-Request: 1}. A cross-site form cannot send a custom header, and a cross-site
  * script needs a CORS preflight that only the configured origins pass.
  */

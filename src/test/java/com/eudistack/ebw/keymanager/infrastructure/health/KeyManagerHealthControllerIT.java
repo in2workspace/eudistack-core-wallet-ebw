@@ -29,6 +29,7 @@ import static org.mockito.Mockito.when;
  */
 @Tag("integration")
 @WebFluxTest(controllers = KeyManagerHealthController.class)
+@org.springframework.context.annotation.Import(com.eudistack.ebw.infrastructure.controller.support.RefreshCookies.class)
 @WithMockUser
 class KeyManagerHealthControllerIT {
 

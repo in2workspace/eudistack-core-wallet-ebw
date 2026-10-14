@@ -56,6 +56,7 @@ public class SessionController {
     @PostMapping("/sessions")
     public Mono<ResponseEntity<SessionResponse>> openSession(@Valid @RequestBody OpenSessionRequest body,
                                                              ServerHttpRequest request) {
+        WalletRequestHeader.require(request);
         return Mono.fromCallable(() -> objectMapper.writeValueAsString(body.credential()))
                 .map(credentialJson -> new OpenSessionCommand(BearerTickets.read(request), body.ceremonyId(),
                         credentialJson, refreshCookies.read(request)))

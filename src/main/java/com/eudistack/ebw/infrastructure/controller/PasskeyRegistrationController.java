@@ -8,6 +8,7 @@ import com.eudistack.ebw.infrastructure.controller.dto.RegistrationOptionsRespon
 import com.eudistack.ebw.infrastructure.controller.dto.SessionResponse;
 import com.eudistack.ebw.infrastructure.controller.support.BearerTickets;
 import com.eudistack.ebw.infrastructure.controller.support.RefreshCookies;
+import com.eudistack.ebw.infrastructure.controller.support.WalletRequestHeader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
@@ -49,6 +50,7 @@ public class PasskeyRegistrationController {
     @PostMapping
     public Mono<ResponseEntity<SessionResponse>> register(@Valid @RequestBody RegisterPasskeyRequest body,
                                                           ServerHttpRequest request) {
+        WalletRequestHeader.require(request);
         return Mono.fromCallable(() -> objectMapper.writeValueAsString(body.credential()))
                 .map(credentialJson -> new RegisterPasskeyCommand(BearerTickets.read(request), body.ceremonyId(),
                         credentialJson, body.prfSupported(), body.displayName(), userAgent(request),

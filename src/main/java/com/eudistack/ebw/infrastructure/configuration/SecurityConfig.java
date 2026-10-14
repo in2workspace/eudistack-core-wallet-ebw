@@ -49,11 +49,11 @@ public class SecurityConfig {
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
         return http
                 // CSRF: the API authenticates with a Bearer access token in Authorization, which a
-                // cross-site form cannot send. The only cookie is the refresh cookie (SameSite=Strict,
-                // Path=/api/v1/auth); the endpoints that use it (refresh, end session) also require the
-                // X-Wallet-Request: 1 header, which a cross-site form cannot set without a CORS
-                // preflight, and CORS only admits the configured origins. Spring's token-based CSRF is
-                // therefore not needed.
+                // cross-site form cannot send. The only cookie is the __Host- refresh cookie
+                // (SameSite=Strict); the endpoints that read it (refresh, end session, and registration
+                // and sign-in, which end its session) also require the X-Wallet-Request: 1 header, which
+                // a cross-site form cannot set without a CORS preflight, and CORS only admits the
+                // tenant's origins. Spring's token-based CSRF is therefore not needed.
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)

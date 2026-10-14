@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class WalletAuthClient {
 
     public static final String WALLET_REQUEST = "X-Wallet-Request";
+    public static final String COOKIE = "__Host-wallet_refresh";
 
     private final WebTestClient client;
     private final Map<String, String> otps;
@@ -97,7 +98,10 @@ public class WalletAuthClient {
         }
         body.put("displayName", "Test device");
         return client.post().uri("/api/v1/auth/passkeys/registration").headers(tenantHeaders)
-                .headers(h -> bearer(h, ticket))
+                .headers(h -> {
+                    bearer(h, ticket);
+                    h.add(WALLET_REQUEST, "1");
+                })
                 .cookies(c -> cookie(c, cookie))
                 .bodyValue(body).exchange();
     }
@@ -136,7 +140,10 @@ public class WalletAuthClient {
     public WebTestClient.ResponseSpec openSessionSpec(String ticket, Object ceremonyId, Map<String, Object> credential,
                                                       String cookie) {
         return client.post().uri("/api/v1/auth/sessions").headers(tenantHeaders)
-                .headers(h -> bearer(h, ticket))
+                .headers(h -> {
+                    bearer(h, ticket);
+                    h.add(WALLET_REQUEST, "1");
+                })
                 .cookies(c -> cookie(c, cookie))
                 .bodyValue(Map.of("ceremonyId", ceremonyId, "credential", credential)).exchange();
     }
@@ -188,7 +195,7 @@ public class WalletAuthClient {
         var result = spec.expectBody(Map.class).returnResult();
         var setCookie = result.getResponseHeaders().getFirst(HttpHeaders.SET_COOKIE);
         assertThat(setCookie).as("refresh cookie").isNotNull();
-        var cookie = ResponseCookie.from("wallet_refresh", setCookie.substring(setCookie.indexOf('=') + 1,
+        var cookie = ResponseCookie.from(COOKIE, setCookie.substring(setCookie.indexOf('=') + 1,
                 setCookie.indexOf(';'))).build();
         Map<String, Object> body = result.getResponseBody();
         assertThat(body).doesNotContainKey("refreshToken");
@@ -204,7 +211,7 @@ public class WalletAuthClient {
 
     private static void cookie(org.springframework.util.MultiValueMap<String, String> cookies, String refreshToken) {
         if (refreshToken != null) {
-            cookies.add("wallet_refresh", refreshToken);
+            cookies.add(COOKIE, refreshToken);
         }
     }
 }

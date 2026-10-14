@@ -55,7 +55,8 @@ import static org.mockito.Mockito.when;
  * <p>Spec: EUDISTACK-534 (US-02), EUDISTACK-540 (US-08), EUDISTACK-359 (PRF detection gate).</p>
  */
 @WebFluxTest(controllers = PasskeyPrfOnboardingController.class)
-@Import(PasskeyPrfKeyManagerExceptionHandler.class)
+@Import({PasskeyPrfKeyManagerExceptionHandler.class,
+        com.eudistack.ebw.infrastructure.controller.support.RefreshCookies.class})
 @WithMockUser
 class PasskeyPrfOnboardingControllerIT {
 

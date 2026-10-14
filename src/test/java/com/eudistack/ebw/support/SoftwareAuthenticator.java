@@ -51,6 +51,7 @@ public class SoftwareAuthenticator {
     private boolean backupEligible = true;
     private boolean backupState = true;
     private boolean prfEnabled = true;
+    private boolean omitUserHandle;
 
     public SoftwareAuthenticator(String origin) {
         this.origin = origin;
@@ -76,6 +77,8 @@ public class SoftwareAuthenticator {
     public SoftwareAuthenticator withBackupState(boolean bs) { this.backupState = bs; return this; }
     public SoftwareAuthenticator withPrfEnabled(boolean prf) { this.prfEnabled = prf; return this; }
     public SoftwareAuthenticator withUserHandle(byte[] userHandle) { this.userHandle = userHandle; return this; }
+    /** Answers assertions without {@code userHandle}, like some authenticators for non-discoverable use. */
+    public SoftwareAuthenticator withoutUserHandle() { this.omitUserHandle = true; return this; }
 
     public String credentialIdBase64Url() { return B64.encodeToString(credentialId); }
     public long signCount() { return signCount; }
@@ -134,7 +137,9 @@ public class SoftwareAuthenticator {
         response.put("clientDataJSON", B64.encodeToString(clientDataJson));
         response.put("authenticatorData", B64.encodeToString(authenticatorData));
         response.put("signature", B64.encodeToString(signature));
-        response.put("userHandle", B64.encodeToString(userHandle));
+        if (!omitUserHandle) {
+            response.put("userHandle", B64.encodeToString(userHandle));
+        }
 
         var credential = new LinkedHashMap<String, Object>();
         credential.put("id", credentialIdBase64Url());

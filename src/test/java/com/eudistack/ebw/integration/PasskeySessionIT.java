@@ -91,6 +91,55 @@ class PasskeySessionIT extends IntegrationTestBase {
     }
 
     @Test
+    void signIn_withTicketAndNoUserHandle_isAccepted() {
+        // The credential is already tied to the ticket's account.
+        var email = email("ses-ticket-nohandle");
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
+        auth.signUp(email, authenticator);
+        authenticator.withoutUserHandle();
+
+        auth.signInSpec(authenticator, auth.ticket(email), null).expectStatus().isCreated();
+    }
+
+    @Test
+    void signIn_discoverableWithoutUserHandle_isRejected() {
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
+        auth.signUp(email("ses-nohandle"), authenticator);
+        authenticator.withoutUserHandle();
+
+        auth.signInSpec(authenticator, null, null).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("authentication_failed");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void openSession_withoutWalletRequestHeader_isForbidden() {
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
+        auth.signUp(email("ses-open-csrf"), authenticator);
+        var options = auth.authenticationOptions(null);
+        var credential = authenticator.authenticate((Map<String, Object>) options.get("publicKey"));
+
+        webClient.post().uri("/api/v1/auth/sessions")
+                .bodyValue(Map.of("ceremonyId", options.get("ceremonyId"), "credential", credential))
+                .exchange().expectStatus().isForbidden()
+                .expectBody().jsonPath("$.type").isEqualTo("forbidden");
+    }
+
+    @Test
+    void refresh_withTwoRefreshCookies_isInvalidSession() {
+        var session = auth.signUp(email("ses-two-cookies"), new SoftwareAuthenticator(TEST_ORIGIN));
+
+        webClient.post().uri("/api/v1/auth/refresh")
+                .header(WalletAuthClient.WALLET_REQUEST, "1")
+                .cookies(c -> {
+                    c.add(WalletAuthClient.COOKIE, session.refreshToken());
+                    c.add(WalletAuthClient.COOKIE, "planted-by-a-sibling-host");
+                })
+                .exchange().expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
+    }
+
+    @Test
     void signIn_userHandleOfAnotherAccount_isRejected() {
         var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
         auth.signUp(email("ses-handle"), authenticator);

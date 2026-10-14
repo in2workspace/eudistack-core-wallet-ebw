@@ -62,7 +62,8 @@ import static org.mockito.Mockito.when;
  * EUDISTACK-538 (US-06) AC-02.</p>
  */
 @WebFluxTest(controllers = PasskeyPrfKeyManagerController.class)
-@Import(PasskeyPrfKeyManagerExceptionHandler.class)
+@Import({PasskeyPrfKeyManagerExceptionHandler.class,
+        com.eudistack.ebw.infrastructure.controller.support.RefreshCookies.class})
 @WithMockUser
 class PasskeyPrfKeyManagerControllerIT {
 

@@ -61,7 +61,7 @@ class SecurityWebFilterChainTest {
         var corsOriginsLoader = mock(CorsOriginsLoader.class);
         when(corsOriginsLoader.loadOrigins()).thenReturn(List.of(WALLET_ORIGIN));
         config = new SecurityConfig(new JwtAuthenticationWebFilter(tokenSigner), corsOriginsLoader,
-                new RefreshCookies("/business-wallet"), new ObjectMapper());
+                new RefreshCookies(), new ObjectMapper());
         // An absolute base URL is required: the CORS processor compares the Origin with the request's scheme/host.
         // The tenant filter runs before the security chain, as in the application (TenantDomainWebFilter.ORDER).
         client = WebTestClient.bindToController(new StubController())
@@ -138,7 +138,7 @@ class SecurityWebFilterChainTest {
                 .expectStatus().isUnauthorized()
                 .expectHeader().contentType("application/problem+json")
                 .expectHeader().value(HttpHeaders.SET_COOKIE, cookie -> assertThat(cookie)
-                        .startsWith("wallet_refresh=;").contains("Max-Age=0"))
+                        .startsWith("__Host-wallet_refresh=;").contains("Path=/;").contains("Max-Age=0"))
                 .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
     }
 

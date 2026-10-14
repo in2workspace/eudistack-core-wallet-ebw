@@ -24,7 +24,7 @@ class SecurityConfigTest {
         var loader = mock(CorsOriginsLoader.class);
         when(loader.loadOrigins()).thenReturn(List.of("https://sandbox.stg.eudistack.net"));
         var config = new SecurityConfig(mock(JwtAuthenticationWebFilter.class), loader,
-                new RefreshCookies("/business-wallet"), new ObjectMapper());
+                new RefreshCookies(), new ObjectMapper());
         var exchange = mock(ServerWebExchange.class);
         var request = mock(ServerHttpRequest.class);
         var requestPath = mock(RequestPath.class);
