@@ -4,6 +4,7 @@ import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationWebFilter;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -107,9 +108,12 @@ class SecurityWebFilterChainTest {
     }
 
     @Test
+    @Disabled("Known defect, not expected behaviour: SecurityConfig#corsConfigurationSource allows any origin "
+            + "with credentials. Pending a defect to wire CorsOriginsLoader as an explicit allowlist, which must "
+            + "replace this test with allowed-origin and rejected-origin (403, no Access-Control-Allow-Origin) cases.")
     void corsPreflight_currentConfiguration_echoesTheOriginWithCredentials() {
-        // Documents the behaviour introduced when the CORS allowlist was replaced by a wildcard origin pattern
-        // (SecurityConfig#corsConfigurationSource). If an allowlist is reinstated, this test must change.
+        // Pins the current wildcard behaviour (setAllowedOriginPatterns("*") + setAllowCredentials(true)).
+        // Disabled so the suite does not accept it as correct.
         // Act + Assert
         client.options().uri("/api/v1/credentials")
                 .header(HttpHeaders.ORIGIN, "https://any-origin.example")
