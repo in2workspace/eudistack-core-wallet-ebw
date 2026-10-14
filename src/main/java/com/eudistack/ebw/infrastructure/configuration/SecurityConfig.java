@@ -4,6 +4,8 @@ import com.eudistack.ebw.infrastructure.controller.support.AuthProblems;
 import com.eudistack.ebw.infrastructure.controller.support.RefreshCookies;
 import com.eudistack.ebw.infrastructure.security.CorsOriginsLoader;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationWebFilter;
+import com.eudistack.ebw.infrastructure.security.TenantCorsConfigurationSource;
+import com.eudistack.ebw.infrastructure.security.TenantOrigins;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,13 +17,10 @@ import org.springframework.security.config.annotation.web.reactive.EnableWebFlux
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
-import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
-import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
 
 @Configuration
 @EnableWebFluxSecurity
@@ -31,18 +30,27 @@ public class SecurityConfig {
     private static final String SESSIONS_PATH = "/api/v1/auth/sessions/";
 
     private final JwtAuthenticationWebFilter jwtAuthFilter;
-    private final List<String> allowedOrigins;
+    private final CorsConfigurationSource corsConfigurationSource;
     private final RefreshCookies refreshCookies;
     private final ObjectMapper objectMapper;
 
     public SecurityConfig(JwtAuthenticationWebFilter jwtAuthFilter,
-                          CorsOriginsLoader corsOriginsLoader,
+                          CorsConfigurationSource corsConfigurationSource,
                           RefreshCookies refreshCookies,
                           ObjectMapper objectMapper) {
         this.jwtAuthFilter = jwtAuthFilter;
-        this.allowedOrigins = corsOriginsLoader.loadOrigins();
+        this.corsConfigurationSource = corsConfigurationSource;
         this.refreshCookies = refreshCookies;
         this.objectMapper = objectMapper;
+    }
+
+    /** CORS of the tenant of each request; the file/env list only for health and wallet discovery. */
+    @Bean
+    static CorsConfigurationSource tenantCorsConfigurationSource(TenantDomainWebFilter tenantResolver,
+                                                                 TenantOrigins tenantOrigins,
+                                                                 CorsOriginsLoader corsOriginsLoader) {
+        return new TenantCorsConfigurationSource(tenantResolver, tenantOrigins::originsOf,
+                corsOriginsLoader.loadOrigins());
     }
 
     @Bean
@@ -57,7 +65,7 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((exchange, e) -> unauthenticated(exchange))
                         .accessDeniedHandler((exchange, e) -> {
@@ -94,23 +102,6 @@ public class SecurityConfig {
                         .permissionsPolicy(pp -> pp.policy("camera=(), microphone=(), geolocation=()"))
                 )
                 .build();
-    }
-
-    /**
-     * Only the configured origins ({@code cors-origins.yaml} plus {@code CORS_ORIGINS}), with
-     * credentials for the refresh cookie. No wildcard.
-     */
-    CorsConfigurationSource corsConfigurationSource() {
-        var config = new CorsConfiguration();
-        config.setAllowedOrigins(allowedOrigins);
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Api-Version", "X-Wallet-Request"));
-        config.setAllowCredentials(true);
-        config.setMaxAge(3600L);
-
-        var source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        return source;
     }
 
     /**

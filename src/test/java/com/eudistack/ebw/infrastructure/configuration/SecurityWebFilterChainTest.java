@@ -3,7 +3,7 @@ package com.eudistack.ebw.infrastructure.configuration;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.infrastructure.controller.support.RefreshCookies;
-import com.eudistack.ebw.infrastructure.security.CorsOriginsLoader;
+import com.eudistack.ebw.infrastructure.security.TenantCorsConfigurationSource;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationWebFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +38,9 @@ class SecurityWebFilterChainTest {
 
     private static final String TENANT = "sandbox";
     private static final String WALLET_ORIGIN = "https://sandbox.stg.eudistack.net";
+    private static final String OTHER_TENANT = "othertenant";
+    private static final String OTHER_ORIGIN = "https://othertenant.stg.eudistack.net";
+    private static final String GLOBAL_ORIGIN = "https://status.eudistack.net";
 
     private WebTestClient client;
     private SecurityConfig config;
@@ -64,10 +67,11 @@ class SecurityWebFilterChainTest {
         when(tokenSigner.verify("other-tenant-token")).thenReturn(claims("othertenant"));
         when(tokenSigner.verify("forged-token")).thenThrow(new InvalidTokenException("Invalid JWT signature"));
         when(tokenSigner.verify("registration-ticket")).thenThrow(new InvalidTokenException("Malformed JWT"));
-        var corsOriginsLoader = mock(CorsOriginsLoader.class);
-        when(corsOriginsLoader.loadOrigins()).thenReturn(List.of(WALLET_ORIGIN));
+        var tenantOrigins = Map.of(TENANT, List.of(WALLET_ORIGIN), OTHER_TENANT, List.of(OTHER_ORIGIN));
+        var cors = new TenantCorsConfigurationSource(new TenantDomainWebFilter(true),
+                tenant -> tenantOrigins.getOrDefault(tenant, List.of()), List.of(GLOBAL_ORIGIN));
         config = new SecurityConfig(new JwtAuthenticationWebFilter(tokenSigner, activeSessions(),
-                        new ObjectMapper()), corsOriginsLoader,
+                        new ObjectMapper()), cors,
                 new RefreshCookies(), new ObjectMapper());
         // An absolute base URL is required: the CORS processor compares the Origin with the request's scheme/host.
         // The tenant filter runs before the security chain, as in the application (TenantDomainWebFilter.ORDER).
@@ -223,6 +227,53 @@ class SecurityWebFilterChainTest {
                 .exchange()
                 .expectStatus().isOk()
                 .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, WALLET_ORIGIN);
+    }
+
+    @Test
+    void post_originOfAnotherTenant_isRejected() {
+        // Act + Assert — the sandbox Wallet App origin is not admitted on another tenant
+        client.post().uri("/api/v1/auth/register")
+                .header("X-Tenant", OTHER_TENANT)
+                .header(HttpHeaders.ORIGIN, WALLET_ORIGIN)
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void post_originOfItsOwnTenant_passes() {
+        // Act + Assert
+        client.post().uri("/api/v1/auth/register")
+                .header("X-Tenant", OTHER_TENANT)
+                .header(HttpHeaders.ORIGIN, OTHER_ORIGIN)
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, OTHER_ORIGIN);
+    }
+
+    @Test
+    void post_behindProxyWithOriginOfAnotherTenant_isRejected() {
+        // Act + Assert — the tenant comes from X-Forwarded-Host, as in TenantDomainWebFilter
+        WebTestClient.bindToController(new StubController())
+                .webFilter(new TenantDomainWebFilter(true), new WebFilterChainProxy(securityChain()))
+                .configureClient()
+                .baseUrl("http://wallet-ebw.internal:8080")
+                .build()
+                .post().uri("/api/v1/auth/register")
+                .header(HttpHeaders.ORIGIN, WALLET_ORIGIN)
+                .header("X-Forwarded-Host", OTHER_TENANT + ".stg.eudistack.net")
+                .header("X-Forwarded-Proto", "https")
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void healthPath_usesTheGlobalOriginsOnly() {
+        // Act + Assert
+        client.get().uri("/health").header(HttpHeaders.ORIGIN, GLOBAL_ORIGIN)
+                .exchange().expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, GLOBAL_ORIGIN);
+        client.get().uri("/health").header(HttpHeaders.ORIGIN, WALLET_ORIGIN)
+                .exchange().expectStatus().isForbidden();
     }
 
     @Test
