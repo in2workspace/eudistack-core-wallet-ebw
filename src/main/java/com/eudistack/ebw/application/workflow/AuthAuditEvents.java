@@ -15,6 +15,7 @@ public final class AuthAuditEvents {
     public static final String PASSKEY_REGISTERED = "PASSKEY_REGISTERED";
     public static final String PASSKEY_REJECTED = "PASSKEY_REJECTED";
     public static final String NEW_PASSKEY_NOTICE_SENT = "NEW_PASSKEY_NOTICE_SENT";
+    public static final String NEW_PASSKEY_NOTICE_FAILED = "NEW_PASSKEY_NOTICE_FAILED";
     public static final String ACCESS_GRANTED = "ACCESS_GRANTED";
     public static final String ACCESS_REJECTED = "ACCESS_REJECTED";
     public static final String SESSION_EXPIRED = "SESSION_EXPIRED";

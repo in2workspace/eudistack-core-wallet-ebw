@@ -1,5 +1,6 @@
 package com.eudistack.ebw.application.workflow;
 
+import com.eudistack.ebw.domain.model.AuthRejectionReason;
 import com.eudistack.ebw.domain.model.AuthenticationOptions;
 import com.eudistack.ebw.domain.model.CeremonyType;
 import com.eudistack.ebw.domain.model.IssuedSession;
@@ -36,13 +37,14 @@ import java.util.concurrent.atomic.AtomicReference;
  * passkeys of the ticket's account after an email code (FR-09).
  *
  * <p>The client gets {@code unknown_credential} when the tenant has no passkey with the
- * credential id, and {@code authentication_failed} for any other failure. The concrete reason
- * goes to the log and the audit trail.
+ * credential id, and {@code authentication_failed} for any other failure. The fixed reason goes
+ * to the log and the audit trail.
  */
 @Service
 public class PasskeyAuthenticationWorkflow {
 
     private static final Logger log = LoggerFactory.getLogger(PasskeyAuthenticationWorkflow.class);
+    private static final String WHAT = "Passkey authentication";
 
     private final RegistrationTicketService ticketService;
     private final WalletUserRepository userRepository;
@@ -122,20 +124,22 @@ public class PasskeyAuthenticationWorkflow {
 
     private Mono<WebAuthnCeremony> consumeCeremony(UUID ceremonyId, Optional<RegistrationTicket> ticket) {
         if (ceremonyId == null) {
-            return Mono.error(new AuthenticationFailedException("missing ceremony"));
+            return Mono.error(new AuthenticationFailedException(AuthRejectionReason.CEREMONY_MISSING));
         }
         var ticketUser = ticket.map(RegistrationTicket::userId).orElse(null);
         return ceremonyRepository.consume(ceremonyId, CeremonyType.AUTHENTICATION)
-                .switchIfEmpty(Mono.error(new AuthenticationFailedException("ceremony unknown, expired or used")))
+                .switchIfEmpty(Mono.error(new AuthenticationFailedException(AuthRejectionReason.CEREMONY_INVALID)))
                 .flatMap(ceremony -> Objects.equals(ceremony.userId(), ticketUser)
                         ? Mono.just(ceremony)
-                        : Mono.error(new AuthenticationFailedException("ceremony does not match the ticket")));
+                        : Mono.error(new AuthenticationFailedException(AuthRejectionReason.CEREMONY_MISMATCH)));
     }
 
     private Mono<PasskeyAssertion> readAssertion(String credentialJson) {
         return Mono.fromCallable(() -> webAuthnVerifier.readAssertion(credentialJson))
-                .onErrorMap(WebAuthnVerificationException.class,
-                        e -> new AuthenticationFailedException("malformed response: " + e.getMessage()));
+                .onErrorMap(WebAuthnVerificationException.class, e -> {
+                    AuthRejectionLog.detail(log, WHAT, e);
+                    return new AuthenticationFailedException(AuthRejectionReason.MALFORMED_RESPONSE);
+                });
     }
 
     private Mono<UserPasskey> findPasskey(PasskeyAssertion assertion) {
@@ -143,29 +147,40 @@ public class PasskeyAuthenticationWorkflow {
                 .switchIfEmpty(Mono.error(new UnknownCredentialException()));
     }
 
+    /**
+     * The account of the passkey. Discoverable sign-in requires the authenticator's user handle,
+     * equal to the account's. With a ticket the credential is already tied to the ticket's
+     * account, so a missing user handle is accepted; a present one must still match.
+     */
     private Mono<WalletUser> accountOf(UserPasskey passkey, Optional<RegistrationTicket> ticket,
                                        PasskeyAssertion assertion) {
         if (ticket.isPresent() && !ticket.get().userId().equals(passkey.getUserId())) {
-            return Mono.error(new AuthenticationFailedException("passkey of another account than the ticket's"));
+            return Mono.error(new AuthenticationFailedException(AuthRejectionReason.TICKET_ACCOUNT_MISMATCH));
         }
         return userRepository.findById(passkey.getUserId())
-                .switchIfEmpty(Mono.error(new AuthenticationFailedException("account of the passkey not found")))
-                .flatMap(user -> user.hasUserHandle(assertion.userHandle())
-                        ? Mono.just(user)
-                        : Mono.error(new AuthenticationFailedException("user handle does not match the account")));
+                .switchIfEmpty(Mono.error(new AuthenticationFailedException(AuthRejectionReason.ACCOUNT_NOT_FOUND)))
+                .flatMap(user -> {
+                    boolean userHandleAccepted = assertion.userHandle() == null
+                            ? ticket.isPresent()
+                            : user.hasUserHandle(assertion.userHandle());
+                    return userHandleAccepted
+                            ? Mono.just(user)
+                            : Mono.error(new AuthenticationFailedException(AuthRejectionReason.USER_HANDLE_MISMATCH));
+                });
     }
 
     private Mono<Void> verify(OpenSessionCommand command, WebAuthnCeremony ceremony, UserPasskey passkey) {
         return settingsService.relyingParty()
                 .flatMap(relyingParty -> Mono.fromCallable(() -> webAuthnVerifier.verifyAuthentication(
                                 command.credentialJson(), ceremony.challenge(), relyingParty, passkey))
-                        .onErrorMap(WebAuthnVerificationException.class,
-                                e -> new AuthenticationFailedException(e.getMessage())))
+                        .onErrorMap(WebAuthnVerificationException.class, e -> {
+                            AuthRejectionLog.detail(log, WHAT, e);
+                            return new AuthenticationFailedException(AuthRejectionReason.VERIFICATION_FAILED);
+                        }))
                 .flatMap(verified -> passkeyRepository.recordAuthentication(passkey.getId(), verified))
                 .flatMap(updated -> Boolean.TRUE.equals(updated)
                         ? Mono.<Void>empty()
-                        : Mono.error(new AuthenticationFailedException(
-                                "signature counter did not advance (concurrent use or cloned authenticator)")));
+                        : Mono.error(new AuthenticationFailedException(AuthRejectionReason.SIGN_COUNT_NOT_ADVANCED)));
     }
 
     private Mono<Void> consumeTicket(Optional<RegistrationTicket> ticket) {
@@ -173,10 +188,12 @@ public class PasskeyAuthenticationWorkflow {
     }
 
     private Mono<Void> auditRejection(UUID ceremonyId, UserPasskey passkey, Throwable e) {
-        String reason = e instanceof UnknownCredentialException ? "unknown_credential" : e.getMessage();
-        log.info("Passkey authentication rejected: {}", reason);
+        var reason = e instanceof AuthenticationFailedException failed
+                ? failed.getReason()
+                : AuthRejectionReason.UNKNOWN_CREDENTIAL;
+        AuthRejectionLog.log(log, WHAT, reason);
         var metadata = new HashMap<String, Object>();
-        metadata.put("reason", reason);
+        metadata.put("reason", reason.code());
         if (passkey != null) {
             metadata.put("passkey_id", passkey.getId().toString());
         }

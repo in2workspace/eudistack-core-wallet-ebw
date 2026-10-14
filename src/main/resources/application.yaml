@@ -27,6 +27,10 @@ spring:
       mail:
         smtp:
           from: ${SMTP_FROM:noreply@eudistack.com}
+          # Bounded SMTP calls: a slow server must not hold a request thread (EUD-308).
+          connectiontimeout: ${SMTP_CONNECTION_TIMEOUT_MS:5000}
+          timeout: ${SMTP_TIMEOUT_MS:10000}
+          writetimeout: ${SMTP_WRITE_TIMEOUT_MS:10000}
           auth: ${SMTP_AUTH:true}
           starttls:
             enable: ${SMTP_STARTTLS:true}

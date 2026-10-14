@@ -1,5 +1,6 @@
 package com.eudistack.ebw.application.workflow;
 
+import com.eudistack.ebw.domain.model.AuthRejectionReason;
 import com.eudistack.ebw.domain.model.CeremonyType;
 import com.eudistack.ebw.domain.model.IssuedSession;
 import com.eudistack.ebw.domain.model.RegistrationOptions;
@@ -21,12 +22,14 @@ import com.eudistack.ebw.domain.service.RegistrationTicketService;
 import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
 import com.eudistack.ebw.domain.spi.EmailSender;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
+import com.eudistack.ebw.domain.spi.TransactionRunner;
 import com.eudistack.ebw.domain.spi.WebAuthnVerifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -34,15 +37,17 @@ import java.util.UUID;
 /**
  * Registration ceremony of a new passkey with a registration ticket (FR-07, FR-08, FR-10).
  *
- * <p>The ceremony is consumed before verifying anything. With passkey custody in the tenant,
- * a passkey without PRF is rejected and nothing is stored. The ticket is consumed when the
- * session is opened. If the account already had a passkey, the account holder is emailed
- * after the new one is stored; a failed email never fails the registration.
+ * <p>The ceremony is consumed before verifying anything. With passkey custody in the tenant, a
+ * passkey without PRF is rejected and nothing is stored. Consuming the ticket, storing the passkey
+ * and opening the session are one transaction: a failure leaves nothing stored. Rejections are
+ * audited outside it. If the account already had a passkey, the holder is emailed after the
+ * commit; a failed or slow email never fails the registration.
  */
 @Service
 public class PasskeyRegistrationWorkflow {
 
     static final String DEFAULT_DISPLAY_NAME = "Passkey";
+    static final Duration NOTICE_TIMEOUT = Duration.ofSeconds(5);
 
     private static final Logger log = LoggerFactory.getLogger(PasskeyRegistrationWorkflow.class);
 
@@ -57,11 +62,14 @@ public class PasskeyRegistrationWorkflow {
     private final SessionOpener sessionOpener;
     private final EmailSender emailSender;
     private final AuditService auditService;
+    private final TransactionRunner transactionRunner;
 
     /** Input of {@link #register}. {@code replacedRefreshToken} is the refresh cookie of the request, if any. */
     public record RegisterPasskeyCommand(String rawTicket, UUID ceremonyId, String credentialJson,
                                          Boolean prfSupported, String displayName, String userAgent,
                                          String replacedRefreshToken) {}
+
+    private record Stored(IssuedSession session, UserPasskey passkey, boolean hadPasskeys) {}
 
     @SuppressWarnings("java:S107")
     public PasskeyRegistrationWorkflow(RegistrationTicketService ticketService, WalletUserRepository userRepository,
@@ -70,7 +78,7 @@ public class PasskeyRegistrationWorkflow {
                                        WalletAuthSettingsService settingsService, PasskeyCustodyPolicy custodyPolicy,
                                        WebAuthnVerifier webAuthnVerifier, SecureRandomGenerator randomGenerator,
                                        SessionOpener sessionOpener, EmailSender emailSender,
-                                       AuditService auditService) {
+                                       AuditService auditService, TransactionRunner transactionRunner) {
         this.ticketService = ticketService;
         this.userRepository = userRepository;
         this.passkeyRepository = passkeyRepository;
@@ -82,6 +90,7 @@ public class PasskeyRegistrationWorkflow {
         this.sessionOpener = sessionOpener;
         this.emailSender = emailSender;
         this.auditService = auditService;
+        this.transactionRunner = transactionRunner;
     }
 
     public Mono<RegistrationOptions> startRegistration(String rawTicket) {
@@ -101,12 +110,14 @@ public class PasskeyRegistrationWorkflow {
 
     public Mono<IssuedSession> register(RegisterPasskeyCommand command) {
         return ticketService.resolve(command.rawTicket())
-                .flatMap(ticket -> consumeCeremony(command.ceremonyId(), ticket)
-                        .flatMap(ceremony -> accountOf(ticket)
-                                .flatMap(user -> Mono.zip(settingsService.relyingParty(),
+                .flatMap(ticket -> accountOf(ticket)
+                        .flatMap(user -> consumeCeremony(command.ceremonyId(), ticket)
+                                .flatMap(ceremony -> Mono.zip(settingsService.relyingParty(),
                                                 custodyPolicy.isPasskeyCustody())
                                         .flatMap(tuple -> registerVerified(command, ticket, ceremony, user,
-                                                tuple.getT1(), tuple.getT2())))));
+                                                tuple.getT1(), tuple.getT2())))
+                                .onErrorResume(RegistrationFailedException.class,
+                                        e -> auditRejection(user, e.getReason()).then(Mono.error(e)))));
     }
 
     private Mono<IssuedSession> registerVerified(RegisterPasskeyCommand command, RegistrationTicket ticket,
@@ -114,34 +125,37 @@ public class PasskeyRegistrationWorkflow {
                                                  RelyingPartySettings relyingParty, boolean passkeyCustody) {
         boolean prfSupported = Boolean.TRUE.equals(command.prfSupported());
         if (passkeyCustody && !prfSupported) {
-            return auditRejection(user, "prf_unsupported")
+            AuthRejectionLog.log(log, "Passkey registration", AuthRejectionReason.PRF_UNSUPPORTED);
+            return auditRejection(user, AuthRejectionReason.PRF_UNSUPPORTED)
                     .then(Mono.error(new PasskeyPrfUnsupportedException()));
         }
         return verify(command.credentialJson(), ceremony, relyingParty)
                 .flatMap(verified -> passkeyRepository.findByCredentialId(verified.credentialId())
-                        .flatMap(existing -> Mono.<VerifiedPasskeyRegistration>error(
-                                new RegistrationFailedException("credential already registered in the tenant")))
+                        .flatMap(existing -> Mono.<VerifiedPasskeyRegistration>error(new RegistrationFailedException(
+                                AuthRejectionReason.CREDENTIAL_ALREADY_REGISTERED)))
                         .defaultIfEmpty(verified))
-                .onErrorResume(RegistrationFailedException.class, e -> {
-                    log.info("Passkey registration rejected: {}", e.getMessage());
-                    return auditRejection(user, "verification_failed").then(Mono.error(e));
-                })
-                .flatMap(verified -> ticketService.consume(ticket)
-                        .then(passkeyRepository.countByUserId(user.getId()).defaultIfEmpty(0L))
-                        .flatMap(previousPasskeys -> storePasskey(command, user, verified, prfSupported)
-                                .flatMap(passkey -> sessionOpener.open(user, passkey.getId(),
-                                                command.replacedRefreshToken(), "registration")
-                                        .flatMap(session -> previousPasskeys > 0
-                                                ? notifyNewPasskey(user, passkey).thenReturn(session)
-                                                : Mono.just(session)))));
+                .flatMap(verified -> transactionRunner.inTransaction(
+                        ticketService.consume(ticket)
+                                .then(passkeyRepository.countByUserId(user.getId()).defaultIfEmpty(0L))
+                                .flatMap(previousPasskeys -> storePasskey(command, user, verified, prfSupported)
+                                        .flatMap(passkey -> sessionOpener.open(user, passkey.getId(),
+                                                        command.replacedRefreshToken(), "registration")
+                                                .map(session -> new Stored(session, passkey, previousPasskeys > 0))))))
+                .doOnError(RegistrationFailedException.class,
+                        e -> AuthRejectionLog.log(log, "Passkey registration", e.getReason()))
+                .flatMap(stored -> stored.hadPasskeys()
+                        ? notifyNewPasskey(user, stored.passkey()).thenReturn(stored.session())
+                        : Mono.just(stored.session()));
     }
 
     private Mono<VerifiedPasskeyRegistration> verify(String credentialJson, WebAuthnCeremony ceremony,
                                                      RelyingPartySettings relyingParty) {
         return Mono.fromCallable(() -> webAuthnVerifier.verifyRegistration(credentialJson, ceremony.challenge(),
                         relyingParty))
-                .onErrorMap(WebAuthnVerificationException.class,
-                        e -> new RegistrationFailedException(e.getMessage()));
+                .onErrorMap(WebAuthnVerificationException.class, e -> {
+                    AuthRejectionLog.detail(log, "Passkey registration", e);
+                    return new RegistrationFailedException(AuthRejectionReason.VERIFICATION_FAILED);
+                });
     }
 
     private Mono<UserPasskey> storePasskey(RegisterPasskeyCommand command, WalletUser user,
@@ -158,13 +172,13 @@ public class PasskeyRegistrationWorkflow {
 
     private Mono<WebAuthnCeremony> consumeCeremony(UUID ceremonyId, RegistrationTicket ticket) {
         if (ceremonyId == null) {
-            return Mono.error(new RegistrationFailedException("missing ceremony"));
+            return Mono.error(new RegistrationFailedException(AuthRejectionReason.CEREMONY_MISSING));
         }
         return ceremonyRepository.consume(ceremonyId, CeremonyType.REGISTRATION)
-                .switchIfEmpty(Mono.error(new RegistrationFailedException("ceremony unknown, expired or used")))
+                .switchIfEmpty(Mono.error(new RegistrationFailedException(AuthRejectionReason.CEREMONY_INVALID)))
                 .flatMap(ceremony -> Objects.equals(ceremony.userId(), ticket.userId())
                         ? Mono.just(ceremony)
-                        : Mono.error(new RegistrationFailedException("ceremony of another account")));
+                        : Mono.error(new RegistrationFailedException(AuthRejectionReason.CEREMONY_MISMATCH)));
     }
 
     private Mono<WalletUser> accountOf(RegistrationTicket ticket) {
@@ -172,20 +186,23 @@ public class PasskeyRegistrationWorkflow {
                 .switchIfEmpty(Mono.error(new InvalidTicketException()));
     }
 
-    private Mono<Void> auditRejection(WalletUser user, String reason) {
+    private Mono<Void> auditRejection(WalletUser user, AuthRejectionReason reason) {
         return auditService.record(AuthAuditEvents.ENTITY_USER, user.getId(), AuthAuditEvents.PASSKEY_REJECTED,
-                user.getId(), Map.of("reason", reason));
+                user.getId(), Map.of("reason", reason.code()));
     }
 
-    /** FR-10: best-effort. A failed email is logged and never fails the registration. */
+    /** FR-10: best-effort and bounded. A failed or slow email is audited and never fails the registration. */
     private Mono<Void> notifyNewPasskey(WalletUser user, UserPasskey passkey) {
         return emailSender.sendNewPasskeyNotice(user.getEmail())
+                .timeout(NOTICE_TIMEOUT)
                 .then(auditService.record(AuthAuditEvents.ENTITY_PASSKEY, passkey.getId(),
                         AuthAuditEvents.NEW_PASSKEY_NOTICE_SENT, user.getId(), Map.of()))
                 .onErrorResume(e -> {
                     log.warn("Could not send the new passkey notice for passkey {}: {}", passkey.getId(),
                             e.getClass().getName());
-                    return Mono.empty();
+                    return auditService.record(AuthAuditEvents.ENTITY_PASSKEY, passkey.getId(),
+                                    AuthAuditEvents.NEW_PASSKEY_NOTICE_FAILED, user.getId(), Map.of())
+                            .onErrorResume(auditError -> Mono.empty());
                 });
     }
 }

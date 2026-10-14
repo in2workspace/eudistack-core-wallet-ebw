@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.adapter.r2dbc;
 
+import com.eudistack.ebw.domain.model.AuthRejectionReason;
 import com.eudistack.ebw.domain.model.UserPasskey;
 import com.eudistack.ebw.domain.model.VerifiedPasskeyAssertion;
 import com.eudistack.ebw.domain.model.exception.RegistrationFailedException;
@@ -45,7 +46,7 @@ public class UserPasskeyR2dbcRepository implements UserPasskeyRepository {
         return springRepository.save(entity)
                 .map(PasskeyMapper::toDomain)
                 .onErrorMap(DataIntegrityViolationException.class,
-                        e -> new RegistrationFailedException("credential already registered in the tenant"));
+                        e -> new RegistrationFailedException(AuthRejectionReason.CREDENTIAL_ALREADY_REGISTERED));
     }
 
     @Override
