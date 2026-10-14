@@ -164,14 +164,16 @@ class DeletePasskeyWorkflowIT {
         }
     }
 
-    /** Looked up by the token's own id, not passkey_id: the FK is ON DELETE SET NULL, so
-     *  passkey_id on this row is nulled out by Postgres once the passkey row is deleted. */
+    /**
+     * A token can no longer renew a session when it is revoked or gone: since EUD-308
+     * {@code refresh_token.passkey_id} is NOT NULL with ON DELETE CASCADE, so deleting the passkey
+     * deletes the tokens of its sessions after revoking them.
+     */
     private boolean isRefreshTokenRevoked(UUID id) throws SQLException {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
                      "SELECT revoked FROM " + SCHEMA + ".refresh_token WHERE id = '" + id + "'")) {
-            assertThat(rs.next()).as("refresh_token row must still exist").isTrue();
-            return rs.getBoolean("revoked");
+            return !rs.next() || rs.getBoolean("revoked");
         }
     }
 
