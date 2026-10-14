@@ -116,7 +116,7 @@ public class PasskeyPrfOnboardingController {
                 return Mono.error(new InvalidCommitException(
                         "cnf_jwk must not contain private key parameter 'd' (AC-03)"));
             }
-        } catch (JsonProcessingException e) {
+        } catch (JsonProcessingException _) {
             return Mono.error(new InvalidCommitException("cnf_jwk is not valid JSON"));
         }
 
@@ -155,7 +155,7 @@ public class PasskeyPrfOnboardingController {
                 .flatMap(profile -> Mono.deferContextual(ctx -> {
                     String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
                     return enrollHolderUseCase.recordPrfUnsupported(tenantId, holderId)
-                            .onErrorResume(e -> Mono.empty());
+                            .onErrorResume(_ -> Mono.empty());
                 }))
                 .then(Mono.error(new PrfUnsupportedException()));
     }

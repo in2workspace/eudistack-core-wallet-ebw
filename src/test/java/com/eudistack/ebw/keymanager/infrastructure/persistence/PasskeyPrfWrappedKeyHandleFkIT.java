@@ -12,10 +12,11 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.fail;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Verifies the foreign-key constraints on {@code passkey_prf_wrapped_key_handle}.
@@ -69,18 +70,10 @@ class PasskeyPrfWrappedKeyHandleFkIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.setAutoCommit(false);
             conn.createStatement().execute("SET search_path TO " + testSchema);
-            try {
-                conn.createStatement().execute(insertSql(nonExistentHolder, "cred-fk-no-holder"));
-                fail("Expected SQLSTATE " + SQLSTATE_FOREIGN_KEY_VIOLATION
-                        + " for holder_id not in wallet_user but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("INSERT with non-existent holder_id must be rejected with "
-                            + "SQLSTATE 23503 (foreign_key_violation)")
-                        .isEqualTo(SQLSTATE_FOREIGN_KEY_VIOLATION);
-            } finally {
-                conn.rollback();
-            }
+            assertRejected(conn, insertSql(nonExistentHolder, "cred-fk-no-holder"),
+                    "INSERT with non-existent holder_id must be rejected with "
+                            + "SQLSTATE 23503 (foreign_key_violation)",
+                    SQLSTATE_FOREIGN_KEY_VIOLATION);
         }
         assertNoRow("cred-fk-no-holder");
     }
@@ -106,19 +99,10 @@ class PasskeyPrfWrappedKeyHandleFkIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.setAutoCommit(false);
             conn.createStatement().execute("SET search_path TO " + testSchema);
-            try {
-                conn.createStatement().execute(
-                        "DELETE FROM wallet_user WHERE id = '" + holderId + "'");
-                fail("Expected SQLSTATE " + SQLSTATE_FOREIGN_KEY_VIOLATION
-                        + " for ON DELETE RESTRICT but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("DELETE of wallet_user with an existing handle must be rejected "
-                            + "with SQLSTATE 23503 (foreign_key_violation, ON DELETE RESTRICT)")
-                        .isEqualTo(SQLSTATE_FOREIGN_KEY_VIOLATION);
-            } finally {
-                conn.rollback();
-            }
+            assertRejected(conn, "DELETE FROM wallet_user WHERE id = '" + holderId + "'",
+                    "DELETE of wallet_user with an existing handle must be rejected "
+                            + "with SQLSTATE 23503 (foreign_key_violation, ON DELETE RESTRICT)",
+                    SQLSTATE_FOREIGN_KEY_VIOLATION);
         }
 
         // Both rows must still exist
@@ -140,18 +124,10 @@ class PasskeyPrfWrappedKeyHandleFkIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.setAutoCommit(false);
             conn.createStatement().execute("SET search_path TO " + testSchema);
-            try {
-                conn.createStatement().execute(insertSql(holderId, credId));
-                fail("Expected SQLSTATE " + SQLSTATE_FOREIGN_KEY_VIOLATION
-                        + " for composite FK to passkey_prf_salt but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("INSERT with no matching passkey_prf_salt row must be rejected with "
-                            + "SQLSTATE 23503 (foreign_key_violation) — composite FK (AC-05, ES-02)")
-                        .isEqualTo(SQLSTATE_FOREIGN_KEY_VIOLATION);
-            } finally {
-                conn.rollback();
-            }
+            assertRejected(conn, insertSql(holderId, credId),
+                    "INSERT with no matching passkey_prf_salt row must be rejected with "
+                            + "SQLSTATE 23503 (foreign_key_violation) — composite FK (AC-05, ES-02)",
+                    SQLSTATE_FOREIGN_KEY_VIOLATION);
         }
         assertNoRow(credId);
     }
@@ -272,5 +248,16 @@ class PasskeyPrfWrappedKeyHandleFkIT {
             sb.append(String.format("%02x", b));
         }
         return sb.toString();
+    }
+
+    private static void assertRejected(Connection conn, String sql, String reason, String expectedSqlState)
+            throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            assertThatThrownBy(() -> stmt.execute(sql))
+                    .isInstanceOfSatisfying(SQLException.class, ex ->
+                            assertThat(ex.getSQLState()).as(reason).isEqualTo(expectedSqlState));
+        } finally {
+            conn.rollback();
+        }
     }
 }

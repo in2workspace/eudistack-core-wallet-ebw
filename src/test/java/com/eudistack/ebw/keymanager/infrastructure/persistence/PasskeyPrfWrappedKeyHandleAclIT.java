@@ -12,10 +12,11 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.fail;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Verifies the ACL matrix on {@code passkey_prf_wrapped_key_handle} using the real
@@ -167,33 +168,33 @@ class PasskeyPrfWrappedKeyHandleAclIT {
     // -------------------------------------------------------------------------
 
     @Test
-    void ebw_app_role_update_wrapped_blob_is_denied() {
+    void ebw_app_role_update_wrapped_blob_is_denied() throws SQLException {
         assertUpdateDenied(
                 "wrapped_blob = decode('" + hex(new byte[48]) + "', 'hex')",
                 "wrapped_blob");
     }
 
     @Test
-    void ebw_app_role_update_iv_is_denied() {
+    void ebw_app_role_update_iv_is_denied() throws SQLException {
         assertUpdateDenied(
                 "iv = decode('" + hex(new byte[12]) + "', 'hex')",
                 "iv");
     }
 
     @Test
-    void ebw_app_role_update_tag_is_denied() {
+    void ebw_app_role_update_tag_is_denied() throws SQLException {
         assertUpdateDenied(
                 "tag = decode('" + hex(new byte[16]) + "', 'hex')",
                 "tag");
     }
 
     @Test
-    void ebw_app_role_update_kdf_algo_is_denied() {
+    void ebw_app_role_update_kdf_algo_is_denied() throws SQLException {
         assertUpdateDenied("kdf_algo = 'HKDF-SHA-512'", "kdf_algo");
     }
 
     @Test
-    void ebw_app_role_update_kdf_version_is_denied() {
+    void ebw_app_role_update_kdf_version_is_denied() throws SQLException {
         assertUpdateDenied("kdf_version = 2", "kdf_version");
     }
 
@@ -204,17 +205,11 @@ class PasskeyPrfWrappedKeyHandleAclIT {
     @Test
     void ebw_app_role_delete_is_denied() throws SQLException {
         try (Connection conn = connectionAsEbwAppRole()) {
-            try {
-                conn.createStatement().execute(
-                        "DELETE FROM passkey_prf_wrapped_key_handle "
-                        + "WHERE credential_id = '" + SEEDED_CRED_ID + "'");
-                fail("Expected SQLSTATE 42501 (insufficient_privilege) for DELETE as ebw_app_role "
-                        + "but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("DELETE must be denied with SQLSTATE 42501 (insufficient_privilege)")
-                        .isEqualTo(SQLSTATE_INSUFFICIENT_PRIVILEGE);
-            }
+            assertDenied(conn,
+                    "DELETE FROM passkey_prf_wrapped_key_handle "
+                    + "WHERE credential_id = '" + SEEDED_CRED_ID + "'",
+                    "DELETE must be denied with SQLSTATE 42501 (insufficient_privilege)",
+                    SQLSTATE_INSUFFICIENT_PRIVILEGE);
         }
 
         // Row must still exist
@@ -246,18 +241,12 @@ class PasskeyPrfWrappedKeyHandleAclIT {
     @Test
     void unprivileged_login_without_ebw_app_role_cannot_select() throws SQLException {
         try (Connection conn = connectionAsUnprivilegedLogin()) {
-            try {
-                conn.createStatement().executeQuery(
-                        "SELECT 1 FROM passkey_prf_wrapped_key_handle LIMIT 1");
-                fail("Expected SQLSTATE 42501 or 42P01 for SELECT "
-                        + "as unprivileged login but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("SELECT on passkey_prf_wrapped_key_handle must be denied "
-                            + "(42501 insufficient_privilege or 42P01 undefined_table) "
-                            + "for a login without ebw_app_role — REVOKE ALL FROM PUBLIC is effective")
-                        .isIn(SQLSTATE_INSUFFICIENT_PRIVILEGE, SQLSTATE_UNDEFINED_TABLE);
-            }
+            assertDenied(conn,
+                    "SELECT 1 FROM passkey_prf_wrapped_key_handle LIMIT 1",
+                    "SELECT on passkey_prf_wrapped_key_handle must be denied "
+                    + "(42501 insufficient_privilege or 42P01 undefined_table) "
+                    + "for a login without ebw_app_role — REVOKE ALL FROM PUBLIC is effective",
+                    SQLSTATE_INSUFFICIENT_PRIVILEGE, SQLSTATE_UNDEFINED_TABLE);
         }
     }
 
@@ -418,22 +407,22 @@ class PasskeyPrfWrappedKeyHandleAclIT {
                 + " 'HKDF-SHA-256', 1, '{\"kty\":\"EC\"}')";
     }
 
-    private void assertUpdateDenied(String setClause, String column) {
+    private void assertUpdateDenied(String setClause, String column) throws SQLException {
         try (Connection conn = connectionAsEbwAppRole()) {
-            try {
-                conn.createStatement().execute(
-                        "UPDATE passkey_prf_wrapped_key_handle SET " + setClause
-                        + " WHERE credential_id = '" + SEEDED_CRED_ID + "'");
-                fail("Expected SQLSTATE 42501 (insufficient_privilege) for UPDATE " + column
-                        + " as ebw_app_role but no exception was thrown");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("UPDATE %s must be denied with SQLSTATE 42501 (insufficient_privilege)",
-                            column)
-                        .isEqualTo(SQLSTATE_INSUFFICIENT_PRIVILEGE);
-            }
-        } catch (SQLException ex) {
-            throw new RuntimeException("Unexpected error opening connection as ebw_app_role", ex);
+            assertDenied(conn,
+                    "UPDATE passkey_prf_wrapped_key_handle SET " + setClause
+                    + " WHERE credential_id = '" + SEEDED_CRED_ID + "'",
+                    "UPDATE " + column + " must be denied with SQLSTATE 42501 (insufficient_privilege)",
+                    SQLSTATE_INSUFFICIENT_PRIVILEGE);
+        }
+    }
+
+    private static void assertDenied(Connection conn, String sql, String reason, String... expectedSqlStates)
+            throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            assertThatThrownBy(() -> stmt.execute(sql))
+                    .isInstanceOfSatisfying(SQLException.class, ex ->
+                            assertThat(ex.getSQLState()).as(reason).isIn((Object[]) expectedSqlStates));
         }
     }
 

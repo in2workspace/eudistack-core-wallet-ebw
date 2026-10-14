@@ -6,6 +6,8 @@ import com.eudistack.ebw.keymanager.application.SubmitSignedUseCase;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
 import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
 import com.eudistack.ebw.keymanager.domain.model.PrepareSignResponse;
+import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
+import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionResponse;
 import com.eudistack.ebw.keymanager.infrastructure.observability.PasskeyPrfSignTelemetry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,9 @@ import reactor.test.StepVerifier;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -107,5 +112,60 @@ class PasskeyPrfKeyManagerAdapterTest {
         StepVerifier.create(adapter.signWithHolderKey(null))
                 .expectError(UnsupportedOperationException.class)
                 .verify();
+    }
+
+    @Test
+    void prepareSign_useCaseSucceeds_recordsPrepareSuccessTelemetry() {
+        PrepareSignResponse response = new PrepareSignResponse(
+                "salt", "blob", "iv", "tag", "{}", "header.payload", "corr-id");
+        when(prepareSignUseCase.execute(any(), any())).thenReturn(Mono.just(response));
+
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"), "vc+sd-jwt"))
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, "holder")))
+                .expectNext(response)
+                .verifyComplete();
+
+        verify(telemetry).recordPrepareSuccess(eq("corr-id"), eq("holder"), anyLong());
+    }
+
+    @Test
+    void prepareSign_useCaseFails_recordsPrepareErrorTelemetry() {
+        IllegalStateException failure = new IllegalStateException("boom");
+        when(prepareSignUseCase.execute(any(), any())).thenReturn(Mono.error(failure));
+
+        StepVerifier.create(adapter.prepareSign(new PrepareSignRequest("c", Map.of("nonce", "ch"), "vc+sd-jwt"))
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, "holder")))
+                .expectError(IllegalStateException.class)
+                .verify();
+
+        verify(telemetry).recordPrepareError(any(), eq("holder"), eq(failure), anyLong());
+    }
+
+    @Test
+    void submitSignedAssertion_useCaseSucceeds_recordsSubmitSuccessTelemetry() {
+        SubmitSignedAssertionRequest request = new SubmitSignedAssertionRequest("cred", "sig", "corr-9");
+        SubmitSignedAssertionResponse response = new SubmitSignedAssertionResponse("kb.jwt");
+        when(submitSignedUseCase.execute(request)).thenReturn(Mono.just(response));
+
+        StepVerifier.create(adapter.submitSignedAssertion(request)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, "holder")))
+                .expectNext(response)
+                .verifyComplete();
+
+        verify(telemetry).recordSubmitSuccess(eq("corr-9"), eq("holder"), anyLong());
+    }
+
+    @Test
+    void submitSignedAssertion_useCaseFails_recordsSubmitErrorTelemetry() {
+        SubmitSignedAssertionRequest request = new SubmitSignedAssertionRequest("cred", "sig", "corr-9");
+        IllegalStateException failure = new IllegalStateException("boom");
+        when(submitSignedUseCase.execute(request)).thenReturn(Mono.error(failure));
+
+        StepVerifier.create(adapter.submitSignedAssertion(request)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, "holder")))
+                .expectError(IllegalStateException.class)
+                .verify();
+
+        verify(telemetry).recordSubmitError(eq("corr-9"), eq("holder"), eq(failure), anyLong());
     }
 }

@@ -8,7 +8,6 @@ import com.eudistack.ebw.infrastructure.adapter.properties.SecurityProperties;
 import com.eudistack.ebw.wallet.profile.infrastructure.observability.WalletProfileQueryTelemetry;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
-import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
@@ -38,7 +37,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -215,7 +213,7 @@ class PasskeyPrfKeyManagerControllerIT {
                 .expectBody().isEmpty();
 
         // Assert
-        verify(enrollHolderUseCase).recordConsent(eq("test-tenant"), eq(actorId.toString()));
+        verify(enrollHolderUseCase).recordConsent("test-tenant", actorId.toString());
     }
 
     @Test

@@ -76,7 +76,7 @@ class PasskeyPrfHealthContributorTest {
         StepVerifier.create(contributor.health())
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.UP);
-                    assertThat(health.getDetails().get("passkey_prf_applicable")).isEqualTo(false);
+                    assertThat(health.getDetails()).containsEntry("passkey_prf_applicable", false);
                     assertThat(health.getDetails()).doesNotContainKey("prf_gate_pass_rate");
                     assertThat(health.getDetails()).doesNotContainKey("wrap_handles_total");
                 })
@@ -92,7 +92,7 @@ class PasskeyPrfHealthContributorTest {
         StepVerifier.create(contributor.health())
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.UP);
-                    assertThat(health.getDetails().get("passkey_prf_applicable")).isEqualTo(false);
+                    assertThat(health.getDetails()).containsEntry("passkey_prf_applicable", false);
                 })
                 .verifyComplete();
     }
@@ -126,7 +126,7 @@ class PasskeyPrfHealthContributorTest {
                     assertThat(health.getStatus()).isEqualTo(Status.UP);
                     assertThat(health.getDetails()).containsKey("prf_gate_pass_rate");
                     assertThat(health.getDetails()).containsKey("wrap_handles_total");
-                    assertThat(health.getDetails().get("salt_coherent")).isEqualTo(true);
+                    assertThat(health.getDetails()).containsEntry("salt_coherent", true);
                     assertThat((Double) health.getDetails().get("prf_gate_pass_rate")).isGreaterThanOrEqualTo(0.75);
                 })
                 .verifyComplete();
@@ -161,9 +161,8 @@ class PasskeyPrfHealthContributorTest {
         StepVerifier.create(contributor.health())
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.UP);
-                    assertThat(health.getDetails().get("prf_gate_pass_rate")).isEqualTo(1.0);
-                    assertThat(health.getDetails().get("prf_gate_pass_rate_note"))
-                            .isEqualTo("no attempts yet");
+                    assertThat(health.getDetails()).containsEntry("prf_gate_pass_rate", 1.0);
+                    assertThat(health.getDetails()).containsEntry("prf_gate_pass_rate_note", "no attempts yet");
                 })
                 .verifyComplete();
     }
@@ -198,7 +197,7 @@ class PasskeyPrfHealthContributorTest {
         StepVerifier.create(contributor.health())
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.UP);
-                    assertThat(health.getDetails().get("salt_coherent")).isEqualTo(true);
+                    assertThat(health.getDetails()).containsEntry("salt_coherent", true);
                 })
                 .verifyComplete();
     }
@@ -212,8 +211,8 @@ class PasskeyPrfHealthContributorTest {
         StepVerifier.create(contributor.health())
                 .assertNext(health -> {
                     assertThat(health.getStatus()).isEqualTo(Status.DOWN);
-                    assertThat(health.getDetails().get("salt_coherent")).isEqualTo(false);
-                    assertThat(health.getDetails().get("salt_coherent_orphaned_count")).isEqualTo(2L);
+                    assertThat(health.getDetails()).containsEntry("salt_coherent", false);
+                    assertThat(health.getDetails()).containsEntry("salt_coherent_orphaned_count", 2L);
                 })
                 .verifyComplete();
     }

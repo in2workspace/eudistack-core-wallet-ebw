@@ -57,11 +57,13 @@ public class PasskeyPrfKeyManagerExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(PasskeyPrfKeyManagerExceptionHandler.class);
 
     private static final String TYPE_BASE = "urn:eudistack:error:keymanager:passkey-prf:";
+    private static final String PROP_ERROR = "error";
+    private static final String INVALID_REQUEST = "invalid-request";
 
     @ExceptionHandler(WebExchangeBindException.class)
     public ResponseEntity<ProblemDetail> handleValidation(WebExchangeBindException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        problem.setType(URI.create(TYPE_BASE + "invalid-request"));
+        problem.setType(URI.create(TYPE_BASE + INVALID_REQUEST));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 
@@ -69,7 +71,7 @@ public class PasskeyPrfKeyManagerExceptionHandler {
     public ResponseEntity<ProblemDetail> handleUnsupportedFormat(UnsupportedCredentialFormatException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         problem.setType(URI.create(TYPE_BASE + "unsupported-format"));
-        problem.setProperty("error", "unsupported_format");
+        problem.setProperty(PROP_ERROR, "unsupported_format");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 
@@ -77,7 +79,7 @@ public class PasskeyPrfKeyManagerExceptionHandler {
     public ResponseEntity<ProblemDetail> handleSignatureInvalid(SignatureInvalidException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         problem.setType(URI.create(TYPE_BASE + "signature-invalid"));
-        problem.setProperty("error", "signature_invalid");
+        problem.setProperty(PROP_ERROR, "signature_invalid");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 
@@ -90,8 +92,8 @@ public class PasskeyPrfKeyManagerExceptionHandler {
     public ResponseEntity<ProblemDetail> handleInvalidSignatureSubmission(InvalidSignatureSubmissionException ex) {
         log.debug("keymanager.passkey-prf.invalid_signature_submission");
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        problem.setType(URI.create(TYPE_BASE + "invalid-request"));
-        problem.setProperty("error", "invalid_request");
+        problem.setType(URI.create(TYPE_BASE + INVALID_REQUEST));
+        problem.setProperty(PROP_ERROR, "invalid_request");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 
@@ -111,8 +113,8 @@ public class PasskeyPrfKeyManagerExceptionHandler {
     @ExceptionHandler(InvalidCommitException.class)
     public ResponseEntity<ProblemDetail> handleInvalidCommit(InvalidCommitException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        problem.setType(URI.create(TYPE_BASE + "invalid-request"));
-        problem.setProperty("error", "invalid_request");
+        problem.setType(URI.create(TYPE_BASE + INVALID_REQUEST));
+        problem.setProperty(PROP_ERROR, "invalid_request");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 
@@ -124,7 +126,7 @@ public class PasskeyPrfKeyManagerExceptionHandler {
     public ResponseEntity<ProblemDetail> handleOnboardingState(OnboardingStateException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
         problem.setType(URI.create(TYPE_BASE + "idempotency-replay"));
-        problem.setProperty("error", "idempotency_replay");
+        problem.setProperty(PROP_ERROR, "idempotency_replay");
         return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
     }
 
@@ -140,7 +142,7 @@ public class PasskeyPrfKeyManagerExceptionHandler {
     public ProblemDetail handlePrfUnsupported(PrfUnsupportedException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
         problem.setType(URI.create(TYPE_BASE + "prf-unsupported"));
-        problem.setProperty("error", "prf_unsupported");
+        problem.setProperty(PROP_ERROR, "prf_unsupported");
         return problem;
     }
 
@@ -154,7 +156,7 @@ public class PasskeyPrfKeyManagerExceptionHandler {
         log.debug("keymanager.passkey_prf.prf_salt_not_found credential_present=false");
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
         problem.setType(URI.create(TYPE_BASE + "wrap-handle-not-found"));
-        problem.setProperty("error", "wrap_handle_not_found");
+        problem.setProperty(PROP_ERROR, "wrap_handle_not_found");
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
     }
 
@@ -170,7 +172,7 @@ public class PasskeyPrfKeyManagerExceptionHandler {
         log.debug("keymanager.passkey-prf.holder_isolation_violation");
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
         problem.setType(URI.create(TYPE_BASE + "holder-isolation-violation"));
-        problem.setProperty("error", "holder_isolation_violation");
+        problem.setProperty(PROP_ERROR, "holder_isolation_violation");
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem);
     }
 }
