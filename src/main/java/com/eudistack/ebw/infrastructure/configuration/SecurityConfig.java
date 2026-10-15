@@ -27,8 +27,8 @@ import reactor.core.publisher.Mono;
 public class SecurityConfig {
 
     /** Session endpoints whose 401 is the contract's {@code invalid_session} problem. */
-    // NOSONAR java:S1075 - fixed route of the public API contract (OpenAPI), not deployment configuration
-    private static final String SESSIONS_PATH = "/api/v1/auth/sessions/";
+    // Fixed route of the public API contract (OpenAPI), not deployment configuration.
+    private static final String SESSIONS_PATH = "/api/v1/auth/sessions/"; // NOSONAR java:S1075
 
     private final JwtAuthenticationWebFilter jwtAuthFilter;
     private final CorsConfigurationSource corsConfigurationSource;

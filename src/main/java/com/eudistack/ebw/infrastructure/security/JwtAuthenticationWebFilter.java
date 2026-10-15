@@ -58,8 +58,8 @@ public class JwtAuthenticationWebFilter implements WebFilter {
             "/api/v1/auth/passkeys", "/api/v1/auth/sessions/current", "/api/v1/auth/sessions/others");
 
     /** Session endpoints, whose {@code invalid_session} also clears the refresh cookie. */
-    // NOSONAR java:S1075 - fixed route of the public API contract (OpenAPI), not deployment configuration
-    private static final String SESSIONS_PATH = "/api/v1/auth/sessions/";
+    // Fixed route of the public API contract (OpenAPI), not deployment configuration.
+    private static final String SESSIONS_PATH = "/api/v1/auth/sessions/"; // NOSONAR java:S1075
 
     private final TokenSigner tokenSigner;
     private final ActiveSessionChecker activeSessionChecker;

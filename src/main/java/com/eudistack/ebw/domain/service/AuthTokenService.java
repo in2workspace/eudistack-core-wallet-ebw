@@ -194,10 +194,9 @@ public class AuthTokenService {
     private <T> Mono<T> expire(RefreshToken existing, SessionExpiredException.Reason reason) {
         return refreshTokenRepository.revokeBySessionId(existing.getSessionId())
                 .defaultIfEmpty(0L)
-                .flatMap(revoked -> revoked > 0
-                        ? Mono.<T>error(new SessionExpiredException(existing.getSessionId(), existing.getUserId(),
-                                reason))
-                        : Mono.<T>error(new InvalidSessionException()));
+                .flatMap(revoked -> Mono.<T>error(revoked > 0
+                        ? new SessionExpiredException(existing.getSessionId(), existing.getUserId(), reason)
+                        : new InvalidSessionException()));
     }
 
     /**

@@ -35,9 +35,10 @@ class PasskeyRegistrationIT extends IntegrationTestBase {
 
         var body = authClient().verifyEmail(email);
 
-        assertThat(body).containsOnlyKeys("registrationTicket", "expiresIn", "hasPasskeys");
-        assertThat(body).containsEntry("expiresIn", 300);
-        assertThat(body).containsEntry("hasPasskeys", false);
+        assertThat(body)
+                .containsOnlyKeys("registrationTicket", "expiresIn", "hasPasskeys")
+                .containsEntry("expiresIn", 300)
+                .containsEntry("hasPasskeys", false);
         var account = query("SELECT webauthn_user_handle FROM wallet_user WHERE email = '" + email + "'");
         assertThat(account).singleElement()
                 .satisfies(row -> assertThat((byte[]) row.get("webauthn_user_handle")).hasSize(32));

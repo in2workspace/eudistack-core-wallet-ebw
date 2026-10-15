@@ -11,9 +11,9 @@ public record PasskeyAssertion(String credentialId, byte[] userHandle) {
 
     @Override
     public boolean equals(Object other) {
-        return other instanceof PasskeyAssertion that
-                && Objects.equals(credentialId, that.credentialId)
-                && Arrays.equals(userHandle, that.userHandle);
+        return other instanceof PasskeyAssertion(var otherCredentialId, var otherUserHandle)
+                && Objects.equals(credentialId, otherCredentialId)
+                && Arrays.equals(userHandle, otherUserHandle);
     }
 
     @Override

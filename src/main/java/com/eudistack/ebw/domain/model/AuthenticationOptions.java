@@ -15,11 +15,12 @@ public record AuthenticationOptions(
 
     @Override
     public boolean equals(Object other) {
-        return other instanceof AuthenticationOptions that
-                && Objects.equals(ceremonyId, that.ceremonyId)
-                && Objects.equals(rpId, that.rpId)
-                && Arrays.equals(challenge, that.challenge)
-                && Objects.equals(allowCredentials, that.allowCredentials);
+        return other instanceof AuthenticationOptions(var otherCeremonyId, var otherRpId, var otherChallenge,
+                                                      var otherAllowCredentials)
+                && Objects.equals(ceremonyId, otherCeremonyId)
+                && Objects.equals(rpId, otherRpId)
+                && Arrays.equals(challenge, otherChallenge)
+                && Objects.equals(allowCredentials, otherAllowCredentials);
     }
 
     @Override

@@ -103,7 +103,7 @@ public class PasskeyPrfSignTelemetry {
     private void emitSpan(String spanName, String operation, String correlationId,
                            String result, Throwable error) {
         Span span = tracer.nextSpan().name(spanName);
-        try (Tracer.SpanInScope _ = tracer.withSpan(span.start())) {
+        try (var _ = tracer.withSpan(span.start())) {
             span.tag(TAG_OPERATION, operation);
             span.tag(TAG_RESULT, result);
             if (correlationId != null) {

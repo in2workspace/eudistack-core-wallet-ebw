@@ -36,14 +36,15 @@ public record WebAuthnCeremony(
 
     @Override
     public boolean equals(Object other) {
-        return other instanceof WebAuthnCeremony that
-                && Objects.equals(id, that.id)
-                && type == that.type
-                && Arrays.equals(challenge, that.challenge)
-                && Objects.equals(userId, that.userId)
-                && Objects.equals(expiresAt, that.expiresAt)
-                && Objects.equals(consumedAt, that.consumedAt)
-                && Objects.equals(createdAt, that.createdAt);
+        return other instanceof WebAuthnCeremony(var otherId, var otherType, var otherChallenge, var otherUserId,
+                                                 var otherExpiresAt, var otherConsumedAt, var otherCreatedAt)
+                && Objects.equals(id, otherId)
+                && type == otherType
+                && Arrays.equals(challenge, otherChallenge)
+                && Objects.equals(userId, otherUserId)
+                && Objects.equals(expiresAt, otherExpiresAt)
+                && Objects.equals(consumedAt, otherConsumedAt)
+                && Objects.equals(createdAt, otherCreatedAt);
     }
 
     @Override

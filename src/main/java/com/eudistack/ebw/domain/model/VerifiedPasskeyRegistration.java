@@ -20,16 +20,19 @@ public record VerifiedPasskeyRegistration(
 
     @Override
     public boolean equals(Object other) {
-        return other instanceof VerifiedPasskeyRegistration that
-                && signCount == that.signCount
-                && uvInitialized == that.uvInitialized
-                && backupEligible == that.backupEligible
-                && backupState == that.backupState
-                && Objects.equals(credentialId, that.credentialId)
-                && Arrays.equals(attestedCredentialData, that.attestedCredentialData)
-                && Objects.equals(aaguid, that.aaguid)
-                && Objects.equals(transports, that.transports)
-                && Objects.equals(attestationFormat, that.attestationFormat);
+        return other instanceof VerifiedPasskeyRegistration(var otherCredentialId, var otherAttestedCredentialData,
+                                                            var otherAaguid, var otherSignCount, var otherTransports,
+                                                            var otherUvInitialized, var otherBackupEligible,
+                                                            var otherBackupState, var otherAttestationFormat)
+                && signCount == otherSignCount
+                && uvInitialized == otherUvInitialized
+                && backupEligible == otherBackupEligible
+                && backupState == otherBackupState
+                && Objects.equals(credentialId, otherCredentialId)
+                && Arrays.equals(attestedCredentialData, otherAttestedCredentialData)
+                && Objects.equals(aaguid, otherAaguid)
+                && Objects.equals(transports, otherTransports)
+                && Objects.equals(attestationFormat, otherAttestationFormat);
     }
 
     @Override

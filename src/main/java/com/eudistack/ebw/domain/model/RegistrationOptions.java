@@ -22,14 +22,16 @@ public record RegistrationOptions(
 
     @Override
     public boolean equals(Object other) {
-        return other instanceof RegistrationOptions that
-                && requestPrf == that.requestPrf
-                && Objects.equals(ceremonyId, that.ceremonyId)
-                && Objects.equals(relyingParty, that.relyingParty)
-                && Arrays.equals(userHandle, that.userHandle)
-                && Objects.equals(userName, that.userName)
-                && Arrays.equals(challenge, that.challenge)
-                && Objects.equals(excludeCredentials, that.excludeCredentials);
+        return other instanceof RegistrationOptions(var otherCeremonyId, var otherRelyingParty, var otherUserHandle,
+                                                    var otherUserName, var otherChallenge, var otherExcludeCredentials,
+                                                    var otherRequestPrf)
+                && requestPrf == otherRequestPrf
+                && Objects.equals(ceremonyId, otherCeremonyId)
+                && Objects.equals(relyingParty, otherRelyingParty)
+                && Arrays.equals(userHandle, otherUserHandle)
+                && Objects.equals(userName, otherUserName)
+                && Arrays.equals(challenge, otherChallenge)
+                && Objects.equals(excludeCredentials, otherExcludeCredentials);
     }
 
     @Override
