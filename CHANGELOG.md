@@ -87,6 +87,12 @@ EUD-308 (feature EUD-8, registration and access to the wallet; EUD-11 FR-13/FR-1
 - `jackson-annotations` raised to 2.22 for the Jackson 3 used by webauthn4j; jackson-core/databind 2.x stay at 2.19.4.
 - This closes the CORS item left pending above (no wildcard with credentials).
 
+### Fixed
+
+- **`SESSION_EXPIRED` for every lapsed session (FR-22)**: it was only recorded when someone tried to renew an expired session. The hourly housekeeping now, in each tenant and before its deletions, closes the sessions that no token can renew and that were not ended (last token expired, not revoked): one conditional `UPDATE … RETURNING` revokes their tokens, and one `SESSION_EXPIRED` per session is recorded with reason `max_duration` when its last token was capped at the maximum duration, `idle_timeout` otherwise, in the same transaction. Revoking the tokens is the mark shared with the renewal attempt, which now reports the expiry only if its own revocation revoked something, so a session gets a single event whichever path closes it, also with several instances running the job at once. If the step fails, the tenant's deletions wait for the next pass.
+- **Signing out with the access token of an ended session**: `DELETE /auth/sessions/current` answered 204 and audited `SESSION_ENDED` again. It is now a sensitive route (401 `invalid_session`, refresh cookie cleared), and `SESSION_ENDED` is only recorded when the call actually ended the session. Sensitive routes match whole path segments.
+- **CORS of a tenant that is no longer active**: its origins were kept until the service restarted; the 5-minute refresh now drops them.
+
 #### [1.13.0] - 2026-07-24
 
 ### Added
