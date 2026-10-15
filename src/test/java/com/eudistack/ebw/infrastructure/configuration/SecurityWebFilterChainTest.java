@@ -71,7 +71,7 @@ class SecurityWebFilterChainTest {
         var cors = new TenantCorsConfigurationSource(new TenantDomainWebFilter(true),
                 tenant -> tenantOrigins.getOrDefault(tenant, List.of()), List.of(GLOBAL_ORIGIN));
         config = new SecurityConfig(new JwtAuthenticationWebFilter(tokenSigner, activeSessions(),
-                        new ObjectMapper()), cors,
+                        new ObjectMapper(), new RefreshCookies()), cors,
                 new RefreshCookies(), new ObjectMapper());
         // An absolute base URL is required: the CORS processor compares the Origin with the request's scheme/host.
         // The tenant filter runs before the security chain, as in the application (TenantDomainWebFilter.ORDER).

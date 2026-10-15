@@ -261,6 +261,18 @@ class PasskeySessionIT extends IntegrationTestBase {
     }
 
     @Test
+    void endCurrentSession_twiceWithTheSameAccessToken_secondIsInvalidSessionAndAuditedOnce() {
+        var session = auth.signUp(email("ses-logout-twice"), new SoftwareAuthenticator(TEST_ORIGIN));
+        auth.endSessionSpec("current", session.accessToken(), true).expectStatus().isNoContent();
+
+        auth.endSessionSpec("current", session.accessToken(), true).expectStatus().isUnauthorized()
+                .expectHeader().value(HttpHeaders.SET_COOKIE, c -> assertThat(c).contains("Max-Age=0"))
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
+
+        assertThat(auditOf(sessionIdOf(session), "SESSION_ENDED")).hasSize(1);
+    }
+
+    @Test
     void endCurrentSession_withoutWalletRequestHeader_isForbidden() {
         var session = auth.signUp(email("ses-logout-csrf"), new SoftwareAuthenticator(TEST_ORIGIN));
 

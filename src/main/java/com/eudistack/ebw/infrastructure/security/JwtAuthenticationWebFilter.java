@@ -6,6 +6,7 @@ import com.eudistack.ebw.domain.spi.TokenSigner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.eudistack.ebw.infrastructure.controller.support.AuthProblems;
+import com.eudistack.ebw.infrastructure.controller.support.RefreshCookies;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -37,9 +38,14 @@ import java.util.stream.Collectors;
  * before the security chain), or when it lacks the session claims {@code sid} and {@code pkid}.
  *
  * <p>On the sensitive routes ({@link #SENSITIVE_PATHS}: key manager, attestations, issuance,
- * passkeys and ending other sessions) the token is also rejected with 401 {@code invalid_session}
- * once its session has been ended, revoked or has expired, instead of staying valid until the
- * access token expires ({@link ActiveSessionChecker}, cached for at most 10 seconds).
+ * passkeys, signing out and ending other sessions) the token is also rejected with 401
+ * {@code invalid_session} once its session has been ended, revoked or has expired, instead of
+ * staying valid until the access token expires ({@link ActiveSessionChecker}, cached for at most
+ * 10 seconds). On the session endpoints that 401 also clears the refresh cookie, as
+ * {@code SecurityConfig} does for an unauthenticated call to them.
+ *
+ * <p>An entry of {@link #SENSITIVE_PATHS} ending in {@code /} covers everything below it; any
+ * other entry covers that exact path and the paths below it, never a longer sibling name.
  */
 @Component
 public class JwtAuthenticationWebFilter implements WebFilter {
@@ -49,17 +55,23 @@ public class JwtAuthenticationWebFilter implements WebFilter {
 
     static final List<String> SENSITIVE_PATHS = List.of(
             "/api/v1/keys/", "/api/v1/credentials", "/api/v1/openid-credential-offer/",
-            "/api/v1/auth/passkeys", "/api/v1/auth/sessions/others");
+            "/api/v1/auth/passkeys", "/api/v1/auth/sessions/current", "/api/v1/auth/sessions/others");
+
+    /** Session endpoints, whose {@code invalid_session} also clears the refresh cookie. */
+    // NOSONAR java:S1075 - fixed route of the public API contract (OpenAPI), not deployment configuration
+    private static final String SESSIONS_PATH = "/api/v1/auth/sessions/";
 
     private final TokenSigner tokenSigner;
     private final ActiveSessionChecker activeSessionChecker;
     private final ObjectMapper objectMapper;
+    private final RefreshCookies refreshCookies;
 
     public JwtAuthenticationWebFilter(TokenSigner tokenSigner, ActiveSessionChecker activeSessionChecker,
-                                      ObjectMapper objectMapper) {
+                                      ObjectMapper objectMapper, RefreshCookies refreshCookies) {
         this.tokenSigner = tokenSigner;
         this.activeSessionChecker = activeSessionChecker;
         this.objectMapper = objectMapper;
+        this.refreshCookies = refreshCookies;
     }
 
     @Override
@@ -89,11 +101,20 @@ public class JwtAuthenticationWebFilter implements WebFilter {
     }
 
     private Mono<Boolean> requireActiveSession(ServerWebExchange exchange, JwtAuthenticationToken auth) {
-        var path = exchange.getRequest().getPath().pathWithinApplication().value();
-        if (SENSITIVE_PATHS.stream().noneMatch(path::startsWith)) {
+        if (!isSensitive(pathOf(exchange))) {
             return Mono.just(true);
         }
         return activeSessionChecker.isActive(auth.getSessionId());
+    }
+
+    static boolean isSensitive(String path) {
+        return SENSITIVE_PATHS.stream().anyMatch(sensitive -> sensitive.endsWith("/")
+                ? path.startsWith(sensitive)
+                : path.equals(sensitive) || path.startsWith(sensitive + "/"));
+    }
+
+    private static String pathOf(ServerWebExchange exchange) {
+        return exchange.getRequest().getPath().pathWithinApplication().value();
     }
 
     private Mono<Void> invalidSession(ServerWebExchange exchange) {
@@ -101,6 +122,9 @@ public class JwtAuthenticationWebFilter implements WebFilter {
         var response = exchange.getResponse();
         response.setStatusCode(HttpStatus.UNAUTHORIZED);
         response.getHeaders().setContentType(MediaType.APPLICATION_PROBLEM_JSON);
+        if (pathOf(exchange).startsWith(SESSIONS_PATH)) {
+            response.getHeaders().add(HttpHeaders.SET_COOKIE, refreshCookies.clear().toString());
+        }
         byte[] body;
         try {
             body = objectMapper.writeValueAsBytes(AuthProblems.of(HttpStatus.UNAUTHORIZED, AuthProblems.INVALID_SESSION));

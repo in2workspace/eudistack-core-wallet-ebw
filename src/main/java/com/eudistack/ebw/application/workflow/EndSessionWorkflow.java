@@ -20,10 +20,12 @@ public class EndSessionWorkflow {
         this.auditService = auditService;
     }
 
+    /** Audits {@code SESSION_ENDED} only when this call ended the session, never for an already ended one. */
     public Mono<Void> endCurrentSession(UUID userId, UUID sessionId) {
         return authTokenService.endSession(sessionId)
-                .then(auditService.record(AuthAuditEvents.ENTITY_SESSION, sessionId, AuthAuditEvents.SESSION_ENDED,
-                        userId, Map.of("reason", "sign_out")));
+                .filter(Boolean::booleanValue)
+                .flatMap(_ -> auditService.record(AuthAuditEvents.ENTITY_SESSION, sessionId,
+                        AuthAuditEvents.SESSION_ENDED, userId, Map.of("reason", "sign_out")));
     }
 
     public Mono<Void> endOtherSessions(UUID userId, UUID currentSessionId) {

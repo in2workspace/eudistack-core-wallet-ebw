@@ -50,7 +50,8 @@ public class SessionOpener {
         return authTokenService.findRefreshToken(replacedRefreshToken)
                 .filter(token -> !token.isRevoked())
                 .flatMap(token -> authTokenService.endSession(token.getSessionId())
-                        .then(auditService.record(AuthAuditEvents.ENTITY_SESSION, token.getSessionId(),
+                        .filter(Boolean::booleanValue)
+                        .flatMap(_ -> auditService.record(AuthAuditEvents.ENTITY_SESSION, token.getSessionId(),
                                 AuthAuditEvents.SESSION_ENDED, token.getUserId(),
                                 Map.of("reason", "replaced_by_new_session"))))
                 .then();

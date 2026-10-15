@@ -3,8 +3,11 @@ package com.eudistack.ebw.infrastructure.security;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.spi.TokenSigner;
+import com.eudistack.ebw.infrastructure.controller.support.RefreshCookies;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
@@ -51,7 +54,7 @@ class JwtAuthenticationWebFilterTest {
         org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(Mono.just(true));
         filter = new JwtAuthenticationWebFilter(tokenSigner, activeSessionChecker,
-                new com.fasterxml.jackson.databind.ObjectMapper());
+                new com.fasterxml.jackson.databind.ObjectMapper(), new RefreshCookies());
         seenAuthentication = new AtomicReference<>();
         chain = exchange -> ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
@@ -228,6 +231,43 @@ class JwtAuthenticationWebFilterTest {
         assertThat(exchange.getResponse().getStatusCode().value()).isEqualTo(401);
         StepVerifier.create(exchange.getResponse().getBodyAsString())
                 .assertNext(body -> assertThat(body).contains("invalid_session")).verifyComplete();
+        assertThat(exchange.getResponse().getHeaders().get(HttpHeaders.SET_COOKIE)).isNull();
+    }
+
+    @Test
+    void filter_endedSessionSigningOut_returnsInvalidSessionAndClearsTheRefreshCookie() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+        when(activeSessionChecker.isActive(SESSION_ID)).thenReturn(Mono.just(false));
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.delete("/api/v1/auth/sessions/current")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer good-token"));
+
+        // Act
+        StepVerifier.create(inTenant(filter.filter(exchange, chain), TENANT)).verifyComplete();
+
+        // Assert
+        assertThat(seenAuthentication.get()).isNull();
+        assertThat(exchange.getResponse().getStatusCode().value()).isEqualTo(401);
+        assertThat(exchange.getResponse().getHeaders().getFirst(HttpHeaders.SET_COOKIE))
+                .startsWith(RefreshCookies.NAME + "=").contains("Max-Age=0");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "/api/v1/auth/sessions/current, true",
+            "/api/v1/auth/sessions/others, true",
+            "/api/v1/auth/sessions/currently, false",
+            "/api/v1/auth/sessions/options, false",
+            "/api/v1/auth/sessions, false",
+            "/api/v1/credentials, true",
+            "/api/v1/credentials/abc, true",
+            "/api/v1/credentialsx, false",
+            "/api/v1/keys/passkey-prf/onboarding/init, true",
+            "/api/v1/keys, false"
+    })
+    void isSensitive_path_matchesWholeSegmentsOnly(String path, boolean sensitive) {
+        // Act + Assert
+        assertThat(JwtAuthenticationWebFilter.isSensitive(path)).isEqualTo(sensitive);
     }
 
     @Test

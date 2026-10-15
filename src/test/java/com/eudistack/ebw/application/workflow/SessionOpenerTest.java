@@ -80,7 +80,7 @@ class SessionOpenerTest {
         var other = RefreshToken.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), Instant.now(), "h",
                 Instant.now().plusSeconds(60));
         when(authTokenService.findRefreshToken("cookie")).thenReturn(Mono.just(other));
-        when(authTokenService.endSession(other.getSessionId())).thenReturn(Mono.empty());
+        when(authTokenService.endSession(other.getSessionId())).thenReturn(Mono.just(true));
         opensSession();
 
         // Act + Assert
