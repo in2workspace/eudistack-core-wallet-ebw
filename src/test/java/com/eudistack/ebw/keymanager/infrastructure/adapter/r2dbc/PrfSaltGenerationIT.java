@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Covered criteria:
  * <ul>
- *   <li>AC-01 — after init for {@code (H1, C1)}: exactly 1 row in {@code hybrid_prf_salt}
+ *   <li>AC-01 — after init for {@code (H1, C1)}: exactly 1 row in {@code passkey_prf_salt}
  *       with 32-byte salt</li>
  *   <li>AC-02 — two credentials {@code (H1, C1)} and {@code (H1, C2)}: two distinct salts</li>
  *   <li>EC-01 — init twice for {@code (H1, C1)}: still 1 row, same salt returned both times
@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <p>Follows the Testcontainers + Flyway + R2DBC setup pattern from
- * {@link HybridPgDumpNonReconstructionIT}.</p>
+ * {@link PasskeyPrfPgDumpNonReconstructionIT}.</p>
  *
  * <p>Spec: EUDISTACK-537 T10; AC-01, AC-02, EC-01.</p>
  */
@@ -124,7 +124,7 @@ class PrfSaltGenerationIT {
                     + "ON CONFLICT (id) DO NOTHING");
             // Clear salt table before each test
             conn.createStatement().execute(
-                    "DELETE FROM " + TENANT_SCHEMA + ".hybrid_prf_salt");
+                    "DELETE FROM " + TENANT_SCHEMA + ".passkey_prf_salt");
         }
     }
 
@@ -142,7 +142,7 @@ class PrfSaltGenerationIT {
         String jdbcUrl = postgres.getJdbcUrl();
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT prf_salt FROM " + TENANT_SCHEMA + ".hybrid_prf_salt "
+                     "SELECT prf_salt FROM " + TENANT_SCHEMA + ".passkey_prf_salt "
                      + "WHERE holder_id = '" + HOLDER_1 + "' AND credential_id = '" + CRED_ID_1 + "'")) {
             assertThat(rs.next()).as("Expected one row after init").isTrue();
             byte[] storedSalt = rs.getBytes("prf_salt");
@@ -163,7 +163,7 @@ class PrfSaltGenerationIT {
         String jdbcUrl = postgres.getJdbcUrl();
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT prf_salt FROM " + TENANT_SCHEMA + ".hybrid_prf_salt "
+                     "SELECT prf_salt FROM " + TENANT_SCHEMA + ".passkey_prf_salt "
                      + "WHERE holder_id = '" + HOLDER_1 + "' AND credential_id = '" + CRED_ID_1 + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getBytes("prf_salt")).isEqualTo(returnedSalt);
@@ -201,7 +201,7 @@ class PrfSaltGenerationIT {
         String jdbcUrl = postgres.getJdbcUrl();
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT COUNT(*) FROM " + TENANT_SCHEMA + ".hybrid_prf_salt "
+                     "SELECT COUNT(*) FROM " + TENANT_SCHEMA + ".passkey_prf_salt "
                      + "WHERE holder_id = '" + HOLDER_1 + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1)).isEqualTo(2);
@@ -239,7 +239,7 @@ class PrfSaltGenerationIT {
         String jdbcUrl = postgres.getJdbcUrl();
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT COUNT(*) FROM " + TENANT_SCHEMA + ".hybrid_prf_salt "
+                     "SELECT COUNT(*) FROM " + TENANT_SCHEMA + ".passkey_prf_salt "
                      + "WHERE holder_id = '" + HOLDER_1 + "' AND credential_id = '" + CRED_ID_1 + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1)).as("Idempotent re-init must not create a second row").isEqualTo(1);

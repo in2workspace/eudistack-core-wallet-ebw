@@ -1,0 +1,154 @@
+package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
+
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
+import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
+import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
+import com.eudistack.ebw.keymanager.domain.model.PrepareSignRequest;
+import com.eudistack.ebw.keymanager.domain.model.PrepareSignResponse;
+import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionRequest;
+import com.eudistack.ebw.keymanager.domain.model.SubmitSignedAssertionResponse;
+import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
+import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
+import com.eudistack.ebw.wallet.profile.domain.model.TenantWalletProfile;
+import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
+import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
+
+/**
+ * REST controller for the passkey+prf two-step signing handshake and audit events.
+ *
+ * <p>Endpoints:
+ * <ul>
+ *   <li>{@code POST /api/v1/keys/passkey-prf/sign/prepare} — initiates the handshake: the server
+ *       returns the PRF salt + wrapped-blob envelope so the PWA can derive the unwrap key
+ *       client-side via Passkey PRF and sign the payload.</li>
+ *   <li>{@code POST /api/v1/keys/passkey-prf/sign/submit} — finalises the handshake: the PWA
+ *       submits the client-side signed assertion; the server verifies and produces the
+ *       key-binding JWT.</li>
+ *   <li>{@code POST /api/v1/keys/passkey-prf/constraint-accepted} — records the holder's acceptance
+ *       of the multi-device limitation in the audit log (US-06, EUDISTACK-538).</li>
+ * </ul>
+ *
+ * <p>All endpoints reject with {@code 403} if the tenant's wallet profile is not
+ * {@code (SERVER, PASSKEY_PRF)}, preventing DB tenants from reaching passkey-prf routes.</p>
+ *
+ * <p>The {@code holder_id} is extracted from the DPoP-bound JWT and written to the Reactor
+ * context so use cases can access it without it ever appearing in the request body (ES-04).</p>
+ *
+ * <p>Spec: EUDISTACK-533 FR-03, AC-03, AC-04, AC-05, ES-01, ES-03;
+ * EUDISTACK-536 ES-04; architecture.md §6.1 (runtime flows).</p>
+ * EUDISTACK-538 (US-06) AC-02; architecture.md §6.1 (runtime flows).</p>
+ */
+@RestController
+@RequestMapping("/api/v1/keys/passkey-prf")
+@Validated
+public class PasskeyPrfKeyManagerController {
+
+    private final KeyManagerPort passkeyPrfAdapter;
+    private final WalletProfileQueryPort walletProfileQueryPort;
+    private final EnrollHolderUseCase enrollHolderUseCase;
+
+    public PasskeyPrfKeyManagerController(KeyManagerPort passkeyPrfAdapter,
+                                       WalletProfileQueryPort walletProfileQueryPort,
+                                       EnrollHolderUseCase enrollHolderUseCase) {
+        this.passkeyPrfAdapter = passkeyPrfAdapter;
+        this.walletProfileQueryPort = walletProfileQueryPort;
+        this.enrollHolderUseCase = enrollHolderUseCase;
+    }
+
+    /**
+     * Initiates the passkey-prf signing handshake.
+     *
+     * <p>Returns the PRF challenge metadata (salt, wrapped blob, IV, tag, KDF params, signing
+     * input, correlation ID). The PWA uses these to derive the unwrap key via Passkey PRF,
+     * sign the payload client-side, and submit back via {@link #submit}.</p>
+     *
+     * @param request the prepare request
+     * @param auth    the DPoP-bound authenticated holder principal
+     * @return 200 with the PRF challenge envelope
+     */
+    @PostMapping("/sign/prepare")
+    public Mono<ResponseEntity<PrepareSignResponse>> prepare(
+            @Valid @RequestBody PrepareSignRequest request,
+            JwtAuthenticationToken auth) {
+
+        String holderId = auth.getUserId().toString();
+        String passkeyId = auth.getPasskeyId().toString();
+
+        return walletProfileQueryPort.queryByCurrentTenant()
+                .flatMap(this::requirePasskeyPrfProfile)
+                .flatMap(profile -> passkeyPrfAdapter.prepareSign(request))
+                .map(ResponseEntity::ok)
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, holderId)
+                        .put(ReactorContextKeys.PASSKEY_ID, passkeyId));
+    }
+
+    /**
+     * Finalises the passkey-prf signing handshake and produces the key-binding JWT.
+     *
+     * <p>The PWA echoes the {@code correlation_id} from the prepare response along with the
+     * PRF-derived signature. The EBW verifies the assertion and returns the {@code kb+jwt}
+     * compact serialisation.</p>
+     *
+     * @param request the submit request carrying {@code credential_id}, {@code signature},
+     *                and {@code correlation_id}
+     * @param auth    the DPoP-bound authenticated holder principal
+     * @return 200 with the key-binding JWT
+     */
+    @PostMapping("/sign/submit")
+    public Mono<ResponseEntity<SubmitSignedAssertionResponse>> submit(
+            @Valid @RequestBody SubmitSignedAssertionRequest request,
+            JwtAuthenticationToken auth) {
+
+        String holderId = auth.getUserId().toString();
+
+        return walletProfileQueryPort.queryByCurrentTenant()
+                .flatMap(this::requirePasskeyPrfProfile)
+                .flatMap(profile -> passkeyPrfAdapter.submitSignedAssertion(request))
+                .map(ResponseEntity::ok)
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.HOLDER_ID, holderId));
+    }
+
+    /**
+     * Records the holder's acceptance of the multi-device constraint in the audit log.
+     *
+     * <p>The PWA calls this endpoint once, immediately after the user taps "accept" on the
+     * passkey-prf onboarding screen and before any holder key is generated (US-06, AC-02).
+     * The actor identity is taken from the authenticated JWT — no request body is needed.</p>
+     *
+     * @param auth the authenticated holder principal
+     * @return 204 No Content on success
+     */
+    @PostMapping("/constraint-accepted")
+    public Mono<ResponseEntity<Void>> acceptConstraint(JwtAuthenticationToken auth) {
+
+        return walletProfileQueryPort.queryByCurrentTenant()
+                .flatMap(this::requirePasskeyPrfProfile)
+                .flatMap(profile -> Mono.deferContextual(ctx -> {
+                    String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
+                    return enrollHolderUseCase.recordConsent(tenantId, auth.getUserId().toString());
+                }))
+                .thenReturn(ResponseEntity.<Void>noContent().build());
+    }
+
+    /**
+     * Rejects tenants whose wallet profile is not {@code (SERVER, PASSKEY_PRF)} with an opaque
+     * {@link TenantWalletProfileUnsupportedException} (403), shared by every passkey-prf endpoint.
+     */
+    private Mono<TenantWalletProfile> requirePasskeyPrfProfile(TenantWalletProfile profile) {
+        if (profile.walletMode() != WalletMode.SERVER || profile.keyManager() != KeyManager.PASSKEY_PRF) {
+            return Mono.deferContextual(ctx ->
+                    Mono.error(new TenantWalletProfileUnsupportedException(
+                            ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"))));
+        }
+        return Mono.just(profile);
+    }
+}

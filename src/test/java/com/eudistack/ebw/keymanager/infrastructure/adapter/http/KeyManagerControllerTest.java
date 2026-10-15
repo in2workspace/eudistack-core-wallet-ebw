@@ -70,7 +70,7 @@ class KeyManagerControllerTest {
     @BeforeEach
     void setUp() {
         controller = new KeyManagerController(keyManagerPort, walletProfileQueryPort);
-        auth = new JwtAuthenticationToken(USER_ID, "holder@example.com", List.of());
+        auth = new JwtAuthenticationToken(USER_ID, "holder@example.com", UUID.randomUUID(), UUID.randomUUID(), List.of());
     }
 
     @Test
@@ -123,7 +123,7 @@ class KeyManagerControllerTest {
     void generate_tenantNotServerDb_failsWithUnsupportedProfileWithoutGenerating() {
         // Arrange
         when(walletProfileQueryPort.queryByCurrentTenant())
-                .thenReturn(Mono.just(profile(WalletMode.SERVER, KeyManager.HYBRID)));
+                .thenReturn(Mono.just(profile(WalletMode.SERVER, KeyManager.PASSKEY_PRF)));
 
         // Act
         var result = controller.generate(generateRequest("dc+sd-jwt"), auth)

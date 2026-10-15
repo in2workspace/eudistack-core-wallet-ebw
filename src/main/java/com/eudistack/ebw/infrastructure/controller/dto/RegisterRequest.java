@@ -5,7 +5,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record RegisterRequest(
-        @NotBlank @Email @Size(max = 254) String email,
-        String mode  // "register" (default) | "login"
+        @NotBlank @Email @Size(max = 254) String email
 ) {
 }

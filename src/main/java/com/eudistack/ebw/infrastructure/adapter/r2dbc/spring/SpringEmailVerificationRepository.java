@@ -15,6 +15,6 @@ public interface SpringEmailVerificationRepository extends ReactiveCrudRepositor
     Mono<EmailVerificationEntity> findFirstByUserEmailAndUsedFalseOrderByCreatedAtDesc(String email);
 
     @Modifying
-    @Query("UPDATE email_verification SET used = true WHERE user_email = :email AND used = false")
+    @Query("UPDATE email_verification SET used = true, replaced_at = now() WHERE user_email = :email AND used = false")
     Mono<Void> invalidateByEmail(String email);
 }

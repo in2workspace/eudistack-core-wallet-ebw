@@ -20,7 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Application use case for the hybrid (Passkey PRF) signing handshake — prepare step.
+ * Application use case for the passkey+prf signing handshake — prepare step.
  *
  * <p>Resolves the {@code prf_salt} (US-05) and the {@code wrapped key handle} (US-02) for the
  * requesting holder's credential, assembles the {@code signing_input} (JWS header.payload that
@@ -29,7 +29,7 @@ import java.util.Map;
  * {@link PrepareSignResponse} envelope.</p>
  *
  * <p>Holder isolation: the {@code holderId} is always extracted from the Reactor context
- * (set by {@code HybridKeyManagerController} from the DPoP-bound JWT) — never from the
+ * (set by {@code PasskeyPrfKeyManagerController} from the DPoP-bound JWT) — never from the
  * request body (ES-04).</p>
  *
  * <p>Error paths (all errors propagate as reactive signals — NFR-S-536-02):
@@ -56,19 +56,22 @@ public class PrepareSignUseCase {
     private final WrappedKeyHandleRepository wrappedKeyHandleRepository;
     private final PreparedSignStore preparedSignStore;
     private final ObjectMapper objectMapper;
+    private final SessionPasskeyCredentialPort sessionPasskeyCredentialPort;
 
     public PrepareSignUseCase(PrfSaltUseCase prfSaltUseCase,
                                WrappedKeyHandleRepository wrappedKeyHandleRepository,
                                PreparedSignStore preparedSignStore,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               SessionPasskeyCredentialPort sessionPasskeyCredentialPort) {
         this.prfSaltUseCase = prfSaltUseCase;
         this.wrappedKeyHandleRepository = wrappedKeyHandleRepository;
         this.preparedSignStore = preparedSignStore;
         this.objectMapper = objectMapper;
+        this.sessionPasskeyCredentialPort = sessionPasskeyCredentialPort;
     }
 
     /**
-     * Executes the prepare step of the hybrid signing handshake.
+     * Executes the prepare step of the passkey-prf signing handshake.
      *
      * <p>Reads {@code holderId} and {@code tenantId} from the Reactor context (written by the
      * controller from the DPoP JWT). Resolves {@code prf_salt} and the wrapped key handle in
@@ -82,19 +85,32 @@ public class PrepareSignUseCase {
         return Mono.deferContextual(ctx -> {
             String holderId = ctx.get(ReactorContextKeys.HOLDER_ID);
             String tenantId = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
+            String passkeyId = ctx.getOrDefault(ReactorContextKeys.PASSKEY_ID, null);
 
-            Mono<byte[]> prfSaltMono = prfSaltUseCase.getForHolder(tenantId, holderId, request.credentialId());
-            Mono<WrappedKeyHandle> handleMono = wrappedKeyHandleRepository
-                    .findBy(holderId, request.credentialId())
-                    .flatMap(opt -> opt
-                            .<Mono<WrappedKeyHandle>>map(Mono::just)
-                            .orElseGet(() -> Mono.error(
-                                    new PrfSaltNotFoundException(request.credentialId()))));
-
-            return Mono.zip(prfSaltMono, handleMono)
-                    .flatMap(tuple -> buildAndStore(
-                            request, holderId, tenantId, correlationId, tuple.getT1(), tuple.getT2()));
+            // EUD-11 FR-14: the salt is only delivered for an attestation obtained with the session's
+            // passkey. Anything else is answered exactly like an unknown credential (no oracle).
+            // The issuance proof is signed during onboarding, so this handshake always refers to a
+            // stored attestation.
+            return sessionPasskeyCredentialPort.isObtainedWithPasskey(holderId, request.credentialId(), passkeyId)
+                    .flatMap(obtained -> Boolean.TRUE.equals(obtained)
+                            ? prepare(request, correlationId, holderId, tenantId)
+                            : Mono.error(new PrfSaltNotFoundException(request.credentialId())));
         });
+    }
+
+    private Mono<PrepareSignResponse> prepare(PrepareSignRequest request, String correlationId, String holderId,
+                                              String tenantId) {
+        Mono<byte[]> prfSaltMono = prfSaltUseCase.getForHolder(tenantId, holderId, request.credentialId());
+        Mono<WrappedKeyHandle> handleMono = wrappedKeyHandleRepository
+                .findBy(holderId, request.credentialId())
+                .flatMap(opt -> opt
+                        .<Mono<WrappedKeyHandle>>map(Mono::just)
+                        .orElseGet(() -> Mono.error(
+                                new PrfSaltNotFoundException(request.credentialId()))));
+
+        return Mono.zip(prfSaltMono, handleMono)
+                .flatMap(tuple -> buildAndStore(
+                        request, holderId, tenantId, correlationId, tuple.getT1(), tuple.getT2()));
     }
 
     private Mono<PrepareSignResponse> buildAndStore(PrepareSignRequest request,
@@ -170,6 +186,7 @@ public class PrepareSignUseCase {
             Map<String, Object> kdfMap = new LinkedHashMap<>();
             kdfMap.put("alg", handle.kdfAlgo());
             kdfMap.put("version", handle.kdfVersion());
+            // Frozen HKDF info label kept for compatibility with already wrapped keys.
             kdfMap.put("info", "hybrid-wrap-v1");
             kdfMap.put("L", 256);
             return objectMapper.writeValueAsString(kdfMap);

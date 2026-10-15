@@ -186,17 +186,6 @@ class KeyAuditEventTest {
             assertThat(event.algorithm()).isNull();
             assertThat(event.jkt()).isNull();
         }
-
-        @Test
-        void forPrfUnsupported_givenValidArgs_constructsWithNullKeyFields() {
-            KeyAuditEvent event = KeyAuditEvent.forPrfUnsupported(TENANT, HOLDER, TIMESTAMP, CORRELATION_ID);
-
-            assertThat(event.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED);
-            assertThat(event.credentialId()).isNull();
-            assertThat(event.format()).isNull();
-            assertThat(event.algorithm()).isNull();
-            assertThat(event.jkt()).isNull();
-        }
     }
 
     // ------------------------------------------------------------------ wrap-context events (US-08)

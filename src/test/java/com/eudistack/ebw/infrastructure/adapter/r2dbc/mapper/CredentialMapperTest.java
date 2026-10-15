@@ -28,7 +28,7 @@ class CredentialMapperTest {
         var metadata = Map.<String, Object>of("credential_issuer", "https://issuer", "display", List.of("x"));
         var credential = new WalletCredential(UUID.randomUUID(), UUID.randomUUID(), "raw", CredentialFormat.JWT_VC_JSON,
                 "cfg-1", "kid-1", "LEARCredentialEmployee", "urn:vct", "https://issuer", "did:sub",
-                now, now.plusSeconds(3600), CredentialStatus.SUSPENDED, metadata, "hk-1", now, now.plusSeconds(1));
+                now, now.plusSeconds(3600), CredentialStatus.SUSPENDED, metadata, "hk-1", now, now.plusSeconds(1), null, false);
 
         // Act
         var entity = CredentialMapper.toEntity(credential);
@@ -46,7 +46,7 @@ class CredentialMapperTest {
         // Arrange
         var credential = new WalletCredential(UUID.randomUUID(), UUID.randomUUID(), "raw", CredentialFormat.DC_SD_JWT,
                 "cfg", null, "Type", null, "iss", null, Instant.now(), null, CredentialStatus.VALID,
-                null, null, Instant.now(), Instant.now());
+                null, null, Instant.now(), Instant.now(), null, false);
 
         // Act
         var entity = CredentialMapper.toEntity(credential);
@@ -86,7 +86,7 @@ class CredentialMapperTest {
         metadata.put("opaque", new Object());
         var credential = new WalletCredential(UUID.randomUUID(), UUID.randomUUID(), "raw", CredentialFormat.DC_SD_JWT,
                 "cfg", null, "Type", null, "iss", null, Instant.now(), null, CredentialStatus.VALID,
-                metadata, null, Instant.now(), Instant.now());
+                metadata, null, Instant.now(), Instant.now(), null, false);
 
         // Act + Assert
         assertThatThrownBy(() -> CredentialMapper.toEntity(credential))

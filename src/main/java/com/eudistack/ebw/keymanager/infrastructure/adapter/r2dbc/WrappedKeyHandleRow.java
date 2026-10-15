@@ -3,7 +3,7 @@ package com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc;
 import java.time.Instant;
 
 /**
- * R2DBC row-mapping POJO for the {@code hybrid_wrapped_key_handle} table.
+ * R2DBC row-mapping POJO for the {@code passkey_prf_wrapped_key_handle} table.
  *
  * <p>This class is used exclusively by {@code DatabaseClient} raw-SQL mappings. Spring
  * Data's {@code ReactiveCrudRepository} is not used because the table has a composite

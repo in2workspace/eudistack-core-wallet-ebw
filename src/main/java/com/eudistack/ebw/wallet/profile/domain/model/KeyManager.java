@@ -14,7 +14,7 @@ package com.eudistack.ebw.wallet.profile.domain.model;
 public enum KeyManager {
 
     DB("db"),
-    HYBRID("hybrid"),
+    PASSKEY_PRF("passkey-prf"),
     HSM("hsm"),
     QTSP("qtsp");
 

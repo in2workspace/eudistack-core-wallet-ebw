@@ -9,7 +9,7 @@ import reactor.core.publisher.Mono;
 import java.util.UUID;
 
 /**
- * R2DBC adapter for the {@code hybrid_prf_salt} table, implementing {@link PrfSaltPort}.
+ * R2DBC adapter for the {@code passkey_prf_salt} table, implementing {@link PrfSaltPort}.
  *
  * <p>Uses raw {@link DatabaseClient} SQL because the table has a composite primary key
  * ({@code holder_id, credential_id}), which Spring Data R2DBC does not support natively
@@ -26,15 +26,15 @@ import java.util.UUID;
 public class PrfSaltRepository implements PrfSaltPort {
 
     private static final String SELECT_SQL =
-            "SELECT prf_salt FROM hybrid_prf_salt "
+            "SELECT prf_salt FROM passkey_prf_salt "
             + "WHERE holder_id = :holderId AND credential_id = :credentialId";
 
     private static final String INSERT_SQL =
-            "INSERT INTO hybrid_prf_salt (holder_id, credential_id, prf_salt) "
+            "INSERT INTO passkey_prf_salt (holder_id, credential_id, prf_salt) "
             + "VALUES (:holderId, :credentialId, :prfSalt)";
 
     private static final String COUNT_SQL =
-            "SELECT COUNT(*) FROM hybrid_prf_salt WHERE credential_id = :credentialId";
+            "SELECT COUNT(*) FROM passkey_prf_salt WHERE credential_id = :credentialId";
 
     private final DatabaseClient databaseClient;
 
@@ -60,7 +60,7 @@ public class PrfSaltRepository implements PrfSaltPort {
     /**
      * {@inheritDoc}
      *
-     * <p>Executes {@code INSERT INTO hybrid_prf_salt …}. A
+     * <p>Executes {@code INSERT INTO passkey_prf_salt …}. A
      * {@link DataIntegrityViolationException} caused by a duplicate composite key
      * (SQLSTATE 23505) is swallowed silently — the caller must re-SELECT to obtain the
      * persisted value (EC-03). Any other integrity violation (e.g. FK violation 23503,

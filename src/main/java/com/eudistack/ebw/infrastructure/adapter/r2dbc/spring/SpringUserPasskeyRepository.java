@@ -16,9 +16,33 @@ public interface SpringUserPasskeyRepository extends ReactiveCrudRepository<User
 
     Mono<UserPasskeyEntity> findByIdAndUserId(UUID id, UUID userId);
 
-    Mono<UserPasskeyEntity> findByUserIdAndCredentialId(UUID userId, String credentialId);
+    Mono<UserPasskeyEntity> findByCredentialId(String credentialId);
 
     Mono<Long> countByUserId(UUID userId);
+
+    @Modifying
+    @Query("UPDATE user_passkey SET display_name = :displayName WHERE id = :id")
+    Mono<Long> updateDisplayName(UUID id, String displayName);
+
+    /** Counter-based passkey: only applies if the stored counter is lower (no concurrent reuse). */
+    @Modifying
+    @Query("""
+            UPDATE user_passkey
+               SET sign_count = :signCount, backup_state = :backupState,
+                   uv_initialized = (uv_initialized OR :userVerified), last_used_at = NOW()
+             WHERE id = :id AND sign_count < :signCount
+            """)
+    Mono<Long> recordCountedAuthentication(UUID id, long signCount, boolean backupState, boolean userVerified);
+
+    /** Passkey without counter (always 0, usual for synced passkeys). */
+    @Modifying
+    @Query("""
+            UPDATE user_passkey
+               SET backup_state = :backupState,
+                   uv_initialized = (uv_initialized OR :userVerified), last_used_at = NOW()
+             WHERE id = :id AND sign_count = 0
+            """)
+    Mono<Long> recordUncountedAuthentication(UUID id, boolean backupState, boolean userVerified);
 
     @Modifying
     @Query("UPDATE user_passkey SET last_used_at = NOW() WHERE id = :id")

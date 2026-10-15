@@ -24,7 +24,7 @@ class CorsOriginsLoaderTest {
     Path tempDir;
 
     @Test
-    void loadOrigins_externalFileWithOrigins_returnsTheirNonBlankUrls() throws IOException {
+    void loadOrigins_externalFileWithOrigins_returnsTheUnionWithThePropertyOrigins() throws IOException {
         // Arrange
         var file = writeYaml("""
                 origins:
@@ -41,7 +41,27 @@ class CorsOriginsLoaderTest {
         var origins = loader.loadOrigins();
 
         // Assert
-        assertThat(origins).containsExactly("https://sandbox.wallet.example", "https://kpmg.wallet.example");
+        assertThat(origins).containsExactly("https://sandbox.wallet.example", "https://kpmg.wallet.example",
+                "http://localhost:4200", "https://wallet.example");
+    }
+
+    @Test
+    void loadOrigins_originInBothSources_isListedOnce() throws IOException {
+        // Arrange — STG: the EFS file has legacy origins, CORS_ORIGINS has the tenant origins.
+        var file = writeYaml("""
+                origins:
+                  - url: https://wallet.example
+                  - url: https://legacy.altia.example
+                """);
+        var loader = new CorsOriginsLoader(new CorsProperties(" https://wallet.example , https://sandbox.stg.eudistack.net",
+                file.toString()));
+
+        // Act
+        var origins = loader.loadOrigins();
+
+        // Assert
+        assertThat(origins).containsExactly("https://wallet.example", "https://legacy.altia.example",
+                "https://sandbox.stg.eudistack.net");
     }
 
     // Empty origins list, no origins key, unreadable YAML.
@@ -51,7 +71,7 @@ class CorsOriginsLoaderTest {
             "other: value\n",
             "origins: [unclosed\n"
     })
-    void loadOrigins_externalFileWithoutUsableOrigins_usesFallback(String yaml) throws IOException {
+    void loadOrigins_externalFileWithoutUsableOrigins_usesThePropertyOrigins(String yaml) throws IOException {
         // Arrange
         var file = writeYaml(yaml);
         var loader = new CorsOriginsLoader(new CorsProperties(FALLBACK, file.toString()));

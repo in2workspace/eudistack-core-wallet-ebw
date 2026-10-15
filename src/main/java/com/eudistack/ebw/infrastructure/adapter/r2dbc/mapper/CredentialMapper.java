@@ -36,7 +36,9 @@ public final class CredentialMapper {
                 deserializeMetadata(entity.getIssuerMetadata()),
                 entity.getHolderKeyId(),
                 entity.getCreatedAt(),
-                entity.getUpdatedAt()
+                entity.getUpdatedAt(),
+                entity.getPasskeyId(),
+                entity.isBound()
         );
     }
 
@@ -59,6 +61,8 @@ public final class CredentialMapper {
         entity.setHolderKeyId(domain.getHolderKeyId());
         entity.setCreatedAt(domain.getCreatedAt());
         entity.setUpdatedAt(domain.getUpdatedAt());
+        entity.setPasskeyId(domain.getPasskeyId());
+        entity.setBound(domain.isBound());
         return entity;
     }
 

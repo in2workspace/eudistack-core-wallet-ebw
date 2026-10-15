@@ -1,27 +1,18 @@
 package com.eudistack.ebw.integration;
 
-import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.support.SoftwareAuthenticator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.r2dbc.core.DatabaseClient;
 
-import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * NFR-S-103-01: the full onboarding flow (register -> verify-email -> register passkey)
- * MUST leave a traceable audit_log entry per step: REGISTRATION_INITIATED, USER_AUTHENTICATED,
- * PASSKEY_CREATED, all sharing the same actor_id (the wallet user id).
+ * FR-22 (EUD-8 prd §3.7): registration and access leave their audit events, with the account and
+ * the passkey, never the email, the code, the challenge or the authenticator response.
  */
 class OnboardingAuditIT extends IntegrationTestBase {
-
-    @Autowired
-    private DatabaseClient databaseClient;
 
     @BeforeEach
     void setUp() {
@@ -30,100 +21,64 @@ class OnboardingAuditIT extends IntegrationTestBase {
     }
 
     @Test
-    void fullOnboarding_emitsRegistrationInitiated_userAuthenticated_andPasskeyCreated() {
-        var email = "onboarding-audit-" + System.nanoTime() + "@example.com";
+    void firstRegistration_auditsAccountCreatedPasskeyRegisteredAndAccessGranted() {
+        var email = "audit-first-" + System.nanoTime() + "@example.com";
 
-        registerVerifyAndCreatePasskey(email, "cred-audit-" + System.nanoTime(), "Test Device");
+        var session = authClient().signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
 
-        var userId = fetchUserId(email);
-        assertThat(userId).isNotNull();
-
-        var rows = fetchAuditActions(userId);
-
-        assertThat(rows).extracting(row -> row.get("action"))
-                .containsExactlyInAnyOrder("REGISTRATION_INITIATED", "USER_AUTHENTICATED", "PASSKEY_CREATED");
+        var userId = userId(email);
+        assertThat(actions(userId)).contains("ACCOUNT_CREATED", "PASSKEY_REGISTERED", "ACCESS_GRANTED");
+        assertThat(query("SELECT metadata FROM audit_log WHERE action = 'ACCESS_GRANTED' AND actor_id = '"
+                + userId + "'")).singleElement()
+                .satisfies(row -> assertThat((String) row.get("metadata")).contains(session.passkeyId()));
     }
 
-    /**
-     * NFR-O-104-01 (EUD-104): associating a SECOND device to an already-existing account
-     * MUST leave the same traceable audit trail as the first device's alta, under the
-     * SAME actor_id — auditability doesn't degrade just because the account already existed.
-     */
     @Test
-    void secondDeviceFlow_emitsAuditEventsForBothDevices_underSameActorId() {
-        var email = "onboarding-audit-2nd-device-" + System.nanoTime() + "@example.com";
+    void secondPasskey_auditsAccountRecognizedAndNewPasskeyNotice() {
+        var email = "audit-second-" + System.nanoTime() + "@example.com";
+        var auth = authClient();
+        auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
 
-        registerVerifyAndCreatePasskey(email, "cred-audit-d1-" + System.nanoTime(), "Device 1");
-        registerVerifyAndCreatePasskey(email, "cred-audit-d2-" + System.nanoTime(), "Device 2");
+        auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
 
-        var userId = fetchUserId(email);
-        assertThat(userId).isNotNull();
-
-        var rows = fetchAuditActions(userId);
-        assertThat(rows).hasSize(6);
-
-        var countsByAction = rows.stream()
-                .collect(Collectors.groupingBy(row -> (String) row.get("action"), Collectors.counting()));
-        assertThat(countsByAction)
-                .containsEntry("REGISTRATION_INITIATED", 2L)
-                .containsEntry("USER_AUTHENTICATED", 2L)
-                .containsEntry("PASSKEY_CREATED", 2L);
+        assertThat(actions(userId(email))).contains("ACCOUNT_RECOGNIZED", "NEW_PASSKEY_NOTICE_SENT");
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
+    @Test
+    void auditTrail_neverContainsTheEmailNorTheCode() {
+        var email = "audit-private-" + System.nanoTime() + "@example.com";
+        authClient().signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        var code = capturedOtps.get(email);
 
-    @SuppressWarnings("unchecked")
-    private void registerVerifyAndCreatePasskey(String email, String credentialId, String displayName) {
-        webClient.post().uri("/api/v1/auth/register")
-                .bodyValue(Map.of("email", email))
-                .exchange()
-                .expectStatus().isOk();
+        var leaking = query("SELECT action FROM audit_log WHERE metadata LIKE '%" + email + "%' OR metadata LIKE '%"
+                + code + "%'");
 
-        var otp = capturedOtps.get(email);
-        assertThat(otp).as("OTP must have been captured for " + email).isNotNull();
-
-        var tokens = webClient.post().uri("/api/v1/auth/verify-email")
-                .bodyValue(Map.of("email", email, "code", otp))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(Map.class)
-                .returnResult().getResponseBody();
-        var accessToken = (String) tokens.get("accessToken");
-
-        webClient.post().uri("/api/v1/auth/passkeys")
-                .headers(h -> h.setBearerAuth(accessToken))
-                .bodyValue(Map.of(
-                        "credentialId", credentialId,
-                        "displayName", displayName))
-                .exchange()
-                .expectStatus().isCreated();
+        assertThat(leaking).isEmpty();
     }
 
-    // Unqualified table names — resolved against the tenant schema via
-    // TenantAwareConnectionFactory's search_path, which requires the tenant to be
-    // present in the Reactor Context (the HTTP calls above get it from the
-    // X-Tenant header/TenantDomainWebFilter; these direct DatabaseClient calls
-    // bypass that pipeline, so it's supplied explicitly below).
-    private UUID fetchUserId(String email) {
-        return (UUID) databaseClient.sql("SELECT id FROM wallet_user WHERE email = $1")
-                .bind("$1", email)
-                .fetch()
-                .one()
-                .map(row -> row.get("id"))
-                .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TEST_TENANT))
-                .block();
+    @Test
+    void codeRequestAndRejection_areAuditedWithoutAccount() {
+        var email = "audit-rejected-" + System.nanoTime() + "@example.com";
+        var auth = authClient();
+        auth.requestCode(email).expectStatus().isAccepted();
+
+        auth.verifyCode(email, wrongCode(capturedOtps.get(email))).expectStatus().isUnauthorized();
+
+        assertThat(query("SELECT actor_id FROM audit_log WHERE action = 'EMAIL_CODE_REJECTED' "
+                + "ORDER BY created_at DESC LIMIT 1")).singleElement()
+                .satisfies(row -> assertThat(row.get("actor_id")).isNull());
     }
 
-    private List<Map<String, Object>> fetchAuditActions(UUID userId) {
-        return databaseClient.sql(
-                        "SELECT action FROM audit_log WHERE actor_id = $1 ORDER BY created_at ASC")
-                .bind("$1", userId)
-                .fetch()
-                .all()
-                .collectList()
-                .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TEST_TENANT))
-                .block();
+    private static String wrongCode(String code) {
+        return code.equals("000000") ? "111111" : "000000";
+    }
+
+    private static Object userId(String email) {
+        return query("SELECT id FROM wallet_user WHERE email = '" + email + "'").get(0).get("id");
+    }
+
+    private static java.util.List<Object> actions(Object userId) {
+        return query("SELECT action FROM audit_log WHERE actor_id = '" + userId + "'").stream()
+                .map((Map<String, Object> row) -> row.get("action")).toList();
     }
 }
