@@ -2,6 +2,8 @@ package com.eudistack.ebw.domain.model;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -29,5 +31,29 @@ public record WebAuthnCeremony(
         }
         var now = Instant.now();
         return new WebAuthnCeremony(UUID.randomUUID(), type, challenge.clone(), userId, now.plus(TTL), null, now);
+    }
+
+
+    @Override
+    public boolean equals(Object other) {
+        return other instanceof WebAuthnCeremony that
+                && Objects.equals(id, that.id)
+                && type == that.type
+                && Arrays.equals(challenge, that.challenge)
+                && Objects.equals(userId, that.userId)
+                && Objects.equals(expiresAt, that.expiresAt)
+                && Objects.equals(consumedAt, that.consumedAt)
+                && Objects.equals(createdAt, that.createdAt);
+    }
+
+    @Override
+    public int hashCode() {
+        return 31 * Objects.hash(id, type, userId, expiresAt, consumedAt, createdAt) + Arrays.hashCode(challenge);
+    }
+
+    @Override
+    public String toString() {
+        return "WebAuthnCeremony[id=" + id + ", type=" + type + ", challenge=[redacted], userId=" + userId
+                + ", expiresAt=" + expiresAt + ", consumedAt=" + consumedAt + ", createdAt=" + createdAt + "]";
     }
 }
