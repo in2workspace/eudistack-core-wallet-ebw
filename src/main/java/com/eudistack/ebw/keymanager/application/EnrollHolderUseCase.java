@@ -228,23 +228,4 @@ public class EnrollHolderUseCase {
         });
     }
 
-    /**
-     * Records that passkey-prf onboarding was blocked because the holder's device does not
-     * support Passkey PRF (US-08, AC-01).
-     *
-     * <p>Errors are propagated: the endpoint exists solely to audit this event, so a
-     * CloudWatch failure must surface as a server error.</p>
-     *
-     * @param tenantId tenant domain extracted from Reactor context
-     * @param holderId holder UUID from DPoP session
-     * @return Mono that completes when the audit event is queued, or errors on failure
-     */
-    public Mono<Void> recordPrfUnsupported(String tenantId, String holderId) {
-        return Mono.defer(() -> {
-            KeyAuditEvent event = KeyAuditEvent.forPrfUnsupported(
-                    tenantId, holderId, Instant.now(), currentCorrelationId());
-            return auditPort.emit(event);
-        });
-    }
-
 }

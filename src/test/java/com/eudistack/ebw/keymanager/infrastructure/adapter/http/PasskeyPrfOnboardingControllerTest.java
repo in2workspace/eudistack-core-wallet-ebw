@@ -10,13 +10,11 @@ import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
 import com.eudistack.ebw.keymanager.domain.exception.InvalidCommitException;
-import com.eudistack.ebw.keymanager.domain.exception.PrfUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitResponse;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.dto.BlockOnboardingRequest;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.TenantWalletProfile;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
@@ -140,31 +138,6 @@ class PasskeyPrfOnboardingControllerTest {
         StepVerifier.create(controller.commit(commitRequest("not-json"), auth))
                 .expectErrorMatches(ex -> ex instanceof InvalidCommitException
                         && ex.getMessage().contains("not valid JSON"))
-                .verify();
-    }
-
-    @Test
-    void block_passkeyPrfTenant_recordsAuditAndFailsWithPrfUnsupported() {
-        givenProfile(WalletMode.SERVER, KeyManager.PASSKEY_PRF);
-        when(enrollHolderUseCase.recordPrfUnsupported(TENANT, USER_ID.toString())).thenReturn(Mono.empty());
-
-        StepVerifier.create(controller.block(new BlockOnboardingRequest("cred-1", "corr-1"), auth)
-                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TENANT)))
-                .expectError(PrfUnsupportedException.class)
-                .verify();
-
-        verify(enrollHolderUseCase).recordPrfUnsupported(TENANT, USER_ID.toString());
-    }
-
-    @Test
-    void block_auditFailure_isSwallowedAndStillFailsWithPrfUnsupported() {
-        givenProfile(WalletMode.SERVER, KeyManager.PASSKEY_PRF);
-        when(enrollHolderUseCase.recordPrfUnsupported(TENANT, USER_ID.toString()))
-                .thenReturn(Mono.error(new IllegalStateException("cloudwatch down")));
-
-        StepVerifier.create(controller.block(new BlockOnboardingRequest("cred-1", "corr-1"), auth)
-                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TENANT)))
-                .expectError(PrfUnsupportedException.class)
                 .verify();
     }
 }

@@ -81,9 +81,7 @@ public record KeyAuditEvent(
         /** Holder key unwrapped and signing completed in passkey-prf two-step flow (US-04/US-08). */
         UNWRAP_SIGN_COMPLETED,
         /** Holder key unwrap failed during passkey-prf signing (US-04/US-08). */
-        UNWRAP_FAILED,
-        /** passkey+prf onboarding blocked — holder device does not support Passkey PRF (US-08, EUDISTACK-540). */
-        ONBOARDING_BLOCKED_PRF_UNSUPPORTED
+        UNWRAP_FAILED
     }
 
     public KeyAuditEvent {
@@ -93,9 +91,8 @@ public record KeyAuditEvent(
         if (holderId == null)  throw new KeyAuditEventValidationException("holderId must not be null");
         if (holderId.isBlank()) throw new KeyAuditEventValidationException("holderId must not be blank");
 
-        // Types where no key context exists yet (consent / device-blocked events)
-        boolean noKeyContext = type == KeyAuditEventType.CONSTRAINT_ACCEPTED
-                || type == KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED;
+        // Types where no key context exists yet (consent events)
+        boolean noKeyContext = type == KeyAuditEventType.CONSTRAINT_ACCEPTED;
         // Types where credentialId is present but format/algorithm/jkt are not available server-side
         // (key was generated and wrapped client-side — US-08)
         boolean wrapContext = type == KeyAuditEventType.WRAP_COMPLETED;
@@ -170,22 +167,6 @@ public record KeyAuditEvent(
                 KeyAuditEventType.WRAP_COMPLETED,
                 tenantId, holderId,
                 credentialId, null, null, null,
-                timestamp, correlationId,
-                null, null, null, null, null);
-    }
-
-    /**
-     * Factory for US-08 PRF-unsupported events — onboarding blocked at device level, no key material.
-     */
-    public static KeyAuditEvent forPrfUnsupported(
-            String tenantId,
-            String holderId,
-            Instant timestamp,
-            String correlationId) {
-        return new KeyAuditEvent(
-                KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED,
-                tenantId, holderId,
-                null, null, null, null,
                 timestamp, correlationId,
                 null, null, null, null, null);
     }

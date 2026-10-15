@@ -8,7 +8,6 @@ import com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException;
 import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
-import com.eudistack.ebw.keymanager.domain.exception.PrfUnsupportedException;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -136,14 +135,6 @@ public class PasskeyPrfKeyManagerExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
         problem.setType(URI.create(TYPE_BASE + "internal"));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
-    }
-
-    @ExceptionHandler(PrfUnsupportedException.class)
-    public ProblemDetail handlePrfUnsupported(PrfUnsupportedException ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
-        problem.setType(URI.create(TYPE_BASE + "prf-unsupported"));
-        problem.setProperty(PROP_ERROR, "prf_unsupported");
-        return problem;
     }
 
     /**

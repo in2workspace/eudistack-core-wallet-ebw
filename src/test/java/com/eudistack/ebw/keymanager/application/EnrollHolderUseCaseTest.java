@@ -318,36 +318,6 @@ class EnrollHolderUseCaseTest {
                 .verify();
     }
 
-    // --------------------------------------------------------------- recordPrfUnsupported (US-08)
-
-    @Test
-    void recordPrfUnsupported_givenValidArgs_emitsPrfUnsupportedAuditEvent() {
-        when(auditPort.emit(any())).thenReturn(Mono.empty());
-
-        StepVerifier.create(useCase.recordPrfUnsupported(TENANT, HOLDER))
-                .verifyComplete();
-
-        ArgumentCaptor<KeyAuditEvent> captor = ArgumentCaptor.forClass(KeyAuditEvent.class);
-        verify(auditPort).emit(captor.capture());
-        KeyAuditEvent emitted = captor.getValue();
-
-        assertThat(emitted.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED);
-        assertThat(emitted.tenantId()).isEqualTo(TENANT);
-        assertThat(emitted.holderId()).isEqualTo(HOLDER);
-        assertThat(emitted.credentialId()).isNull();
-        assertThat(emitted.correlationId()).isEqualTo(TRACE_ID);
-        KeyAuditEventAssertions.assertNoSensitiveData(emitted);
-    }
-
-    @Test
-    void recordPrfUnsupported_auditFailure_propagatesError() {
-        when(auditPort.emit(any())).thenReturn(Mono.error(new RuntimeException("cloudwatch unavailable")));
-
-        StepVerifier.create(useCase.recordPrfUnsupported(TENANT, HOLDER))
-                .expectError(RuntimeException.class)
-                .verify();
-    }
-
     // --------------------------------------------------------------- helpers
 
     private EnrollHolderCommitRequest validCommitRequest() {

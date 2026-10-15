@@ -36,7 +36,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -44,14 +43,10 @@ import static org.mockito.Mockito.when;
  *
  * <p>Covers:
  * <ul>
- *   <li>EUDISTACK-359 / US-08 AC-01 — PRF detection gate blocks onboarding, audit emitted,
- *       422 {@code prf_unsupported}</li>
- *   <li>US-08 — DB tenant on block → 403 opaque</li>
- *   <li>US-08 — audit failure on block does not mask the {@code prf_unsupported} rejection</li>
  *   <li>US-02 AC-07 — commit with PASSKEY_PRF tenant → 201 (verifies tenantId extraction wire-up)</li>
  * </ul>
  *
- * <p>Spec: EUDISTACK-534 (US-02), EUDISTACK-540 (US-08), EUDISTACK-359 (PRF detection gate).</p>
+ * <p>Spec: EUDISTACK-534 (US-02).</p>
  */
 @WebFluxTest(controllers = PasskeyPrfOnboardingController.class)
 @Import({PasskeyPrfKeyManagerExceptionHandler.class,
@@ -66,7 +61,6 @@ class PasskeyPrfOnboardingControllerIT {
     }
 
     private static final String COMMIT_URL = "/api/v1/keys/passkey-prf/onboarding/commit";
-    private static final String BLOCK_URL  = "/api/v1/keys/passkey-prf/onboarding/block";
 
     // Minimal valid commit payload fixtures
     private static final byte[] BLOB_BYTES = new byte[48];
@@ -87,74 +81,6 @@ class PasskeyPrfOnboardingControllerIT {
     @MockitoBean WalletProfileQueryTelemetry walletProfileQueryTelemetry;
 
     @Autowired WebTestClient webTestClient;
-
-    // --- EUDISTACK-359 / US-08: PRF detection gate ("block") ---
-
-    private static final String BLOCK_BODY = """
-            {"credential_id":"cred-1","correlation_id":"client-corr-1"}
-            """;
-
-    @Test
-    void block_givenPasskeyPrfTenant_emitsAuditAndReturnsPrfUnsupported() {
-        // Arrange
-        UUID actorId = UUID.randomUUID();
-        stubPasskeyPrfProfile();
-        when(enrollHolderUseCase.recordPrfUnsupported(any(), any())).thenReturn(Mono.empty());
-
-        // Act & Assert
-        webTestClient
-                .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(actorId, "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
-                .post().uri(BLOCK_URL)
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(BLOCK_BODY)
-                .exchange()
-                .expectStatus().isEqualTo(422)
-                .expectBody()
-                .jsonPath("$.error").isEqualTo("prf_unsupported");
-
-        // Assert
-        verify(enrollHolderUseCase).recordPrfUnsupported("test-tenant", actorId.toString());
-    }
-
-    @Test
-    void block_givenDbTenant_returns403Opaque() {
-        // Arrange
-        UUID actorId = UUID.randomUUID();
-        stubDbProfile();
-
-        // Act & Assert
-        webTestClient
-                .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(actorId, "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
-                .post().uri(BLOCK_URL)
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(BLOCK_BODY)
-                .exchange()
-                .expectStatus().isForbidden()
-                .expectBody().isEmpty();
-    }
-
-    @Test
-    void block_givenAuditFailure_stillReturnsPrfUnsupported() {
-        // Arrange
-        UUID actorId = UUID.randomUUID();
-        stubPasskeyPrfProfile();
-        when(enrollHolderUseCase.recordPrfUnsupported(any(), any()))
-                .thenReturn(Mono.error(new RuntimeException("cloudwatch unavailable")));
-
-        // Act & Assert — audit failure must not mask the security rejection
-        webTestClient
-                .mutateWith(SecurityMockServerConfigurers.mockAuthentication(
-                        new JwtAuthenticationToken(actorId, "user@test.com", UUID.randomUUID(), UUID.randomUUID(), List.of())))
-                .post().uri(BLOCK_URL)
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(BLOCK_BODY)
-                .exchange()
-                .expectStatus().isEqualTo(422)
-                .expectBody()
-                .jsonPath("$.error").isEqualTo("prf_unsupported");
-    }
 
     // --- US-02 commit: verify tenantId extraction wire-up ---
 
@@ -192,13 +118,6 @@ class PasskeyPrfOnboardingControllerIT {
     private void stubPasskeyPrfProfile() {
         TenantWalletProfile profile = new TenantWalletProfile(
                 "passkey-prf-tenant", WalletMode.SERVER, KeyManager.PASSKEY_PRF,
-                Instant.now(), Instant.now());
-        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(profile));
-    }
-
-    private void stubDbProfile() {
-        TenantWalletProfile profile = new TenantWalletProfile(
-                "db-tenant", WalletMode.SERVER, KeyManager.DB,
                 Instant.now(), Instant.now());
         when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(profile));
     }

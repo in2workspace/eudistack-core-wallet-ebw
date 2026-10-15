@@ -57,6 +57,7 @@ EUD-308 (feature EUD-8, registration and access to the wallet; EUD-11 FR-13/FR-1
 - `POST /auth/register` answers 202 with no body and creates nothing; `POST /auth/verify-email` returns a registration ticket instead of a session.
 - The refresh token only travels in the `__Host-wallet_refresh` cookie; `POST /auth/refresh` no longer reads it from the body.
 - Removed: `POST /auth/logout`, `POST /auth/passkeys` (unverified passkey registration), `POST /auth/passkeys/{id}/confirm-session`, and the properties `ebw.jwt.refresh-token-ttl` and `ebw.rate-limit.logout-per-ip`.
+- Removed `POST /api/v1/keys/passkey-prf/onboarding/block` (the Wallet App no longer calls it; a passkey without PRF is now rejected at registration with 422 `passkey_prf_unsupported`), together with its key manager audit event `onboarding.blocked.prf.unsupported` and the key manager `prf_unsupported` problem.
 - Every tenant needs `ebw.webauthn.rp_id` in `tenant_config`; without it, registration and sign-in answer 500 `server_error`.
 - CORS admits only the Wallet App origins of the request's tenant; `cors-origins.yaml` + `CORS_ORIGINS` only apply to health and wallet discovery.
 - Errors of the registration and access API are RFC 9457 `application/problem+json` with the contract code in `type`.

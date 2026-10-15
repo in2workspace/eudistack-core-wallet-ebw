@@ -5,7 +5,6 @@ import com.eudistack.ebw.keymanager.domain.exception.InvalidCommitException;
 import com.eudistack.ebw.keymanager.domain.exception.InvalidSignatureSubmissionException;
 import com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException;
 import com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException;
-import com.eudistack.ebw.keymanager.domain.exception.PrfUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
 import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
@@ -82,16 +81,6 @@ class PasskeyPrfKeyManagerExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody().getType()).isEqualTo(URI.create(TYPE_BASE + "invalid-request"));
         assertThat(response.getBody().getProperties()).isNull();
-    }
-
-    @Test
-    void handlePrfUnsupported_returns422Problem() {
-        // Act
-        var problem = handler.handlePrfUnsupported(new PrfUnsupportedException());
-
-        // Assert
-        assertThat(problem.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY.value());
-        assertThat(problem.getProperties()).containsEntry("error", "prf_unsupported");
     }
 
     @Test
