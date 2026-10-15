@@ -425,14 +425,18 @@ class PasskeySessionIT extends IntegrationTestBase {
                 .satisfies(row -> assertThat((String) row.get("metadata")).contains("max_duration"));
     }
 
-    // ------------------------------------------------------------------ session check on sensitive routes
+    // ------------------------------------------------------------------ session check on protected routes
 
     private org.springframework.test.web.reactive.server.WebTestClient.ResponseSpec credentials(String accessToken) {
         return webClient.get().uri("/api/v1/credentials").headers(h -> h.setBearerAuth(accessToken)).exchange();
     }
 
+    private org.springframework.test.web.reactive.server.WebTestClient.ResponseSpec activity(String accessToken) {
+        return webClient.get().uri("/api/v1/activity").headers(h -> h.setBearerAuth(accessToken)).exchange();
+    }
+
     @Test
-    void accessToken_afterSignOut_isRejectedOnSensitiveRoutes() {
+    void accessToken_afterSignOut_isRejectedOnProtectedRoutes() {
         var session = auth.signUp(email("ses-check-logout"), new SoftwareAuthenticator(TEST_ORIGIN));
         credentials(session.accessToken()).expectStatus().isOk();
 
@@ -442,6 +446,31 @@ class PasskeySessionIT extends IntegrationTestBase {
                 .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
         webClient.get().uri("/api/v1/auth/passkeys").headers(h -> h.setBearerAuth(session.accessToken()))
                 .exchange().expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void accessToken_afterSignOut_isRejectedOnTheActivityHistory() {
+        var session = auth.signUp(email("ses-check-activity"), new SoftwareAuthenticator(TEST_ORIGIN));
+        activity(session.accessToken()).expectStatus().isOk();
+
+        auth.endSessionSpec("current", session.accessToken(), true).expectStatus().isNoContent();
+
+        activity(session.accessToken()).expectStatus().isUnauthorized()
+                .expectHeader().contentType("application/problem+json")
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
+    }
+
+    @Test
+    void accessToken_afterSignOut_isIgnoredOnPublicRoutes() {
+        var session = auth.signUp(email("ses-check-public"), new SoftwareAuthenticator(TEST_ORIGIN));
+        auth.endSessionSpec("current", session.accessToken(), true).expectStatus().isNoContent();
+
+        webClient.post().uri("/api/v1/auth/register").headers(h -> h.setBearerAuth(session.accessToken()))
+                .bodyValue(Map.of("email", email("ses-check-public-new"))).exchange().expectStatus().isAccepted();
+        // The sign-in options read the bearer as a registration ticket: the endpoint rejects the
+        // access token as a ticket, never the session check as an ended session.
+        auth.authenticationOptionsSpec(session.accessToken()).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_ticket");
     }
 
     @Test

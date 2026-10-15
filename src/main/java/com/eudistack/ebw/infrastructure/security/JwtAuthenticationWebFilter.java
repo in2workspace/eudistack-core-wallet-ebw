@@ -37,25 +37,19 @@ import java.util.stream.Collectors;
  * ({@link ReactorContextKeys#TENANT_DOMAIN}, set by {@code TenantDomainWebFilter}, which runs
  * before the security chain), or when it lacks the session claims {@code sid} and {@code pkid}.
  *
- * <p>On the sensitive routes ({@link #SENSITIVE_PATHS}: key manager, attestations, issuance,
- * passkeys, signing out and ending other sessions) the token is also rejected with 401
+ * <p>On every route that requires authentication the token is also rejected with 401
  * {@code invalid_session} once its session has been ended, revoked or has expired, instead of
  * staying valid until the access token expires ({@link ActiveSessionChecker}, cached for at most
  * 10 seconds). On the session endpoints that 401 also clears the refresh cookie, as
- * {@code SecurityConfig} does for an unauthenticated call to them.
- *
- * <p>An entry of {@link #SENSITIVE_PATHS} ending in {@code /} covers everything below it; any
- * other entry covers that exact path and the paths below it, never a longer sibling name.
+ * {@code SecurityConfig} does for an unauthenticated call to them. On the {@link PublicRoutes}
+ * the session is not checked: they do not need a session, so a stale token never turns them
+ * into a 401.
  */
 @Component
 public class JwtAuthenticationWebFilter implements WebFilter {
 
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationWebFilter.class);
     private static final String BEARER_PREFIX = "Bearer ";
-
-    static final List<String> SENSITIVE_PATHS = List.of(
-            "/api/v1/keys/", "/api/v1/credentials", "/api/v1/openid-credential-offer/",
-            "/api/v1/auth/passkeys", "/api/v1/auth/sessions/current", "/api/v1/auth/sessions/others");
 
     /** Session endpoints, whose {@code invalid_session} also clears the refresh cookie. */
     // Fixed route of the public API contract (OpenAPI), not deployment configuration.
@@ -101,16 +95,10 @@ public class JwtAuthenticationWebFilter implements WebFilter {
     }
 
     private Mono<Boolean> requireActiveSession(ServerWebExchange exchange, JwtAuthenticationToken auth) {
-        if (!isSensitive(pathOf(exchange))) {
-            return Mono.just(true);
-        }
-        return activeSessionChecker.isActive(auth.getSessionId());
-    }
-
-    static boolean isSensitive(String path) {
-        return SENSITIVE_PATHS.stream().anyMatch(sensitive -> sensitive.endsWith("/")
-                ? path.startsWith(sensitive)
-                : path.equals(sensitive) || path.startsWith(sensitive + "/"));
+        return PublicRoutes.MATCHER.matches(exchange)
+                .flatMap(publicRoute -> publicRoute.isMatch()
+                        ? Mono.just(true)
+                        : activeSessionChecker.isActive(auth.getSessionId()));
     }
 
     private static String pathOf(ServerWebExchange exchange) {

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.core.GrantedAuthority;
@@ -216,7 +217,7 @@ class JwtAuthenticationWebFilterTest {
     }
 
     @Test
-    void filter_endedSessionOnSensitiveRoute_returnsInvalidSessionProblem() {
+    void filter_endedSessionOnProtectedRoute_returnsInvalidSessionProblem() {
         // Arrange
         when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
         when(activeSessionChecker.isActive(SESSION_ID)).thenReturn(Mono.just(false));
@@ -253,28 +254,33 @@ class JwtAuthenticationWebFilterTest {
     }
 
     @ParameterizedTest
-    @CsvSource({
-            "/api/v1/auth/sessions/current, true",
-            "/api/v1/auth/sessions/others, true",
-            "/api/v1/auth/sessions/currently, false",
-            "/api/v1/auth/sessions/options, false",
-            "/api/v1/auth/sessions, false",
-            "/api/v1/credentials, true",
-            "/api/v1/credentials/abc, true",
-            "/api/v1/credentialsx, false",
-            "/api/v1/keys/passkey-prf/onboarding/init, true",
-            "/api/v1/keys, false"
-    })
-    void isSensitive_path_matchesWholeSegmentsOnly(String path, boolean sensitive) {
-        // Act + Assert
-        assertThat(JwtAuthenticationWebFilter.isSensitive(path)).isEqualTo(sensitive);
-    }
-
-    @Test
-    void filter_endedSessionOnNonSensitiveRoute_isNotChecked() {
+    @CsvSource({"GET, /api/v1/activity", "POST, /api/v1/activity", "GET, /api/v1/credentials",
+            "GET, /api/v1/auth/passkeys", "GET, /api/v1/auth/register"})
+    void filter_endedSessionOnAnyProtectedRoute_isRejected(String method, String path) {
         // Arrange
         when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
-        var exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/v1/activity")
+        when(activeSessionChecker.isActive(SESSION_ID)).thenReturn(Mono.just(false));
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.valueOf(method), path)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer good-token"));
+
+        // Act
+        StepVerifier.create(inTenant(filter.filter(exchange, chain), TENANT)).verifyComplete();
+
+        // Assert
+        assertThat(seenAuthentication.get()).isNull();
+        assertThat(exchange.getResponse().getStatusCode().value()).isEqualTo(401);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"POST, /api/v1/auth/register", "POST, /api/v1/auth/verify-email", "POST, /api/v1/auth/refresh",
+            "POST, /api/v1/auth/passkeys/registration/options", "POST, /api/v1/auth/passkeys/registration",
+            "POST, /api/v1/auth/sessions/options", "POST, /api/v1/auth/sessions", "GET, /health",
+            "GET, /health/liveness", "GET, /.well-known/wallet-config-metadata",
+            "HEAD, /.well-known/wallet-config-metadata"})
+    void filter_endedSessionOnPublicRoute_isNotChecked(String method, String path) {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.valueOf(method), path)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer good-token"));
 
         // Act
@@ -282,6 +288,20 @@ class JwtAuthenticationWebFilterTest {
 
         // Assert
         verifyNoInteractions(activeSessionChecker);
-        assertThat(seenAuthentication.get()).isNotNull();
+        assertThat(exchange.getResponse().getStatusCode()).isNull();
+    }
+
+    @Test
+    void filter_sessionCheckFailureOnProtectedRoute_propagates() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+        when(activeSessionChecker.isActive(SESSION_ID)).thenReturn(Mono.error(new IllegalStateException("db down")));
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/v1/activity")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer good-token"));
+
+        // Act + Assert
+        StepVerifier.create(inTenant(filter.filter(exchange, chain), TENANT))
+                .expectError(IllegalStateException.class).verify();
+        assertThat(exchange.getResponse().getStatusCode()).isNull();
     }
 }
