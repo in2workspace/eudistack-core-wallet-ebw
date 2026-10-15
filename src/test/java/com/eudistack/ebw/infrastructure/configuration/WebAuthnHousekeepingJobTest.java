@@ -22,6 +22,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,10 +60,10 @@ class WebAuthnHousekeepingJobTest {
         // Assert
         assertThat(tenantsSeen).containsExactly("sandbox", "kpmg");
         var ceremonyCutoff = ArgumentCaptor.forClass(Instant.class);
-        verify(ceremonyRepository, org.mockito.Mockito.times(2)).deleteCreatedBefore(ceremonyCutoff.capture());
+        verify(ceremonyRepository, times(2)).deleteCreatedBefore(ceremonyCutoff.capture());
         assertThat(ceremonyCutoff.getValue()).isCloseTo(Instant.now().minus(Duration.ofDays(1)), within(5, ChronoUnit.SECONDS));
         var sessionCutoff = ArgumentCaptor.forClass(Instant.class);
-        verify(refreshTokenRepository, org.mockito.Mockito.times(2)).deleteSessionsEndedBefore(sessionCutoff.capture());
+        verify(refreshTokenRepository, times(2)).deleteSessionsEndedBefore(sessionCutoff.capture());
         assertThat(sessionCutoff.getValue()).isCloseTo(Instant.now().minus(Duration.ofDays(7)), within(5, ChronoUnit.SECONDS));
     }
 

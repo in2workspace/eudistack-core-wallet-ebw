@@ -68,9 +68,8 @@ class AuthTokenServiceTest {
     }
 
     private RefreshToken token(Instant sessionStartedAt, Instant expiresAt, boolean revoked) {
-        var token = new RefreshToken(UUID.randomUUID(), user.getId(), passkeyId, UUID.randomUUID(), sessionStartedAt,
+        return new RefreshToken(UUID.randomUUID(), user.getId(), passkeyId, UUID.randomUUID(), sessionStartedAt,
                 "sha:raw", expiresAt, revoked, Instant.now());
-        return token;
     }
 
     @Test
@@ -91,8 +90,8 @@ class AuthTokenServiceTest {
         var claims = ArgumentCaptor.forClass(Map.class);
         verify(tokenSigner).sign(claims.capture());
         assertThat(claims.getValue()).containsKeys("sub", "email", "tenant", "sid", "pkid", "iss", "iat", "exp");
-        assertThat(claims.getValue().get("tenant")).isEqualTo(TENANT);
-        assertThat(claims.getValue().get("pkid")).isEqualTo(passkeyId.toString());
+        assertThat(claims.getValue()).containsEntry("tenant", TENANT);
+        assertThat(claims.getValue()).containsEntry("pkid", passkeyId.toString());
         var stored = ArgumentCaptor.forClass(RefreshToken.class);
         verify(refreshTokenRepository).insert(stored.capture());
         assertThat(stored.getValue().getPasskeyId()).isEqualTo(passkeyId);

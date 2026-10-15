@@ -55,8 +55,9 @@ class WebAuthn4jVerifierTest {
     @Test
     void verifyRegistration_otherChallenge_throws() throws Exception {
         var json = registrationJson(random(32));
+        var otherChallenge = random(32);
 
-        assertThatThrownBy(() -> verifier.verifyRegistration(json, random(32), RP))
+        assertThatThrownBy(() -> verifier.verifyRegistration(json, otherChallenge, RP))
                 .isInstanceOf(WebAuthnVerificationException.class)
                 .hasMessageContaining("BadChallenge");
     }

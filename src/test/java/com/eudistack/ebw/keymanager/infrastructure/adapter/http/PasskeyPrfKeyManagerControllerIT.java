@@ -132,7 +132,7 @@ class PasskeyPrfKeyManagerControllerIT {
         when(passkeyPrfAdapter.prepareSign(any()))
                 .thenReturn(Mono.error(new UnsupportedOperationException("skeleton")));
 
-        // Act & Assert — stub throws UnsupportedOperationException (US-04 TODO) caught by catch-all → 500.
+        // Act & Assert — stub throws UnsupportedOperationException (real adapter delivered by US-04) caught by catch-all → 500.
         // Confirms the request passed the format guard and reached the adapter.
         webTestClient.post().uri(PREPARE_URL)
                 .contentType(MediaType.APPLICATION_JSON)

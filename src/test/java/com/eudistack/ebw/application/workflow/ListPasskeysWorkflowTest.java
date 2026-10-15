@@ -2,7 +2,6 @@ package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.support.TestPasskeys;
 import com.eudistack.ebw.application.workflow.ListPasskeysWorkflow.PasskeyWithSessions;
-import com.eudistack.ebw.domain.model.UserPasskey;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import org.junit.jupiter.api.BeforeEach;

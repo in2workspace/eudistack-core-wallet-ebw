@@ -89,7 +89,7 @@ class CredentialPasskeyCustodyIT extends IntegrationTestBase {
         assertThat(query("SELECT passkey_id, bound FROM wallet_credential WHERE id = '" + bound + "'"))
                 .singleElement().satisfies(row -> {
                     assertThat(row.get("passkey_id")).isNull();
-                    assertThat(row.get("bound")).isEqualTo(true);
+                    assertThat(row).containsEntry("bound", true);
                 });
     }
 

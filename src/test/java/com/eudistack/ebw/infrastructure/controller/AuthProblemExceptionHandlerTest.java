@@ -73,7 +73,7 @@ class AuthProblemExceptionHandlerTest {
         // Assert
         assertThat(response.getStatusCode().value()).isEqualTo(status);
         assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
-        assertThat(response.getBody().getType().toString()).isEqualTo(type);
+        assertThat(response.getBody().getType()).hasToString(type);
         assertThat(response.getBody().getDetail()).isNull();
     }
 
@@ -85,7 +85,7 @@ class AuthProblemExceptionHandlerTest {
         // Assert
         assertThat(response.getStatusCode().value()).isEqualTo(429);
         assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("3600");
-        assertThat(response.getBody().getType().toString()).isEqualTo("rate_limited");
+        assertThat(response.getBody().getType()).hasToString("rate_limited");
     }
 
     @Test
@@ -95,7 +95,7 @@ class AuthProblemExceptionHandlerTest {
 
         // Assert
         assertThat(response.getStatusCode().value()).isEqualTo(401);
-        assertThat(response.getBody().getType().toString()).isEqualTo("invalid_session");
+        assertThat(response.getBody().getType()).hasToString("invalid_session");
         assertThat(response.getHeaders().getFirst(HttpHeaders.SET_COOKIE))
                 .startsWith("__Host-wallet_refresh=;").contains("Max-Age=0");
     }

@@ -207,9 +207,7 @@ class PasskeyPrfPgDumpNonReconstructionIT {
         assertThat(dumpOutput)
                 .as("pg_dump output must not contain the simulated plaintext key marker "
                     + "(NFR-S-535-01, AC-02 at scale with %d holders)", VOLUME_COUNT)
-                .doesNotContain(new String(SIMULATED_PLAINTEXT));
-
-        assertThat(dumpOutput)
+                .doesNotContain(new String(SIMULATED_PLAINTEXT))
                 .as("pg_dump output must not contain 'private_key' column references "
                     + "(the column must not exist by structural design, AD-2)")
                 .doesNotContainIgnoringCase("private_key");

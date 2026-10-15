@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -222,7 +223,7 @@ class PasskeyRegistrationWorkflowTest {
     void register_insertRaceLost_isRejectedAsDuplicate() {
         // Arrange
         verifiesAndStores(0);
-        org.mockito.Mockito.doReturn(Mono.error(new RegistrationFailedException(
+        doReturn(Mono.error(new RegistrationFailedException(
                         com.eudistack.ebw.domain.model.AuthRejectionReason.CREDENTIAL_ALREADY_REGISTERED)))
                 .when(passkeyRepository).insert(any());
 

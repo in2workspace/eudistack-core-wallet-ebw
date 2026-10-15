@@ -101,8 +101,7 @@ class PasskeyPrfWrappedKeyHandleColumnAllowlistTest {
         String sql = readMigrationSql();
         assertThat(sql)
                 .as("Migration file %s must exist and be non-empty", MIGRATION_CLASSPATH)
-                .isNotBlank();
-        assertThat(sql)
+                .isNotBlank()
                 .as("Migration must create hybrid_wrapped_key_handle table")
                 .contains("hybrid_wrapped_key_handle");
     }

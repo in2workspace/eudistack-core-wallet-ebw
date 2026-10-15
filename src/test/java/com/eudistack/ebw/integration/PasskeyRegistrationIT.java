@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -37,8 +36,8 @@ class PasskeyRegistrationIT extends IntegrationTestBase {
         var body = authClient().verifyEmail(email);
 
         assertThat(body).containsOnlyKeys("registrationTicket", "expiresIn", "hasPasskeys");
-        assertThat(body.get("expiresIn")).isEqualTo(300);
-        assertThat(body.get("hasPasskeys")).isEqualTo(false);
+        assertThat(body).containsEntry("expiresIn", 300);
+        assertThat(body).containsEntry("hasPasskeys", false);
         var account = query("SELECT webauthn_user_handle FROM wallet_user WHERE email = '" + email + "'");
         assertThat(account).singleElement()
                 .satisfies(row -> assertThat((byte[]) row.get("webauthn_user_handle")).hasSize(32));
@@ -78,7 +77,7 @@ class PasskeyRegistrationIT extends IntegrationTestBase {
         assertThat(session.setCookie()).startsWith("__Host-wallet_refresh=").contains("HttpOnly").contains("Secure")
                 .contains("SameSite=Strict").contains("Path=/;").contains("Max-Age=").doesNotContain("Domain=");
         var passkey = query("SELECT * FROM user_passkey WHERE id = '" + session.passkeyId() + "'").get(0);
-        assertThat(passkey.get("credential_id")).isEqualTo(authenticator.credentialIdBase64Url());
+        assertThat(passkey).containsEntry("credential_id", authenticator.credentialIdBase64Url());
         assertThat((byte[]) passkey.get("attested_credential_data")).isNotEmpty();
         assertThat(passkey).containsEntry("backup_eligible", true).containsEntry("backup_state", true)
                 .containsEntry("uv_initialized", true).containsEntry("prf_enabled", true)
@@ -176,11 +175,11 @@ class PasskeyRegistrationIT extends IntegrationTestBase {
         var auth = authClient();
         var email = email("reg-notice");
         auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
-        verify(emailSender, never()).sendNewPasskeyNotice(eq(email));
+        verify(emailSender, never()).sendNewPasskeyNotice(email);
 
         auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
 
-        verify(emailSender).sendNewPasskeyNotice(eq(email));
+        verify(emailSender).sendNewPasskeyNotice(email);
     }
 
     @Test

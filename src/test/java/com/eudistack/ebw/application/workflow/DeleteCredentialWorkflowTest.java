@@ -99,6 +99,6 @@ class DeleteCredentialWorkflowTest {
         StepVerifier.create(workflow.deleteCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID))
                 .expectError(com.eudistack.ebw.domain.model.exception.CredentialNotFoundException.class)
                 .verify();
-        org.mockito.Mockito.verify(credentialRepository, org.mockito.Mockito.never()).deleteById(org.mockito.ArgumentMatchers.any());
+        verify(credentialRepository, never()).deleteById(any());
     }
 }
