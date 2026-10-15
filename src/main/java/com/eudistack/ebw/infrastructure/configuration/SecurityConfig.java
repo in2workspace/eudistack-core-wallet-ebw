@@ -4,13 +4,13 @@ import com.eudistack.ebw.infrastructure.controller.support.AuthProblems;
 import com.eudistack.ebw.infrastructure.controller.support.RefreshCookies;
 import com.eudistack.ebw.infrastructure.security.CorsOriginsLoader;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationWebFilter;
+import com.eudistack.ebw.infrastructure.security.PublicRoutes;
 import com.eudistack.ebw.infrastructure.security.TenantCorsConfigurationSource;
 import com.eudistack.ebw.infrastructure.security.TenantOrigins;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
@@ -75,21 +75,7 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeExchange(exchanges -> exchanges
-                        .pathMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
-                        .pathMatchers(HttpMethod.POST, "/api/v1/auth/verify-email").permitAll()
-                        .pathMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
-                        // Registration ticket bearer: validated by the endpoints themselves.
-                        .pathMatchers(HttpMethod.POST, "/api/v1/auth/passkeys/registration/options").permitAll()
-                        .pathMatchers(HttpMethod.POST, "/api/v1/auth/passkeys/registration").permitAll()
-                        // Sign-in with a passkey, with an optional registration ticket.
-                        .pathMatchers(HttpMethod.POST, "/api/v1/auth/sessions/options").permitAll()
-                        .pathMatchers(HttpMethod.POST, "/api/v1/auth/sessions").permitAll()
-                        .pathMatchers("/health", "/health/**").permitAll()
-                        // EUDISTACK-413: public wallet discovery endpoint (AC-03 — no auth required).
-                        // The canonical path is served by WellKnownCanonicalHandler at Netty level
-                        // before this chain runs; these matchers are defense-in-depth for unit tests.
-                        .pathMatchers(HttpMethod.GET, "/.well-known/wallet-config-metadata").permitAll()
-                        .pathMatchers(HttpMethod.HEAD, "/.well-known/wallet-config-metadata").permitAll()
+                        .matchers(PublicRoutes.MATCHER).permitAll()
                         .anyExchange().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, SecurityWebFiltersOrder.AUTHENTICATION)
