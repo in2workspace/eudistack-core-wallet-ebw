@@ -4,6 +4,8 @@ import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.service.AuthTokenService;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Ticker;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
@@ -21,16 +23,29 @@ public class ActiveSessionChecker {
     static final Duration CACHE_TTL = Duration.ofSeconds(10);
 
     private final AuthTokenService authTokenService;
-    private final Cache<String, Boolean> cache = Caffeine.newBuilder()
-            .expireAfterWrite(CACHE_TTL)
-            .maximumSize(100_000)
-            .build();
+    private final Cache<String, Boolean> cache;
 
+    @Autowired
     public ActiveSessionChecker(AuthTokenService authTokenService) {
-        this.authTokenService = authTokenService;
+        this(authTokenService, Ticker.systemTicker());
     }
 
-    /** Requires the tenant in the Reactor context (the session lives in the tenant schema). */
+    /** The clock of the cache is injectable so its expiry can be tested without waiting. */
+    ActiveSessionChecker(AuthTokenService authTokenService, Ticker ticker) {
+        this.authTokenService = authTokenService;
+        this.cache = Caffeine.newBuilder()
+                .ticker(ticker)
+                .expireAfterWrite(CACHE_TTL)
+                .maximumSize(100_000)
+                .build();
+    }
+
+    /**
+     * Requires the tenant in the Reactor context (the session lives in the tenant schema). Only
+     * the answers the service gives are cached: a failure propagates and an empty answer is read
+     * as "not active" without being remembered, so a transient problem never pins a session as
+     * ended.
+     */
     public Mono<Boolean> isActive(UUID sessionId) {
         return Mono.deferContextual(ctx -> {
             var key = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "") + ":" + sessionId;
@@ -39,8 +54,8 @@ public class ActiveSessionChecker {
                 return Mono.just(cached);
             }
             return authTokenService.isSessionActive(sessionId)
-                    .defaultIfEmpty(false)
-                    .doOnNext(active -> cache.put(key, active));
+                    .doOnNext(active -> cache.put(key, active))
+                    .defaultIfEmpty(false);
         });
     }
 
