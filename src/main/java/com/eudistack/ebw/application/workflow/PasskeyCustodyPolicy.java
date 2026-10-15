@@ -31,7 +31,7 @@ public class PasskeyCustodyPolicy {
         if (credential.isVisibleToPasskey(sessionPasskeyId)) {
             return Mono.just(credential);
         }
-        return isPasskeyCustody().flatMap(custody -> custody ? Mono.empty() : Mono.just(credential));
+        return isPasskeyCustody().flatMap(custody -> Boolean.TRUE.equals(custody) ? Mono.empty() : Mono.just(credential));
     }
 
     public Mono<Boolean> isPasskeyCustody() {

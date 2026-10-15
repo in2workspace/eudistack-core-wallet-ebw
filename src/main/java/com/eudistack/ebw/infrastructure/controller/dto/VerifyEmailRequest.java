@@ -7,6 +7,6 @@ import jakarta.validation.constraints.Size;
 
 public record VerifyEmailRequest(
         @NotBlank @Email @Size(max = 254) String email,
-        @NotBlank @Pattern(regexp = "^[0-9]{6}$") String code
+        @NotBlank @Pattern(regexp = "^\\d{6}$") String code
 ) {
 }

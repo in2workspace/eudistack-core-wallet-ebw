@@ -104,7 +104,7 @@ public class JwtAuthenticationWebFilter implements WebFilter {
         byte[] body;
         try {
             body = objectMapper.writeValueAsBytes(AuthProblems.of(HttpStatus.UNAUTHORIZED, AuthProblems.INVALID_SESSION));
-        } catch (Exception e) {
+        } catch (Exception _) {
             body = new byte[0];
         }
         return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
@@ -133,7 +133,7 @@ public class JwtAuthenticationWebFilter implements WebFilter {
         }
         try {
             return UUID.fromString(text);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return null;
         }
     }

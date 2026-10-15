@@ -11,7 +11,9 @@ final class AuthRejectionLog {
     private AuthRejectionLog() {}
 
     static void log(Logger log, String what, AuthRejectionReason reason) {
-        log.info("{} rejected: {}", what, reason.code());
+        if (log.isInfoEnabled()) {
+            log.info("{} rejected: {}", what, reason.code());
+        }
     }
 
     /** The WebAuthn library message, only at DEBUG and truncated. */

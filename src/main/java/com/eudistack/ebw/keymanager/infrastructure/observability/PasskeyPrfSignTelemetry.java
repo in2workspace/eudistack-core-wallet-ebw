@@ -43,6 +43,9 @@ public class PasskeyPrfSignTelemetry {
     public static final String METRIC_COUNTER = "passkey_prf_sign_total";
     public static final String METRIC_TIMER = "passkey_prf_sign_latency_ms";
 
+    private static final String TAG_OPERATION = "operation";
+    private static final String TAG_RESULT = "result";
+
     static final String OP_PREPARE = "prepare";
     static final String OP_SUBMIT = "submit";
     static final String RESULT_SUCCESS = "success";
@@ -61,40 +64,48 @@ public class PasskeyPrfSignTelemetry {
 
     public void recordPrepareSuccess(String correlationId, String holderId, long startNanos) {
         emitSpan(SPAN_PREPARE, OP_PREPARE, correlationId, RESULT_SUCCESS, null);
-        log.debug("passkey_prf.sign.prepare correlation_id={} holder_hash={} result={}",
+        if (log.isDebugEnabled()) {
+            log.debug("passkey_prf.sign.prepare correlation_id={} holder_hash={} result={}",
                 correlationId, hashHolder(holderId), RESULT_SUCCESS);
+        }
         recordMetrics(OP_PREPARE, RESULT_SUCCESS, startNanos);
     }
 
     public void recordPrepareError(String correlationId, String holderId, Throwable ex, long startNanos) {
         String result = classifyError(ex);
         emitSpan(SPAN_PREPARE, OP_PREPARE, correlationId, result, ex);
-        log.warn("passkey_prf.sign.prepare correlation_id={} holder_hash={} result={} error_type={}",
+        if (log.isWarnEnabled()) {
+            log.warn("passkey_prf.sign.prepare correlation_id={} holder_hash={} result={} error_type={}",
                 correlationId, hashHolder(holderId), result, ex.getClass().getSimpleName());
+        }
         recordMetrics(OP_PREPARE, result, startNanos);
     }
 
     public void recordSubmitSuccess(String correlationId, String holderId, long startNanos) {
         emitSpan(SPAN_SUBMIT, OP_SUBMIT, correlationId, RESULT_SUCCESS, null);
-        log.debug("passkey_prf.sign.submit correlation_id={} holder_hash={} result={}",
+        if (log.isDebugEnabled()) {
+            log.debug("passkey_prf.sign.submit correlation_id={} holder_hash={} result={}",
                 correlationId, hashHolder(holderId), RESULT_SUCCESS);
+        }
         recordMetrics(OP_SUBMIT, RESULT_SUCCESS, startNanos);
     }
 
     public void recordSubmitError(String correlationId, String holderId, Throwable ex, long startNanos) {
         String result = classifyError(ex);
         emitSpan(SPAN_SUBMIT, OP_SUBMIT, correlationId, result, ex);
-        log.warn("passkey_prf.sign.submit correlation_id={} holder_hash={} result={} error_type={}",
+        if (log.isWarnEnabled()) {
+            log.warn("passkey_prf.sign.submit correlation_id={} holder_hash={} result={} error_type={}",
                 correlationId, hashHolder(holderId), result, ex.getClass().getSimpleName());
+        }
         recordMetrics(OP_SUBMIT, result, startNanos);
     }
 
     private void emitSpan(String spanName, String operation, String correlationId,
                            String result, Throwable error) {
         Span span = tracer.nextSpan().name(spanName);
-        try (Tracer.SpanInScope ignored = tracer.withSpan(span.start())) {
-            span.tag("operation", operation);
-            span.tag("result", result);
+        try (Tracer.SpanInScope _ = tracer.withSpan(span.start())) {
+            span.tag(TAG_OPERATION, operation);
+            span.tag(TAG_RESULT, result);
             if (correlationId != null) {
                 span.tag("correlation_id", correlationId);
             }
@@ -107,10 +118,10 @@ public class PasskeyPrfSignTelemetry {
     }
 
     private void recordMetrics(String operation, String result, long startNanos) {
-        meterRegistry.counter(METRIC_COUNTER, "operation", operation, "result", result)
+        meterRegistry.counter(METRIC_COUNTER, TAG_OPERATION, operation, TAG_RESULT, result)
                 .increment();
         Timer.builder(METRIC_TIMER)
-                .tags("operation", operation, "result", result)
+                .tags(TAG_OPERATION, operation, TAG_RESULT, result)
                 .register(meterRegistry)
                 .record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
     }

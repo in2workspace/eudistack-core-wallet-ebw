@@ -27,6 +27,7 @@ import reactor.core.publisher.Mono;
 public class SecurityConfig {
 
     /** Session endpoints whose 401 is the contract's {@code invalid_session} problem. */
+    // NOSONAR java:S1075 - fixed route of the public API contract (OpenAPI), not deployment configuration
     private static final String SESSIONS_PATH = "/api/v1/auth/sessions/";
 
     private final JwtAuthenticationWebFilter jwtAuthFilter;
@@ -120,7 +121,7 @@ public class SecurityConfig {
         byte[] body;
         try {
             body = objectMapper.writeValueAsBytes(AuthProblems.of(HttpStatus.UNAUTHORIZED, AuthProblems.INVALID_SESSION));
-        } catch (Exception e) {
+        } catch (Exception _) {
             body = new byte[0];
         }
         return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));

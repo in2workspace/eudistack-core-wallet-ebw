@@ -50,7 +50,7 @@ public final class PasskeyMapper {
         }
         try {
             return OBJECT_MAPPER.readValue(json, STRING_LIST);
-        } catch (JsonProcessingException e) {
+        } catch (JsonProcessingException _) {
             return List.of();
         }
     }

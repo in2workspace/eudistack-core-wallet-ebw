@@ -50,6 +50,7 @@ public class PasskeyRegistrationWorkflow {
     static final Duration NOTICE_TIMEOUT = Duration.ofSeconds(5);
 
     private static final Logger log = LoggerFactory.getLogger(PasskeyRegistrationWorkflow.class);
+    private static final String REJECTION_SUBJECT = "Passkey registration";
 
     private final RegistrationTicketService ticketService;
     private final WalletUserRepository userRepository;
@@ -125,7 +126,7 @@ public class PasskeyRegistrationWorkflow {
                                                  RelyingPartySettings relyingParty, boolean passkeyCustody) {
         boolean prfSupported = Boolean.TRUE.equals(command.prfSupported());
         if (passkeyCustody && !prfSupported) {
-            AuthRejectionLog.log(log, "Passkey registration", AuthRejectionReason.PRF_UNSUPPORTED);
+            AuthRejectionLog.log(log, REJECTION_SUBJECT, AuthRejectionReason.PRF_UNSUPPORTED);
             return auditRejection(user, AuthRejectionReason.PRF_UNSUPPORTED)
                     .then(Mono.error(new PasskeyPrfUnsupportedException()));
         }
@@ -142,7 +143,7 @@ public class PasskeyRegistrationWorkflow {
                                                         command.replacedRefreshToken(), "registration")
                                                 .map(session -> new Stored(session, passkey, previousPasskeys > 0))))))
                 .doOnError(RegistrationFailedException.class,
-                        e -> AuthRejectionLog.log(log, "Passkey registration", e.getReason()))
+                        e -> AuthRejectionLog.log(log, REJECTION_SUBJECT, e.getReason()))
                 .flatMap(stored -> stored.hadPasskeys()
                         ? notifyNewPasskey(user, stored.passkey()).thenReturn(stored.session())
                         : Mono.just(stored.session()));
@@ -153,7 +154,7 @@ public class PasskeyRegistrationWorkflow {
         return Mono.fromCallable(() -> webAuthnVerifier.verifyRegistration(credentialJson, ceremony.challenge(),
                         relyingParty))
                 .onErrorMap(WebAuthnVerificationException.class, e -> {
-                    AuthRejectionLog.detail(log, "Passkey registration", e);
+                    AuthRejectionLog.detail(log, REJECTION_SUBJECT, e);
                     return new RegistrationFailedException(AuthRejectionReason.VERIFICATION_FAILED);
                 });
     }

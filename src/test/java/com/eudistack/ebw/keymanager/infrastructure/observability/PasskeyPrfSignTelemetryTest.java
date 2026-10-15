@@ -12,11 +12,16 @@ import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationExc
 import com.eudistack.ebw.keymanager.domain.exception.InvalidSignatureSubmissionException;
 import com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException;
 import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 class PasskeyPrfSignTelemetryTest {
 
@@ -35,7 +40,8 @@ class PasskeyPrfSignTelemetryTest {
         when(tracer.nextSpan()).thenReturn(span);
         when(span.name(any())).thenReturn(span);
         when(span.start()).thenReturn(span);
-        when(tracer.withSpan(span)).thenReturn(mock(Tracer.SpanInScope.class));
+        var spanInScope = mock(Tracer.SpanInScope.class);
+        when(tracer.withSpan(span)).thenReturn(spanInScope);
         registry = new SimpleMeterRegistry();
         telemetry = new PasskeyPrfSignTelemetry(tracer, registry);
     }
@@ -95,6 +101,28 @@ class PasskeyPrfSignTelemetryTest {
         assertThat(PasskeyPrfSignTelemetry.hashHolder(HOLDER_ID))
                 .isEqualTo(PasskeyPrfSignTelemetry.hashHolder(HOLDER_ID));
         assertThat(PasskeyPrfSignTelemetry.hashHolder(null)).isEqualTo("unknown");
+    }
+
+    @Test
+    void recordSuccess_debugEnabled_logsHashedHolderOnly() {
+        var logger = (Logger) LoggerFactory.getLogger(PasskeyPrfSignTelemetry.class);
+        var previous = logger.getLevel();
+        var appender = new ListAppender<ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.DEBUG);
+        try {
+            telemetry.recordPrepareSuccess(CORRELATION_ID, HOLDER_ID, System.nanoTime());
+            telemetry.recordSubmitSuccess(CORRELATION_ID, HOLDER_ID, System.nanoTime());
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(previous);
+        }
+
+        assertThat(appender.list).hasSize(2)
+                .allSatisfy(event -> assertThat(event.getFormattedMessage())
+                        .contains("correlation_id=corr-1", "holder_hash=")
+                        .doesNotContain(HOLDER_ID));
     }
 
     private double counter(String operation, String result) {

@@ -33,7 +33,9 @@ public class UserPasskeyEntity implements Persistable<UUID> {
     @Transient
     private boolean isNew = false;
 
-    public UserPasskeyEntity() {}
+    public UserPasskeyEntity() {
+        // No-arg constructor required by Spring Data R2DBC to instantiate the entity before populating it
+    }
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }

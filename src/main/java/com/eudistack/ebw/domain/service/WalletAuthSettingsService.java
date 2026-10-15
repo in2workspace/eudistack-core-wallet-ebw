@@ -101,7 +101,7 @@ public class WalletAuthSettingsService {
                 return defaultValue;
             }
             return value;
-        } catch (DateTimeParseException e) {
+        } catch (DateTimeParseException _) {
             log.warn("tenant_config '{}' is not an ISO-8601 duration; using default {}", key, defaultValue);
             return defaultValue;
         }
