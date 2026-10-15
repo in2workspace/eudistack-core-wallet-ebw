@@ -22,6 +22,9 @@ class PasskeySessionIT extends IntegrationTestBase {
     @org.springframework.beans.factory.annotation.Autowired
     private com.eudistack.ebw.domain.repository.RefreshTokenRepository refreshTokenRepository;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.eudistack.ebw.application.workflow.ExpireSessionsWorkflow expireSessionsWorkflow;
+
     @BeforeEach
     void setUp() {
         setupEmailCapture();
@@ -317,6 +320,97 @@ class PasskeySessionIT extends IntegrationTestBase {
 
         assertThat(query("SELECT 1 FROM refresh_token WHERE passkey_id = '" + ended.passkeyId() + "'")).isEmpty();
         assertThat(query("SELECT 1 FROM refresh_token WHERE passkey_id = '" + active.passkeyId() + "'")).isNotEmpty();
+    }
+
+    // ------------------------------------------------------------------ proactive SESSION_EXPIRED (FR-22)
+
+    /** The housekeeping expiry step for the test tenant, as the hourly job runs it. */
+    private void expireLapsedSessions() {
+        expireSessionsWorkflow.expireLapsedSessions()
+                .contextWrite(ctx -> ctx.put(com.eudistack.ebw.domain.model.ReactorContextKeys.TENANT_DOMAIN,
+                        TEST_TENANT))
+                .block();
+    }
+
+    private String sessionIdOf(WalletAuthClient.Session session) {
+        return String.valueOf(query("SELECT DISTINCT session_id FROM refresh_token WHERE passkey_id = '"
+                + session.passkeyId() + "'").getFirst().get("session_id"));
+    }
+
+    private java.util.List<Map<String, Object>> auditOf(String sessionId, String action) {
+        return query("SELECT metadata FROM audit_log WHERE entity_id = '" + sessionId + "' AND action = '"
+                + action + "'");
+    }
+
+    @Test
+    void housekeeping_idleSession_isClosedAndAuditedOnceAsIdleTimeout() {
+        var idle = auth.signUp(email("ses-expire-idle"), new SoftwareAuthenticator(TEST_ORIGIN));
+        var active = auth.signUp(email("ses-expire-active"), new SoftwareAuthenticator(TEST_ORIGIN));
+        sql("UPDATE refresh_token SET expires_at = now() - interval '1 minute' WHERE passkey_id = '"
+                + idle.passkeyId() + "'");
+
+        expireLapsedSessions();
+        expireLapsedSessions();
+
+        assertThat(auditOf(sessionIdOf(idle), "SESSION_EXPIRED")).singleElement()
+                .satisfies(row -> assertThat((String) row.get("metadata")).contains("idle_timeout").doesNotContain("@"));
+        assertThat(query("SELECT 1 FROM refresh_token WHERE revoked = false AND passkey_id = '"
+                + idle.passkeyId() + "'")).isEmpty();
+        assertThat(auditOf(sessionIdOf(active), "SESSION_EXPIRED")).isEmpty();
+        auth.refreshSpec(active.refreshToken(), true).expectStatus().isOk();
+    }
+
+    @Test
+    void housekeeping_twoInstancesAtOnce_auditTheSessionOnce() {
+        var session = auth.signUp(email("ses-expire-concurrent"), new SoftwareAuthenticator(TEST_ORIGIN));
+        sql("UPDATE refresh_token SET expires_at = now() - interval '1 minute' WHERE passkey_id = '"
+                + session.passkeyId() + "'");
+        var sweep = expireSessionsWorkflow.expireLapsedSessions()
+                .subscribeOn(reactor.core.scheduler.Schedulers.parallel())
+                .contextWrite(ctx -> ctx.put(com.eudistack.ebw.domain.model.ReactorContextKeys.TENANT_DOMAIN,
+                        TEST_TENANT));
+
+        reactor.core.publisher.Mono.zip(sweep, sweep).block();
+
+        assertThat(auditOf(sessionIdOf(session), "SESSION_EXPIRED")).hasSize(1);
+    }
+
+    @Test
+    void housekeeping_sessionAlreadyExpiredByARenewalAttempt_isNotAuditedAgain() {
+        var session = auth.signUp(email("ses-expire-lazy"), new SoftwareAuthenticator(TEST_ORIGIN));
+        sql("UPDATE refresh_token SET expires_at = now() - interval '1 minute' WHERE passkey_id = '"
+                + session.passkeyId() + "'");
+        auth.refreshSpec(session.refreshToken(), true).expectStatus().isUnauthorized();
+
+        expireLapsedSessions();
+
+        assertThat(auditOf(sessionIdOf(session), "SESSION_EXPIRED")).hasSize(1);
+    }
+
+    @Test
+    void refresh_sessionAlreadyExpiredByHousekeeping_isInvalidSessionWithoutASecondAudit() {
+        var session = auth.signUp(email("ses-expire-then-refresh"), new SoftwareAuthenticator(TEST_ORIGIN));
+        sql("UPDATE refresh_token SET expires_at = now() - interval '1 minute' WHERE passkey_id = '"
+                + session.passkeyId() + "'");
+        expireLapsedSessions();
+
+        auth.refreshSpec(session.refreshToken(), true).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_session");
+
+        assertThat(auditOf(sessionIdOf(session), "SESSION_EXPIRED")).hasSize(1);
+    }
+
+    @Test
+    void housekeeping_sessionPastItsMaximumDuration_isAuditedAsMaxDuration() {
+        var session = auth.signUp(email("ses-expire-max"), new SoftwareAuthenticator(TEST_ORIGIN));
+        // The last token was capped at the 8 h maximum duration, which was reached an hour ago.
+        sql("UPDATE refresh_token SET session_started_at = now() - interval '9 hours', "
+                + "expires_at = now() - interval '1 hour' WHERE passkey_id = '" + session.passkeyId() + "'");
+
+        expireLapsedSessions();
+
+        assertThat(auditOf(sessionIdOf(session), "SESSION_EXPIRED")).singleElement()
+                .satisfies(row -> assertThat((String) row.get("metadata")).contains("max_duration"));
     }
 
     // ------------------------------------------------------------------ session check on sensitive routes

@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
+import com.eudistack.ebw.application.workflow.ExpireSessionsWorkflow;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.RegistrationTicketRepository;
@@ -17,11 +18,13 @@ import reactor.test.StepVerifier;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,6 +34,7 @@ import static org.mockito.Mockito.when;
 class WebAuthnHousekeepingJobTest {
 
     @Mock private ActiveTenantDirectory tenantDirectory;
+    @Mock private ExpireSessionsWorkflow expireSessionsWorkflow;
     @Mock private WebAuthnCeremonyRepository ceremonyRepository;
     @Mock private RegistrationTicketRepository ticketRepository;
     @Mock private RefreshTokenRepository refreshTokenRepository;
@@ -39,7 +43,8 @@ class WebAuthnHousekeepingJobTest {
 
     @BeforeEach
     void setUp() {
-        job = new WebAuthnHousekeepingJob(tenantDirectory, ceremonyRepository, ticketRepository, refreshTokenRepository);
+        job = new WebAuthnHousekeepingJob(tenantDirectory, expireSessionsWorkflow, ceremonyRepository, ticketRepository,
+                refreshTokenRepository);
     }
 
     @Test
@@ -47,6 +52,7 @@ class WebAuthnHousekeepingJobTest {
         // Arrange
         var tenantsSeen = new CopyOnWriteArrayList<String>();
         when(tenantDirectory.activeTenants()).thenReturn(Flux.just("sandbox", "kpmg"));
+        when(expireSessionsWorkflow.expireLapsedSessions()).thenReturn(Mono.just(0L));
         when(ceremonyRepository.deleteCreatedBefore(any())).thenReturn(Mono.deferContextual(ctx -> {
             tenantsSeen.add(ctx.get(ReactorContextKeys.TENANT_DOMAIN));
             return Mono.just(2L);
@@ -71,6 +77,7 @@ class WebAuthnHousekeepingJobTest {
     void cleanup_oneTenantFails_continuesWithTheOthers() {
         // Arrange
         when(tenantDirectory.activeTenants()).thenReturn(Flux.just("broken", "sandbox"));
+        when(expireSessionsWorkflow.expireLapsedSessions()).thenReturn(Mono.just(0L));
         when(ceremonyRepository.deleteCreatedBefore(any())).thenReturn(Mono.deferContextual(ctx ->
                 "broken".equals(ctx.get(ReactorContextKeys.TENANT_DOMAIN))
                         ? Mono.error(new IllegalStateException("schema missing"))
@@ -89,5 +96,45 @@ class WebAuthnHousekeepingJobTest {
 
         // Act + Assert
         StepVerifier.create(job.cleanup()).expectNext(0L).verifyComplete();
+    }
+
+    @Test
+    void cleanup_everyActiveTenant_expiresLapsedSessionsInItsSchemaBeforeDeleting() {
+        // Arrange
+        var steps = new CopyOnWriteArrayList<String>();
+        when(tenantDirectory.activeTenants()).thenReturn(Flux.just("sandbox"));
+        when(expireSessionsWorkflow.expireLapsedSessions()).thenReturn(Mono.deferContextual(ctx -> {
+            steps.add("expire:" + ctx.get(ReactorContextKeys.TENANT_DOMAIN));
+            return Mono.just(1L);
+        }));
+        when(ceremonyRepository.deleteCreatedBefore(any())).thenReturn(Mono.fromCallable(() -> {
+            steps.add("delete-ceremonies");
+            return 0L;
+        }));
+        when(ticketRepository.deleteCreatedBefore(any())).thenReturn(Mono.just(0L));
+        when(refreshTokenRepository.deleteSessionsEndedBefore(any())).thenReturn(Mono.fromCallable(() -> {
+            steps.add("delete-sessions");
+            return 0L;
+        }));
+
+        // Act
+        StepVerifier.create(job.cleanup()).expectNext(0L).verifyComplete();
+
+        // Assert
+        assertThat(steps).isEqualTo(List.of("expire:sandbox", "delete-ceremonies", "delete-sessions"));
+    }
+
+    @Test
+    void cleanup_expiryFails_skipsTheDeletionsOfThatTenant() {
+        // Arrange
+        when(tenantDirectory.activeTenants()).thenReturn(Flux.just("sandbox"));
+        when(expireSessionsWorkflow.expireLapsedSessions()).thenReturn(Mono.error(new IllegalStateException("audit down")));
+
+        // Act
+        StepVerifier.create(job.cleanup()).expectNext(0L).verifyComplete();
+
+        // Assert
+        verify(ceremonyRepository, never()).deleteCreatedBefore(any());
+        verify(refreshTokenRepository, never()).deleteSessionsEndedBefore(any());
     }
 }

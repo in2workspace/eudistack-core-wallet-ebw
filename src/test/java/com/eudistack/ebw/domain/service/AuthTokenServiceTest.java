@@ -1,6 +1,7 @@
 package com.eudistack.ebw.domain.service;
 
 import com.eudistack.ebw.domain.model.AuthTokenSettings;
+import com.eudistack.ebw.domain.model.ExpiredSession;
 import com.eudistack.ebw.domain.model.RefreshToken;
 import com.eudistack.ebw.domain.model.SessionSettings;
 import com.eudistack.ebw.domain.model.WalletUser;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -145,7 +147,7 @@ class AuthTokenServiceTest {
     void rotateRefreshToken_idleExpired_endsSessionWithIdleReason() {
         // Arrange
         var existing = token(Instant.now().minus(Duration.ofHours(1)), Instant.now().minusSeconds(1), false);
-        when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.empty());
+        when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.just(1L));
 
         // Act + Assert
         StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
@@ -159,13 +161,24 @@ class AuthTokenServiceTest {
     void rotateRefreshToken_pastMaxDuration_endsSessionEvenWithActivity() {
         // Arrange
         var existing = token(Instant.now().minus(Duration.ofHours(9)), Instant.now().plusSeconds(600), false);
-        when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.empty());
+        when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.just(1L));
 
         // Act + Assert
         StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
                 .expectErrorSatisfies(e -> assertThat(e).isInstanceOf(SessionExpiredException.class)
                         .extracting("reason").isEqualTo(SessionExpiredException.Reason.MAX_DURATION))
                 .verify();
+    }
+
+    @Test
+    void rotateRefreshToken_expiredSessionAlreadyClosedByHousekeeping_isInvalidSessionWithoutExpiry() {
+        // Arrange
+        var existing = token(Instant.now().minus(Duration.ofHours(1)), Instant.now().minusSeconds(1), false);
+        when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.just(0L));
+
+        // Act + Assert
+        StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
+                .expectError(InvalidSessionException.class).verify();
     }
 
     @Test
@@ -236,5 +249,46 @@ class AuthTokenServiceTest {
 
         // Act + Assert
         StepVerifier.create(service.endOtherSessions(user.getId(), current)).expectNext(2L).verifyComplete();
+    }
+
+    @Test
+    void endSession_activeSession_emitsTrue() {
+        // Arrange
+        var sessionId = UUID.randomUUID();
+        when(refreshTokenRepository.revokeBySessionId(sessionId)).thenReturn(Mono.just(1L));
+
+        // Act + Assert
+        StepVerifier.create(service.endSession(sessionId)).expectNext(true).verifyComplete();
+    }
+
+    @Test
+    void endSession_alreadyEndedSession_emitsFalse() {
+        // Arrange
+        var sessionId = UUID.randomUUID();
+        when(refreshTokenRepository.revokeBySessionId(sessionId)).thenReturn(Mono.just(0L));
+
+        // Act + Assert
+        StepVerifier.create(service.endSession(sessionId)).expectNext(false).verifyComplete();
+    }
+
+    @Test
+    void endSession_repositoryReportsNothing_emitsFalse() {
+        // Arrange
+        var sessionId = UUID.randomUUID();
+        when(refreshTokenRepository.revokeBySessionId(sessionId)).thenReturn(Mono.empty());
+
+        // Act + Assert
+        StepVerifier.create(service.endSession(sessionId)).expectNext(false).verifyComplete();
+    }
+
+    @Test
+    void expireLapsedSessions_delegatesToTheRepository() {
+        // Arrange
+        var expired = new ExpiredSession(UUID.randomUUID(), user.getId(), Instant.now().minus(Duration.ofHours(1)),
+                Instant.now().minus(Duration.ofMinutes(30)));
+        when(refreshTokenRepository.expireLapsedSessions()).thenReturn(Flux.just(expired));
+
+        // Act + Assert
+        StepVerifier.create(service.expireLapsedSessions()).expectNext(expired).verifyComplete();
     }
 }

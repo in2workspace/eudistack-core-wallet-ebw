@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
+import com.eudistack.ebw.application.workflow.ExpireSessionsWorkflow;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.RegistrationTicketRepository;
@@ -15,10 +16,13 @@ import java.time.Duration;
 import java.time.Instant;
 
 /**
- * Every hour, in every active tenant schema: deletes the WebAuthn ceremonies and registration
- * tickets created more than one day ago (design AD-3; they are single use and expire after 5
- * minutes, the day of margin keeps them for diagnosis), and the refresh tokens of the sessions
- * that ended more than {@link #ENDED_SESSION_RETENTION} ago.
+ * Every hour, in every active tenant schema: first closes and audits the sessions that lapsed
+ * without anyone renewing or ending them ({@link ExpireSessionsWorkflow}, FR-22); then deletes the
+ * WebAuthn ceremonies and registration tickets created more than one day ago (design AD-3; they
+ * are single use and expire after 5 minutes, the day of margin keeps them for diagnosis), and the
+ * refresh tokens of the sessions that ended more than {@link #ENDED_SESSION_RETENTION} ago. If the
+ * expiry step fails, the tenant's deletions wait for the next pass, so no lapsed session is
+ * deleted before it is audited.
  */
 @Slf4j
 @Component
@@ -30,15 +34,18 @@ public class WebAuthnHousekeepingJob {
     static final Duration ENDED_SESSION_RETENTION = Duration.ofDays(7);
 
     private final ActiveTenantDirectory tenantDirectory;
+    private final ExpireSessionsWorkflow expireSessionsWorkflow;
     private final WebAuthnCeremonyRepository ceremonyRepository;
     private final RegistrationTicketRepository ticketRepository;
     private final RefreshTokenRepository refreshTokenRepository;
 
     public WebAuthnHousekeepingJob(ActiveTenantDirectory tenantDirectory,
+                                   ExpireSessionsWorkflow expireSessionsWorkflow,
                                    WebAuthnCeremonyRepository ceremonyRepository,
                                    RegistrationTicketRepository ticketRepository,
                                    RefreshTokenRepository refreshTokenRepository) {
         this.tenantDirectory = tenantDirectory;
+        this.expireSessionsWorkflow = expireSessionsWorkflow;
         this.ceremonyRepository = ceremonyRepository;
         this.ticketRepository = ticketRepository;
         this.refreshTokenRepository = refreshTokenRepository;
@@ -49,15 +56,15 @@ public class WebAuthnHousekeepingJob {
         cleanup().subscribe();
     }
 
-    /** Emits the number of deleted rows across all tenants. */
+    /** Emits the number of deleted rows across all tenants (the expired sessions are not counted). */
     public Mono<Long> cleanup() {
         var now = Instant.now();
         var cutoff = now.minus(RETENTION);
         var sessionCutoff = now.minus(ENDED_SESSION_RETENTION);
         return tenantDirectory.activeTenants()
-                .concatMap(tenant -> ceremonyRepository.deleteCreatedBefore(cutoff)
-                        .zipWith(ticketRepository.deleteCreatedBefore(cutoff), Long::sum)
-                        .zipWith(refreshTokenRepository.deleteSessionsEndedBefore(sessionCutoff), Long::sum)
+                .concatMap(tenant -> expireSessionsWorkflow.expireLapsedSessions()
+                        .doOnNext(expired -> log.debug("Expired {} lapsed sessions in tenant '{}'", expired, tenant))
+                        .then(Mono.defer(() -> deleteExpiredRows(cutoff, sessionCutoff)))
                         .doOnNext(deleted -> log.debug("Deleted {} expired WebAuthn rows in tenant '{}'",
                                 deleted, tenant))
                         .onErrorResume(e -> {
@@ -70,5 +77,12 @@ public class WebAuthnHousekeepingJob {
                     log.warn("WebAuthn housekeeping could not list the active tenants: {}", e.getMessage());
                     return Mono.just(0L);
                 });
+    }
+
+    /** Runs after the expiry step, so no lapsed session is deleted before it is audited. */
+    private Mono<Long> deleteExpiredRows(Instant cutoff, Instant sessionCutoff) {
+        return ceremonyRepository.deleteCreatedBefore(cutoff)
+                .zipWith(ticketRepository.deleteCreatedBefore(cutoff), Long::sum)
+                .zipWith(refreshTokenRepository.deleteSessionsEndedBefore(sessionCutoff), Long::sum);
     }
 }

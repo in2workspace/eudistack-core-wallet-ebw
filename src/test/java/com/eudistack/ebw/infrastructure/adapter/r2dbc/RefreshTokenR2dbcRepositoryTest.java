@@ -1,20 +1,28 @@
 package com.eudistack.ebw.infrastructure.adapter.r2dbc;
 
+import com.eudistack.ebw.domain.model.ExpiredSession;
 import com.eudistack.ebw.domain.model.RefreshToken;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.entity.RefreshTokenEntity;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.mapper.RefreshTokenMapper;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.spring.SpringRefreshTokenRepository;
+import io.r2dbc.spi.Row;
+import io.r2dbc.spi.RowMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.r2dbc.core.RowsFetchSpec;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.function.BiFunction;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,12 +34,14 @@ import static org.mockito.Mockito.when;
 class RefreshTokenR2dbcRepositoryTest {
 
     private SpringRefreshTokenRepository springRepository;
+    private DatabaseClient databaseClient;
     private RefreshTokenR2dbcRepository repository;
 
     @BeforeEach
     void setUp() {
         springRepository = mock(SpringRefreshTokenRepository.class);
-        repository = new RefreshTokenR2dbcRepository(springRepository);
+        databaseClient = mock(DatabaseClient.class);
+        repository = new RefreshTokenR2dbcRepository(springRepository, databaseClient);
     }
 
     private static RefreshToken token() {
@@ -109,9 +119,48 @@ class RefreshTokenR2dbcRepositoryTest {
 
         // Act + Assert
         StepVerifier.create(repository.revokeByPasskeyId(passkeyId)).verifyComplete();
-        StepVerifier.create(repository.revokeBySessionId(sessionId)).verifyComplete();
+        StepVerifier.create(repository.revokeBySessionId(sessionId)).expectNext(2L).verifyComplete();
         StepVerifier.create(repository.revokeByUserIdExceptSession(userId, sessionId)).expectNext(3L).verifyComplete();
         StepVerifier.create(repository.countActiveByPasskeyId(passkeyId)).expectNext(4L).verifyComplete();
         verify(springRepository).revokeBySessionId(sessionId);
+    }
+
+    @Test
+    void revokeBySessionId_nothingReported_emitsZero() {
+        // Arrange
+        var sessionId = UUID.randomUUID();
+        when(springRepository.revokeBySessionId(sessionId)).thenReturn(Mono.empty());
+
+        // Act + Assert
+        StepVerifier.create(repository.revokeBySessionId(sessionId)).expectNext(0L).verifyComplete();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void expireLapsedSessions_closedSessions_runsTheConditionalUpdateAndMapsEachRow() {
+        // Arrange
+        var sessionId = UUID.randomUUID();
+        var userId = UUID.randomUUID();
+        var startedAt = Instant.parse("2026-10-15T08:00:00Z");
+        var lastExpiresAt = Instant.parse("2026-10-15T09:00:00Z");
+        var row = mock(Row.class);
+        when(row.get("session_id", UUID.class)).thenReturn(sessionId);
+        when(row.get("user_id", UUID.class)).thenReturn(userId);
+        when(row.get("session_started_at", Instant.class)).thenReturn(startedAt);
+        when(row.get("last_expires_at", Instant.class)).thenReturn(lastExpiresAt);
+        var spec = mock(DatabaseClient.GenericExecuteSpec.class);
+        when(databaseClient.sql(anyString())).thenReturn(spec);
+        when(spec.map(any(BiFunction.class))).thenAnswer(inv -> {
+            var mapper = (BiFunction<Row, RowMetadata, ExpiredSession>) inv.getArgument(0);
+            RowsFetchSpec<ExpiredSession> rows = mock(RowsFetchSpec.class);
+            when(rows.all()).thenReturn(Flux.defer(() -> Flux.just(mapper.apply(row, mock(RowMetadata.class)))));
+            return rows;
+        });
+
+        // Act + Assert
+        StepVerifier.create(repository.expireLapsedSessions())
+                .expectNext(new ExpiredSession(sessionId, userId, startedAt, lastExpiresAt))
+                .verifyComplete();
+        verify(databaseClient).sql(RefreshTokenR2dbcRepository.EXPIRE_LAPSED_SESSIONS_SQL);
     }
 }

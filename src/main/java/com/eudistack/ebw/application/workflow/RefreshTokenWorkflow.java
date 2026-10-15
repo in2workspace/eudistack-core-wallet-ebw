@@ -44,7 +44,7 @@ public class RefreshTokenWorkflow {
                                         tuple.getT1(), tuple.getT2()))))
                 .onErrorResume(SessionExpiredException.class, e -> auditService.record(
                                 AuthAuditEvents.ENTITY_SESSION, e.getSessionId(), AuthAuditEvents.SESSION_EXPIRED,
-                                e.getUserId(), Map.of("reason", e.getReason().name().toLowerCase()))
+                                e.getUserId(), Map.of("reason", e.getReason().code()))
                         .then(Mono.error(new InvalidSessionException())))
                 .onErrorResume(TokenFamilyCompromisedException.class, e -> auditService.record(
                                 AuthAuditEvents.ENTITY_SESSION, e.getSessionId(), AuthAuditEvents.SESSION_ENDED,

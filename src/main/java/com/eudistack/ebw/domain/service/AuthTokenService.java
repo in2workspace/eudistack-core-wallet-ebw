@@ -1,6 +1,7 @@
 package com.eudistack.ebw.domain.service;
 
 import com.eudistack.ebw.domain.model.AuthTokenSettings;
+import com.eudistack.ebw.domain.model.ExpiredSession;
 import com.eudistack.ebw.domain.model.IssuedSession;
 import com.eudistack.ebw.domain.model.RefreshToken;
 import com.eudistack.ebw.domain.model.SessionSettings;
@@ -15,6 +16,7 @@ import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
@@ -88,14 +90,10 @@ public class AuthTokenService {
             return rejectRevoked(existing);
         }
         if (existing.isPastMaxDuration(now, settings.maxDuration())) {
-            return refreshTokenRepository.revokeBySessionId(existing.getSessionId())
-                    .then(Mono.error(new SessionExpiredException(existing.getSessionId(), user.getId(),
-                            SessionExpiredException.Reason.MAX_DURATION)));
+            return expire(existing, SessionExpiredException.Reason.MAX_DURATION);
         }
         if (existing.isExpired(now)) {
-            return refreshTokenRepository.revokeBySessionId(existing.getSessionId())
-                    .then(Mono.error(new SessionExpiredException(existing.getSessionId(), user.getId(),
-                            SessionExpiredException.Reason.IDLE_TIMEOUT)));
+            return expire(existing, SessionExpiredException.Reason.IDLE_TIMEOUT);
         }
         // The new token is stored before the old one is revoked, so the session always has an
         // active token (the access-token session check never sees a gap during a renewal).
@@ -121,9 +119,23 @@ public class AuthTokenService {
         return refreshTokenRepository.findByTokenHash(hashProvider.sha256(rawToken));
     }
 
-    /** Ends a session: none of its tokens can be renewed any more. */
-    public Mono<Void> endSession(UUID sessionId) {
-        return refreshTokenRepository.revokeBySessionId(sessionId);
+    /**
+     * Ends a session: none of its tokens can be renewed any more. Emits {@code true} when this
+     * call ended it, {@code false} when it had already been ended.
+     */
+    public Mono<Boolean> endSession(UUID sessionId) {
+        return refreshTokenRepository.revokeBySessionId(sessionId)
+                .map(revoked -> revoked > 0)
+                .defaultIfEmpty(false);
+    }
+
+    /**
+     * Closes the sessions that lapsed without anyone renewing or ending them, the proactive
+     * counterpart of the {@link SessionExpiredException} of a renewal. Revoking their tokens is
+     * the mark that the session expired, shared with the renewal, so each one is emitted once.
+     */
+    public Flux<ExpiredSession> expireLapsedSessions() {
+        return refreshTokenRepository.expireLapsedSessions();
     }
 
     /** Ends every session of the account except the given one. Emits the number of revoked tokens. */
@@ -173,6 +185,19 @@ public class AuthTokenService {
      */
     public Mono<Boolean> isSessionActive(UUID sessionId) {
         return refreshTokenRepository.hasActiveToken(sessionId);
+    }
+
+    /**
+     * Revokes the session of an expired token. The expiry is reported only by the caller that
+     * revoked it: if the housekeeping pass closed the session first, it already recorded it.
+     */
+    private <T> Mono<T> expire(RefreshToken existing, SessionExpiredException.Reason reason) {
+        return refreshTokenRepository.revokeBySessionId(existing.getSessionId())
+                .defaultIfEmpty(0L)
+                .flatMap(revoked -> revoked > 0
+                        ? Mono.<T>error(new SessionExpiredException(existing.getSessionId(), existing.getUserId(),
+                                reason))
+                        : Mono.<T>error(new InvalidSessionException()));
     }
 
     /**
