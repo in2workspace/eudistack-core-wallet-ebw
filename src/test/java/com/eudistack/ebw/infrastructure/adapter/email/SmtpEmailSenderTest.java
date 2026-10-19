@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.support.ResourceBundleMessageSource;
+import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -27,8 +28,10 @@ import java.util.Map;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -91,6 +94,17 @@ class SmtpEmailSenderTest {
         assertThat(message.getSubject()).isEqualTo("Your sandbox verification code — Wallet");
         assertThat(htmlOf(message)).doesNotContain("<img");
         assertThat(contentIds(message)).isEmpty();
+    }
+
+    @Test
+    void sendOtp_smtpRejectsTheMessage_propagatesTheError() {
+        when(tenantRegistryRepository.findDisplayName("dome")).thenReturn(Mono.just("DOME"));
+        doThrow(new MailSendException("relay denied")).when(mailSender).send(any(MimeMessage.class));
+
+        StepVerifier.create(sender.sendOtp(TO, "123456")
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "dome")))
+                .expectError(MailSendException.class)
+                .verify();
     }
 
     private MimeMessage send(String tenant) {
