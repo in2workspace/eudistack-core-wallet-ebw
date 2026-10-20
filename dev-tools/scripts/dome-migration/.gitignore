@@ -1,0 +1,5 @@
+# Local inputs and outputs (contain private keys, credentials and personal data)
+*.csv
+*.sql
+.env
+.venv/
