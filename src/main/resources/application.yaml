@@ -124,10 +124,9 @@ keymanager:
     opaque-rejection-delay-millis: ${KEYMANAGER_SIGN_OPAQUE_REJECTION_DELAY_MS:80}
 
 email-branding:
-  # Tenant-assets root of this environment (one per environment, set by platform-iac).
-  # Default targets DEV on purpose: local SMTP sends real emails, and external mail
-  # clients (Gmail image proxy) cannot load images from 127.0.0.1.nip.io.
-  assets-base-url: ${EMAIL_ASSETS_BASE_URL:https://sandbox.dev.eudistack.net/assets/tenants}
+  # Tenant-assets root of this environment. No default: platform-iac sets it per environment
+  # and local-env/compose.yaml (platform-dev) for local; startup fails if it is missing.
+  assets-base-url: ${EMAIL_ASSETS_BASE_URL:}
 
 logging:
   pattern:
