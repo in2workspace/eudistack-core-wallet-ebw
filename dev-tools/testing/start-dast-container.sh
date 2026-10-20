@@ -17,6 +17,7 @@ docker run -d --name "${CONTAINER_NAME}" \
   -e DB_USERNAME="${DAST_DB_USERNAME}" \
   -e DB_PASSWORD="${DAST_DB_PASSWORD}" \
   -e TRUST_FORWARDED_HOST=true \
+  -e EMAIL_ASSETS_BASE_URL=https://assets.dast.example/assets/tenants \
   "${CONTAINER_IMAGE}"
 
 profile_table='sandbox_business_wallet.tenant_wallet_profile'
