@@ -19,9 +19,6 @@
         :root { color-scheme: light only; supported-color-schemes: light only; }
         /* Repeated per element: some clients do not inherit the font into nested tables. */
         body, table, td, p, span, a { font-family: 'Blinker', Arial, Helvetica, sans-serif; }
-        @media (max-width: 480px) {
-            .email-box { width: 100% !important; }
-        }
     </style>
     <!-- Outlook desktop falls back to Times New Roman (not Arial) when the first font is not installed. -->
     <!-- .break-long: Outlook desktop wraps long tokens with word-break: break-word, which works there; other
