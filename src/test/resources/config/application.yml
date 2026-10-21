@@ -1,0 +1,4 @@
+# Test-only additions to the main application config (classpath:/config/ is loaded on top of it).
+# EMAIL_ASSETS_BASE_URL has no default in the main config, so the Spring Boot tests set it here.
+email-branding:
+  assets-base-url: https://assets.test.example/assets/tenants

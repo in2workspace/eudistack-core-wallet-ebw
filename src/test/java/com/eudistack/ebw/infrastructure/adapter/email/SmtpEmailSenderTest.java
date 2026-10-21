@@ -1,87 +1,145 @@
 package com.eudistack.ebw.infrastructure.adapter.email;
 
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.domain.repository.TenantRegistryRepository;
 import com.eudistack.ebw.domain.service.TenantConfigService;
-import jakarta.mail.Message;
+import com.eudistack.ebw.infrastructure.adapter.properties.EmailBrandingProperties;
+import com.eudistack.ebw.infrastructure.adapter.properties.EmailBrandingProperties.SocialLink;
+import com.eudistack.ebw.infrastructure.adapter.properties.EmailBrandingProperties.TenantEmailBranding;
+import com.eudistack.ebw.infrastructure.adapter.properties.OtpProperties;
+import jakarta.mail.Address;
 import jakarta.mail.Session;
+import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMessage;
+import jakarta.mail.internet.MimeMultipart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.MessageSource;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
-import org.thymeleaf.context.IContext;
-import org.thymeleaf.spring6.SpringTemplateEngine;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Unit tests for {@link SmtpEmailSender} — tenant-specific sender address, rendered template and subject.
- */
-@ExtendWith(MockitoExtension.class)
 class SmtpEmailSenderTest {
 
-    private static final String DEFAULT_FROM = "noreply@eudistack.com";
+    private static final String TO = "user@example.com";
 
-    @Mock private JavaMailSender mailSender;
-    @Mock private SpringTemplateEngine templateEngine;
-    @Mock private MessageSource messageSource;
-    @Mock private TenantConfigService tenantConfigService;
-
+    private JavaMailSender mailSender;
+    private TenantRegistryRepository tenantRegistryRepository;
     private SmtpEmailSender sender;
 
     @BeforeEach
     void setUp() {
-        sender = new SmtpEmailSender(mailSender, templateEngine, messageSource, tenantConfigService, DEFAULT_FROM);
-        when(mailSender.createMimeMessage()).thenReturn(new MimeMessage(Session.getInstance(new Properties())));
-        when(templateEngine.process(eq("verification-code-email"), any(IContext.class))).thenReturn("<p>code</p>");
-        when(messageSource.getMessage(eq("email.tx-code.subject"), isNull(), any())).thenReturn("Your code");
+        mailSender = mock(JavaMailSender.class);
+        when(mailSender.createMimeMessage()).thenAnswer(inv -> new MimeMessage(Session.getInstance(new Properties())));
+
+        TenantConfigService tenantConfigService = mock(TenantConfigService.class);
+        when(tenantConfigService.getStringOrDefault(eq("ebw.mail_from"), anyString()))
+                .thenReturn(Mono.just("wallet@dome.example"));
+
+        tenantRegistryRepository = mock(TenantRegistryRepository.class);
+
+        ResourceBundleMessageSource messageSource = new ResourceBundleMessageSource();
+        messageSource.setBasename("messages");
+        messageSource.setDefaultEncoding("UTF-8");
+
+        var branding = new EmailBrandingResolver(new EmailBrandingProperties("https://assets.example.com/tenants", Map.of(
+                "dome", new TenantEmailBranding(true, true, List.of(new SocialLink("github", "https://github.com/dome"))))));
+
+        sender = new SmtpEmailSender(mailSender, VerificationCodeEmailTemplateTest.engine(), messageSource,
+                tenantConfigService, tenantRegistryRepository, branding,
+                new OtpProperties(6, Duration.ofMinutes(15), 5), "noreply@eudistack.com");
     }
 
     @Test
-    void sendOtp_tenantMailFromConfigured_sendsTheRenderedMessageFromIt() throws Exception {
-        // Arrange
-        when(tenantConfigService.getStringOrDefault("ebw.mail_from", DEFAULT_FROM))
-                .thenReturn(Mono.just("wallet@sandbox.example"));
+    void sendOtp_brandedTenant_namesTheTenantInTheSubjectAndAttachesItsSocialIcons() throws Exception {
+        when(tenantRegistryRepository.findDisplayName("dome")).thenReturn(Mono.just("DOME"));
 
-        // Act
-        var result = sender.sendOtp("holder@example.com", "123456");
+        MimeMessage message = send("dome");
 
-        // Assert
-        StepVerifier.create(result).verifyComplete();
-        var sent = ArgumentCaptor.forClass(MimeMessage.class);
-        verify(mailSender).send(sent.capture());
-        assertThat(sent.getValue().getFrom()[0]).hasToString("wallet@sandbox.example");
-        assertThat(sent.getValue().getRecipients(Message.RecipientType.TO)[0]).hasToString("holder@example.com");
-        assertThat(sent.getValue().getSubject()).isEqualTo("Your code");
-        var context = ArgumentCaptor.forClass(IContext.class);
-        verify(templateEngine).process(eq("verification-code-email"), context.capture());
-        assertThat(context.getValue().getVariable("txCode")).isEqualTo("123456");
+        assertThat(message.getSubject()).isEqualTo("Your DOME verification code — Wallet");
+        assertThat(message.getFrom()).extracting(Address::toString).containsExactly("wallet@dome.example");
+        assertThat(message.getAllRecipients()).extracting(Address::toString).containsExactly(TO);
+        String html = htmlOf(message);
+        assertThat(html)
+                .contains(">123456</span>")
+                .contains("It expires in 15 minutes.")
+                .contains("https://assets.example.com/tenants/dome/email/logo.png")
+                .contains("cid:icon-github.png");
+        assertThat(contentIds(message)).containsExactly("<icon-github.png>");
+    }
+
+    @Test
+    void sendOtp_unregisteredTenantWithoutBranding_fallsBackToTheTenantIdAndHasNoImages() throws Exception {
+        when(tenantRegistryRepository.findDisplayName("sandbox")).thenReturn(Mono.empty());
+
+        MimeMessage message = send("sandbox");
+
+        assertThat(message.getSubject()).isEqualTo("Your sandbox verification code — Wallet");
+        assertThat(htmlOf(message)).doesNotContain("<img");
+        assertThat(contentIds(message)).isEmpty();
     }
 
     @Test
     void sendOtp_smtpRejectsTheMessage_propagatesTheError() {
-        // Arrange
-        when(tenantConfigService.getStringOrDefault("ebw.mail_from", DEFAULT_FROM)).thenReturn(Mono.just(DEFAULT_FROM));
+        when(tenantRegistryRepository.findDisplayName("dome")).thenReturn(Mono.just("DOME"));
         doThrow(new MailSendException("relay denied")).when(mailSender).send(any(MimeMessage.class));
 
-        // Act
-        var result = sender.sendOtp("holder@example.com", "123456");
+        StepVerifier.create(sender.sendOtp(TO, "123456")
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "dome")))
+                .expectError(MailSendException.class)
+                .verify();
+    }
 
-        // Assert
-        StepVerifier.create(result).expectError(MailSendException.class).verify();
+    private MimeMessage send(String tenant) {
+        StepVerifier.create(sender.sendOtp(TO, "123456")
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, tenant)))
+                .verifyComplete();
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        return captor.getValue();
+    }
+
+    /** HTML body: the first part of the multipart/related tree. */
+    private static String htmlOf(MimeMessage message) throws Exception {
+        message.saveChanges();
+        Object content = message.getContent();
+        while (content instanceof MimeMultipart multipart) {
+            content = multipart.getBodyPart(0).getContent();
+        }
+        return (String) content;
+    }
+
+    private static List<String> contentIds(MimeMessage message) throws Exception {
+        List<String> ids = new ArrayList<>();
+        collectContentIds((MimeMultipart) message.getContent(), ids);
+        return ids;
+    }
+
+    private static void collectContentIds(MimeMultipart multipart, List<String> ids) throws Exception {
+        for (int i = 0; i < multipart.getCount(); i++) {
+            var part = (MimeBodyPart) multipart.getBodyPart(i);
+            if (part.getContent() instanceof MimeMultipart nested) {
+                collectContentIds(nested, ids);
+            } else if (part.getContentID() != null) {
+                ids.add(part.getContentID());
+            }
+        }
     }
 }

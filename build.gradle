@@ -108,6 +108,11 @@ sonar {
         property 'sonar.host.url', 'https://sonarcloud.io'
         property 'sonar.sources', 'src/main/java,src/main/resources'
         property 'sonar.exclusions', 'src/main/resources/**/*.sql'
+        // Email templates need the HTML attributes deprecated in HTML5 (width, align, cellpadding, bgcolor...):
+        // Outlook desktop and other email clients ignore their CSS equivalents.
+        property 'sonar.issue.ignore.multicriteria', 'emailhtml'
+        property 'sonar.issue.ignore.multicriteria.emailhtml.ruleKey', 'Web:S1827'
+        property 'sonar.issue.ignore.multicriteria.emailhtml.resourceKey', 'src/main/resources/templates/**/*.html'
         property 'sonar.coverage.jacoco.xmlReportPaths', 'build/reports/jacoco/test/jacocoTestReport.xml'
     }
 }
@@ -137,6 +142,11 @@ tasks.named('test') {
     finalizedBy(tasks.jacocoTestReport)
     useJUnitPlatform {
         excludeTags 'integration'
+    }
+    // Forwards -Demail.previews=true (and -Demail.previews.assets) to the test JVM (EmailPreviewGeneratorTest writes build/email-previews)
+    systemProperty 'email.previews', System.getProperty('email.previews', 'false')
+    if (System.getProperty('email.previews.assets')) {
+        systemProperty 'email.previews.assets', System.getProperty('email.previews.assets')
     }
 }
 
