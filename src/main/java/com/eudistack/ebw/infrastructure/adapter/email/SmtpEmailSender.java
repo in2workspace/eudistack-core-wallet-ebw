@@ -84,7 +84,7 @@ public class SmtpEmailSender implements EmailSender {
                     .flatMap(tuple -> Mono.fromCallable(
                                     () -> buildMessage(email, code, tuple.getT1(), tuple.getT2(), emailBrandingResolver.resolve(tenant)))
                             .subscribeOn(Schedulers.boundedElastic()))
-                    .flatMap(mimeMessage -> externalSystemAccessRecorder.record(mailProvider(), TEMPLATE,
+                    .flatMap(mimeMessage -> externalSystemAccessRecorder.recordAccess(mailProvider(), TEMPLATE,
                             Mono.<Void>fromRunnable(() -> mailSender.send(mimeMessage))
                                     .subscribeOn(Schedulers.boundedElastic())));
         }).then();

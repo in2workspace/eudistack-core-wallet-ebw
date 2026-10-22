@@ -23,6 +23,6 @@ public interface AuditTrailPort {
      * hide the operation. The adapter reports the failure itself.
      */
     default Mono<Void> stageBestEffort(AuditEntry entry) {
-        return stageInNewTransaction(entry).onErrorResume(auditError -> Mono.empty());
+        return stageInNewTransaction(entry).onErrorResume(_ -> Mono.empty());
     }
 }

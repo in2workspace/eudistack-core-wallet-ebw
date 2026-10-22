@@ -27,7 +27,7 @@ class ExternalSystemAccessRecorderTest {
         Mono<String> call = Mono.just("sent");
 
         // Act & Assert
-        StepVerifier.create(recorder.record(TARGET, "verification-code-email", call))
+        StepVerifier.create(recorder.recordAccess(TARGET, "verification-code-email", call))
                 .expectNext("sent")
                 .verifyComplete();
         AuditEntry entry = auditTrail.staged().getFirst();
@@ -46,7 +46,7 @@ class ExternalSystemAccessRecorderTest {
         Mono<Void> call = Mono.empty();
 
         // Act & Assert
-        StepVerifier.create(recorder.record(TARGET, "verification-code-email", call)).verifyComplete();
+        StepVerifier.create(recorder.recordAccess(TARGET, "verification-code-email", call)).verifyComplete();
         assertEquals(AuditResult.SUCCESS, auditTrail.staged().getFirst().result());
     }
 
@@ -56,7 +56,7 @@ class ExternalSystemAccessRecorderTest {
         ConnectException error = new ConnectException("refused");
 
         // Act & Assert
-        StepVerifier.create(recorder.record(TARGET, "verification-code-email", Mono.error(error)))
+        StepVerifier.create(recorder.recordAccess(TARGET, "verification-code-email", Mono.error(error)))
                 .expectErrorMatches(propagated -> propagated == error)
                 .verify();
         AuditEntry entry = auditTrail.staged().getFirst();
@@ -70,7 +70,7 @@ class ExternalSystemAccessRecorderTest {
         ExternalSystemAccessRecorder brokenRecorder = new ExternalSystemAccessRecorder(new RecordingAuditTrail().failing());
 
         // Act & Assert
-        StepVerifier.create(brokenRecorder.record(TARGET, "verification-code-email", Mono.just("sent")))
+        StepVerifier.create(brokenRecorder.recordAccess(TARGET, "verification-code-email", Mono.just("sent")))
                 .expectNext("sent")
                 .verifyComplete();
     }
@@ -82,7 +82,7 @@ class ExternalSystemAccessRecorderTest {
         IllegalStateException error = new IllegalStateException("smtp down");
 
         // Act & Assert
-        StepVerifier.create(brokenRecorder.record(TARGET, "verification-code-email", Mono.error(error)))
+        StepVerifier.create(brokenRecorder.recordAccess(TARGET, "verification-code-email", Mono.error(error)))
                 .expectErrorMatches(propagated -> propagated == error)
                 .verify();
         assertTrue(auditTrail.staged().isEmpty());
