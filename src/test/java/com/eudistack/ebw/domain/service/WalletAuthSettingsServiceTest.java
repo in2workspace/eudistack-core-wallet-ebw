@@ -95,12 +95,12 @@ class WalletAuthSettingsServiceTest {
 
     @ParameterizedTest
     @CsvSource({
-            "PT2H, PT8H, PT15M, PT8H",     // idle above PT1H
-            "PT15M, PT48H, PT15M, PT8H",   // max above PT24H
-            "nonsense, PT8H, PT15M, PT8H", // not ISO-8601
-            "-PT5M, PT8H, PT15M, PT8H",    // negative
-            "PT0S, PT8H, PT15M, PT8H",     // zero
-            "PT1H, PT30M, PT15M, PT8H"     // idle longer than max: both defaults
+            "PT2H, PT8H, PT5M, PT8H",      // idle above PT1H
+            "PT15M, PT48H, PT15M, PT8H",   // max above PT24H: the valid idle is kept
+            "nonsense, PT8H, PT5M, PT8H",  // not ISO-8601
+            "-PT5M, PT8H, PT5M, PT8H",     // negative
+            "PT0S, PT8H, PT5M, PT8H",      // zero
+            "PT1H, PT30M, PT5M, PT8H"      // idle longer than max: both defaults
     })
     void session_outOfRange_fallsBackToTheDefaults(String idle, String max, String expectedIdle, String expectedMax) {
         // Arrange

@@ -9,7 +9,7 @@ import java.util.Objects;
  */
 public record SessionSettings(Duration idleTimeout, Duration maxDuration) {
 
-    public static final Duration DEFAULT_IDLE_TIMEOUT = Duration.ofMinutes(15);
+    public static final Duration DEFAULT_IDLE_TIMEOUT = Duration.ofMinutes(5);
     public static final Duration DEFAULT_MAX_DURATION = Duration.ofHours(8);
 
     public SessionSettings {

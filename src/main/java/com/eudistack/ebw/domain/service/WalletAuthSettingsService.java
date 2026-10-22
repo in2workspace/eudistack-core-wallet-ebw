@@ -21,7 +21,7 @@ import java.util.List;
  *   <li>{@value #ORIGINS}: comma-separated full origins of the Wallet App, default
  *       {@code https://<rp_id>}.</li>
  *   <li>{@value #IDLE_TIMEOUT} / {@value #MAX_DURATION}: ISO-8601 durations, default
- *       {@code PT15M} / {@code PT8H}, at most {@code PT1H} / {@code PT24H}, and the inactivity
+ *       {@code PT5M} / {@code PT8H}, at most {@code PT1H} / {@code PT24H}, and the inactivity
  *       period not longer than the maximum duration.</li>
  * </ul>
  */
