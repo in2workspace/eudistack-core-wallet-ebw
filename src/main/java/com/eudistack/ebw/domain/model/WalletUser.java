@@ -16,10 +16,10 @@ public class WalletUser {
 
     public static final int USER_HANDLE_LENGTH = 32;
 
-    private UUID id;
-    private String email;
-    private byte[] webauthnUserHandle;
-    private Instant createdAt;
+    private final UUID id;
+    private final String email;
+    private final byte[] webauthnUserHandle;
+    private final Instant createdAt;
     private Instant updatedAt;
 
     public WalletUser(UUID id, String email, byte[] webauthnUserHandle, Instant createdAt, Instant updatedAt) {

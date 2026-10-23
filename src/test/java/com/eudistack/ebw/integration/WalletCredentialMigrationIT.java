@@ -31,10 +31,9 @@ class WalletCredentialMigrationIT extends IntegrationTestBase {
 
         // Assert
         var rows = query("SELECT bound, passkey_id FROM wallet_credential WHERE id = '" + credentialId + "'");
-        assertThat(rows).singleElement().satisfies(row -> {
-            assertThat(row.get("bound")).isEqualTo(false);
-            assertThat(row.get("passkey_id")).isNull();
-        });
+        assertThat(rows).singleElement().satisfies(row -> assertThat(row)
+                .containsEntry("bound", false)
+                .containsEntry("passkey_id", null));
     }
 
     @Test
@@ -49,6 +48,6 @@ class WalletCredentialMigrationIT extends IntegrationTestBase {
         // Assert: V8 gives every account a random 32-byte user handle even when the writer omits it
         var rows = query("SELECT octet_length(webauthn_user_handle) AS len FROM wallet_user WHERE id = '"
                 + userId + "'");
-        assertThat(rows).singleElement().satisfies(row -> assertThat(row.get("len")).isEqualTo(32));
+        assertThat(rows).singleElement().satisfies(row -> assertThat(row).containsEntry("len", 32));
     }
 }
