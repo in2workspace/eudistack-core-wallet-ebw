@@ -124,6 +124,10 @@ public class PasskeyRegistrationWorkflow {
     private Mono<IssuedSession> registerVerified(RegisterPasskeyCommand command, RegistrationTicket ticket,
                                                  WebAuthnCeremony ceremony, WalletUser user,
                                                  RelyingPartySettings relyingParty, boolean passkeyCustody) {
+        // Declared by the Wallet App after its own PRF check, not verified here: the PRF extension
+        // outputs are not signed by the authenticator, and Safari only reports PRF on get(), never on
+        // create(). A passkey without PRF stored as prf-enabled cannot unwrap the holder key, so
+        // signing fails for it; it never gives access to keys it could not derive.
         boolean prfSupported = Boolean.TRUE.equals(command.prfSupported());
         if (passkeyCustody && !prfSupported) {
             AuthRejectionLog.log(log, REJECTION_SUBJECT, AuthRejectionReason.PRF_UNSUPPORTED);

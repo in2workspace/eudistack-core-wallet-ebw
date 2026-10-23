@@ -171,6 +171,24 @@ class PasskeyRegistrationWorkflowTest {
     }
 
     @Test
+    void register_passkeyCustodyWithPrfDeclaredButNotInTheResponse_trustsTheClientAndStoresItWithPrf() {
+        // Arrange: the registration response reports no PRF (Safari only reports it on get()). The
+        // service cannot check it: the extension outputs are not signed. The Wallet App's PRF check decides.
+        when(custodyPolicy.isPasskeyCustody()).thenReturn(Mono.just(true));
+        verifiesAndStores(0);
+
+        // Act
+        StepVerifier.create(workflow.register(command(true))).expectNext(session).verifyComplete();
+
+        // Assert
+        var stored = org.mockito.ArgumentCaptor.forClass(UserPasskey.class);
+        verify(passkeyRepository).insert(stored.capture());
+        assertThat(stored.getValue().isPrfEnabled()).isTrue();
+        verify(auditService).record(eq("passkey"), any(), eq(AuthAuditEvents.PASSKEY_REGISTERED), eq(user.getId()),
+                eq(Map.of("prf_enabled", true)));
+    }
+
+    @Test
     void register_unknownCeremony_rejectsAndAuditsTheReason() {
         // Arrange
         when(ceremonyRepository.consume(ceremony.id(), CeremonyType.REGISTRATION)).thenReturn(Mono.empty());
