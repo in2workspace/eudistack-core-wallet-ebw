@@ -31,17 +31,21 @@ import static org.mockito.Mockito.when;
 class DeleteCredentialWorkflowTest {
 
     private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID PASSKEY_ID = UUID.randomUUID();
     private static final UUID CREDENTIAL_ID = UUID.randomUUID();
 
     @Mock private WalletCredentialRepository credentialRepository;
     @Mock private CredentialService credentialService;
     @Mock private AuditService auditService;
+    @Mock private PasskeyCustodyPolicy custodyPolicy;
 
     private DeleteCredentialWorkflow workflow;
 
     @BeforeEach
     void setUp() {
-        workflow = new DeleteCredentialWorkflow(credentialRepository, credentialService, auditService);
+        workflow = new DeleteCredentialWorkflow(credentialRepository, credentialService, auditService, custodyPolicy);
+        org.mockito.Mockito.lenient().when(custodyPolicy.visibleToSession(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
     }
 
     @Test
@@ -54,7 +58,7 @@ class DeleteCredentialWorkflowTest {
         when(credentialRepository.deleteById(CREDENTIAL_ID)).thenReturn(Mono.empty());
 
         // Act
-        var result = workflow.deleteCredential(USER_ID, CREDENTIAL_ID);
+        var result = workflow.deleteCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID);
 
         // Assert
         StepVerifier.create(result).verifyComplete();
@@ -74,7 +78,7 @@ class DeleteCredentialWorkflowTest {
         when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.empty());
 
         // Act
-        var result = workflow.deleteCredential(USER_ID, CREDENTIAL_ID);
+        var result = workflow.deleteCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID);
 
         // Assert
         StepVerifier.create(result)
@@ -82,5 +86,19 @@ class DeleteCredentialWorkflowTest {
                 .verify();
         verify(credentialRepository, never()).deleteById(any());
         verifyNoInteractions(auditService);
+    }
+
+    @Test
+    void deleteCredential_credentialOfAnotherPasskeyWithPasskeyCustody_failsAsNotFound() {
+        // Arrange — EUD-11 FR-14
+        var hidden = CredentialWorkflowFixtures.credential(USER_ID, true, java.util.UUID.randomUUID());
+        when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.just(hidden));
+        when(custodyPolicy.visibleToSession(hidden, PASSKEY_ID)).thenReturn(Mono.empty());
+
+        // Act + Assert
+        StepVerifier.create(workflow.deleteCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID))
+                .expectError(com.eudistack.ebw.domain.model.exception.CredentialNotFoundException.class)
+                .verify();
+        verify(credentialRepository, never()).deleteById(any());
     }
 }

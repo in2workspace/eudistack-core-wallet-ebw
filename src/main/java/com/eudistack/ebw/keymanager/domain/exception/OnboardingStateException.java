@@ -1,7 +1,7 @@
 package com.eudistack.ebw.keymanager.domain.exception;
 
 /**
- * Thrown when a hybrid onboarding commit cannot proceed due to a state conflict.
+ * Thrown when a passkey-prf onboarding commit cannot proceed due to a state conflict.
  *
  * <p>Two conditions trigger this exception:
  * <ul>
@@ -12,7 +12,7 @@ package com.eudistack.ebw.keymanager.domain.exception;
  *       different {@code wrapped_blob} content — a non-idempotent replay.</li>
  * </ul>
  *
- * <p>Maps to HTTP 409 in {@code HybridOnboardingExceptionHandler} (architecture.md §8.3
+ * <p>Maps to HTTP 409 in {@code PasskeyPrfOnboardingExceptionHandler} (architecture.md §8.3
  * {@code idempotency_replay}).</p>
  *
  * <p>Spec: EUDISTACK-534 ES-02, ES-03; architecture.md §8.3.</p>

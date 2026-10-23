@@ -41,7 +41,7 @@ class ActivityControllerTest {
     @BeforeEach
     void setUp() {
         controller = new ActivityController(recordActivityWorkflow, listActivityWorkflow);
-        auth = new JwtAuthenticationToken(USER_ID, "holder@example.com", List.of());
+        auth = new JwtAuthenticationToken(USER_ID, "holder@example.com", UUID.randomUUID(), UUID.randomUUID(), List.of());
     }
 
     @Test

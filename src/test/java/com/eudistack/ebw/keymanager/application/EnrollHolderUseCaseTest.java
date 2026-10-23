@@ -9,7 +9,7 @@ import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
 import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
 import com.eudistack.ebw.keymanager.domain.model.KeyAuditEventAssertions;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
-import com.eudistack.ebw.keymanager.domain.port.HybridKeyManagerTelemetryPort;
+import com.eudistack.ebw.keymanager.domain.port.PasskeyPrfKeyManagerTelemetryPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
 import io.micrometer.tracing.Span;
@@ -66,7 +66,7 @@ class EnrollHolderUseCaseTest {
 
     @Mock private PrfSaltUseCase prfSaltUseCase;
     @Mock private WrappedKeyHandleRepository repository;
-    @Mock private HybridKeyManagerTelemetryPort telemetry;
+    @Mock private PasskeyPrfKeyManagerTelemetryPort telemetry;
     @Mock private KeyAuditPort auditPort;
     @Mock private Tracer tracer;
     @Mock private Span span;
@@ -213,7 +213,7 @@ class EnrollHolderUseCaseTest {
                 .verify();
     }
 
-    // AC-03 (cnf_jwk must not contain "d") is validated by HybridOnboardingController before
+    // AC-03 (cnf_jwk must not contain "d") is validated by PasskeyPrfOnboardingController before
     // reaching this use case — see EnrollHolderControllerIT for coverage.
 
     @Test
@@ -314,36 +314,6 @@ class EnrollHolderUseCaseTest {
         when(auditPort.emit(any())).thenReturn(Mono.error(new RuntimeException("cloudwatch unavailable")));
 
         StepVerifier.create(useCase.recordConsent(TENANT, HOLDER))
-                .expectError(RuntimeException.class)
-                .verify();
-    }
-
-    // --------------------------------------------------------------- recordPrfUnsupported (US-08)
-
-    @Test
-    void recordPrfUnsupported_givenValidArgs_emitsPrfUnsupportedAuditEvent() {
-        when(auditPort.emit(any())).thenReturn(Mono.empty());
-
-        StepVerifier.create(useCase.recordPrfUnsupported(TENANT, HOLDER))
-                .verifyComplete();
-
-        ArgumentCaptor<KeyAuditEvent> captor = ArgumentCaptor.forClass(KeyAuditEvent.class);
-        verify(auditPort).emit(captor.capture());
-        KeyAuditEvent emitted = captor.getValue();
-
-        assertThat(emitted.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED);
-        assertThat(emitted.tenantId()).isEqualTo(TENANT);
-        assertThat(emitted.holderId()).isEqualTo(HOLDER);
-        assertThat(emitted.credentialId()).isNull();
-        assertThat(emitted.correlationId()).isEqualTo(TRACE_ID);
-        KeyAuditEventAssertions.assertNoSensitiveData(emitted);
-    }
-
-    @Test
-    void recordPrfUnsupported_auditFailure_propagatesError() {
-        when(auditPort.emit(any())).thenReturn(Mono.error(new RuntimeException("cloudwatch unavailable")));
-
-        StepVerifier.create(useCase.recordPrfUnsupported(TENANT, HOLDER))
                 .expectError(RuntimeException.class)
                 .verify();
     }

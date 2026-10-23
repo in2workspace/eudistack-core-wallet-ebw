@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Two simultaneous {@code getOrCreatePrfSalt(tenant, H1, C1)} calls race to insert
  * the first salt for a fresh {@code (H1, C1)} key. The composite PK constraint in
- * {@code hybrid_prf_salt} is the sole uniqueness guard: the losing INSERT is silently
+ * {@code passkey_prf_salt} is the sole uniqueness guard: the losing INSERT is silently
  * swallowed by {@link PrfSaltRepository} (duplicate-key → {@code Mono.empty()}); the
  * loser then re-SELECTs and returns the winner's value (EC-03, R-3).</p>
  *
@@ -123,7 +123,7 @@ class PrfSaltConcurrencyIT {
                     + "VALUES ('" + HOLDER_ID + "', 'concurrent@test.com') "
                     + "ON CONFLICT (id) DO NOTHING");
             conn.createStatement().execute(
-                    "DELETE FROM " + TENANT_SCHEMA + ".hybrid_prf_salt");
+                    "DELETE FROM " + TENANT_SCHEMA + ".passkey_prf_salt");
         }
     }
 
@@ -152,7 +152,7 @@ class PrfSaltConcurrencyIT {
         // Verify exactly one row in the DB (no duplicate insert)
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT COUNT(*) FROM " + TENANT_SCHEMA + ".hybrid_prf_salt "
+                     "SELECT COUNT(*) FROM " + TENANT_SCHEMA + ".passkey_prf_salt "
                      + "WHERE holder_id = '" + HOLDER_ID + "' AND credential_id = '" + CRED_ID + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1))
@@ -195,7 +195,7 @@ class PrfSaltConcurrencyIT {
         byte[] persistedSalt;
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT prf_salt FROM " + TENANT_SCHEMA + ".hybrid_prf_salt "
+                     "SELECT prf_salt FROM " + TENANT_SCHEMA + ".passkey_prf_salt "
                      + "WHERE holder_id = '" + HOLDER_ID + "' AND credential_id = '" + CRED_ID + "'")) {
             assertThat(rs.next()).isTrue();
             persistedSalt = rs.getBytes("prf_salt");
@@ -226,7 +226,7 @@ class PrfSaltConcurrencyIT {
         // Two distinct rows with different salts
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT COUNT(*) FROM " + TENANT_SCHEMA + ".hybrid_prf_salt "
+                     "SELECT COUNT(*) FROM " + TENANT_SCHEMA + ".passkey_prf_salt "
                      + "WHERE holder_id = '" + HOLDER_ID + "' "
                      + "AND credential_id IN ('" + credId1 + "', '" + credId2 + "')")) {
             assertThat(rs.next()).isTrue();

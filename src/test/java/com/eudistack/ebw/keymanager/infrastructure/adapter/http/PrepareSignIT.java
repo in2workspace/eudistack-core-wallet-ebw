@@ -1,5 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.keymanager.application.SessionPasskeyCredentialPort;
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.keymanager.application.PrfSaltUseCase;
 import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException;
@@ -38,14 +40,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * Integration tests for {@code POST /api/v1/keys/hybrid/sign/prepare}.
+ * Integration tests for {@code POST /api/v1/keys/passkey-prf/sign/prepare}.
  *
  * <p>Covered criteria:
  * <ul>
  *   <li>AC-01 — 200 OK with all required fields ({@code prf_salt}, {@code wrapped_blob},
  *       {@code iv}, {@code tag}, {@code kdf_params}, {@code signing_input},
  *       {@code correlation_id}).</li>
- *   <li>ES-02 — non-hybrid tenant → 403 opaque.</li>
+ *   <li>ES-02 — non-passkey-prf tenant → 403 opaque.</li>
  *   <li>ES-01 — missing required field → 400.</li>
  *   <li>AC-08 — holder isolation violation → 403.</li>
  *   <li>NFR-S-536-03 — error responses MUST NOT contain {@code prf_salt}, {@code wrapped_blob}.</li>
@@ -68,11 +70,11 @@ import static org.mockito.Mockito.when;
 class PrepareSignIT {
 
     private static final String SCHEMA_SUFFIX = "_business_wallet";
-    private static final String HYBRID_TENANT = "hprep";
+    private static final String PASSKEY_PRF_TENANT = "hprep";
     private static final String DB_TENANT     = "hprepdb";
     private static final UUID   HOLDER_UUID   = UUID.fromString("11111111-aaaa-bbbb-cccc-dddddddddddd");
-    private static final String BEARER        = "hybrid-prepare-bearer";
-    private static final String PREPARE_URL   = "/api/v1/keys/hybrid/sign/prepare";
+    private static final String BEARER        = "passkey-prf-prepare-bearer";
+    private static final String PREPARE_URL   = "/api/v1/keys/passkey-prf/sign/prepare";
     private static final String CRED_ID       = "cred-prepare-1";
 
     private static final byte[] PRF_SALT   = new byte[32];
@@ -106,7 +108,15 @@ class PrepareSignIT {
         registry.add("spring.flyway.default-schema", () -> "public");
     }
 
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
+
     @MockitoBean TokenSigner tokenSigner;
+
+    /** Attestations are stored with the session passkey: covered by PrepareSignUseCaseTest. */
+
+    @MockitoBean SessionPasskeyCredentialPort sessionPasskeyCredentialPort;
     @MockitoBean PrfSaltUseCase prfSaltUseCase;
     @MockitoBean WrappedKeyHandleRepository wrappedKeyHandleRepository;
 
@@ -123,11 +133,11 @@ class PrepareSignIT {
                     "DO $$ BEGIN CREATE ROLE config_manager_role; "
                     + "EXCEPTION WHEN duplicate_object THEN NULL; END $$");
             conn.createStatement().execute(
-                    "CREATE SCHEMA IF NOT EXISTS " + HYBRID_TENANT + SCHEMA_SUFFIX);
+                    "CREATE SCHEMA IF NOT EXISTS " + PASSKEY_PRF_TENANT + SCHEMA_SUFFIX);
             conn.createStatement().execute(
                     "CREATE SCHEMA IF NOT EXISTS " + DB_TENANT + SCHEMA_SUFFIX);
         }
-        runTenantMigrations(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX);
+        runTenantMigrations(jdbcUrl, PASSKEY_PRF_TENANT + SCHEMA_SUFFIX);
         runTenantMigrations(jdbcUrl, DB_TENANT + SCHEMA_SUFFIX);
     }
 
@@ -145,10 +155,14 @@ class PrepareSignIT {
 
     @BeforeEach
     void setUp() throws SQLException {
-        seedWalletProfile(HYBRID_TENANT, "server", "hybrid");
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+        when(sessionPasskeyCredentialPort.isObtainedWithPasskey(any(), any(), any()))
+                .thenReturn(Mono.just(true));
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
+        seedWalletProfile(PASSKEY_PRF_TENANT, "server", "passkey-prf");
         seedWalletProfile(DB_TENANT, "server", "db");
-        when(tokenSigner.verify(BEARER)).thenReturn(
-                Map.of("sub", HOLDER_UUID.toString(), "email", "test@test.com"));
+        when(tokenSigner.verify(BEARER)).thenAnswer(TestSessions.sessionOfRequestTenant(HOLDER_UUID.toString(), "test@test.com"));
         when(prfSaltUseCase.getForHolder(any(), any(), any())).thenReturn(Mono.just(PRF_SALT));
         when(wrappedKeyHandleRepository.findBy(any(), any()))
                 .thenReturn(Mono.just(Optional.of(validHandle())));
@@ -157,9 +171,9 @@ class PrepareSignIT {
     // ------------------------------------------------------------------ AC-01
 
     @Test
-    void prepare_hybridTenant_returns200WithAllRequiredFields() {
+    void prepare_passkeyPrfTenant_returns200WithAllRequiredFields() {
         webClient.post().uri(PREPARE_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
@@ -176,9 +190,9 @@ class PrepareSignIT {
     }
 
     @Test
-    void prepare_hybridTenant_signingInputHasHeaderDotPayloadFormat() {
+    void prepare_passkeyPrfTenant_signingInputHasHeaderDotPayloadFormat() {
         webClient.post().uri(PREPARE_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
@@ -194,9 +208,9 @@ class PrepareSignIT {
     }
 
     @Test
-    void prepare_hybridTenant_correlationIdIsUuidFormat() {
+    void prepare_passkeyPrfTenant_correlationIdIsUuidFormat() {
         webClient.post().uri(PREPARE_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
@@ -227,7 +241,7 @@ class PrepareSignIT {
     @Test
     void prepare_missingPayload_returns400() {
         webClient.post().uri(PREPARE_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", CRED_ID, "format", "vc+sd-jwt"))
@@ -238,7 +252,7 @@ class PrepareSignIT {
     @Test
     void prepare_missingCredentialId_returns400() {
         webClient.post().uri(PREPARE_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("payload", PAYLOAD, "format", "vc+sd-jwt"))
@@ -254,7 +268,7 @@ class PrepareSignIT {
                 .thenReturn(Mono.error(new HolderIsolationViolationException(CRED_ID)));
 
         webClient.post().uri(PREPARE_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
@@ -270,7 +284,7 @@ class PrepareSignIT {
                 .thenReturn(Mono.error(new PrfSaltNotFoundException(CRED_ID)));
 
         webClient.post().uri(PREPARE_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))
@@ -288,7 +302,7 @@ class PrepareSignIT {
                 .thenReturn(Mono.error(new PrfSaltNotFoundException(CRED_ID)));
 
         webClient.post().uri(PREPARE_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("credential_id", CRED_ID, "payload", PAYLOAD, "format", "vc+sd-jwt"))

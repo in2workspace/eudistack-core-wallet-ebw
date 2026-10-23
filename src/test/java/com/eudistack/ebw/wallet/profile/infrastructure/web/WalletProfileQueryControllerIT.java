@@ -161,10 +161,10 @@ class WalletProfileQueryControllerIT {
     // -------------------------------------------------------------------------
 
     @ParameterizedTest
-    @ValueSource(strings = {"db", "hybrid", "hsm", "qtsp"})
+    @ValueSource(strings = {"db", "passkey-prf", "hsm", "qtsp"})
     void getWalletConfigMetadata_serverTenantWithKeyManager_returns200(String keyManager)
             throws SQLException {
-        String tenant = "srv" + keyManager;
+        String tenant = "srv" + keyManager.replace("-", "");
         String schema = tenant + SCHEMA_SUFFIX;
         provisionTenantSchema(tenant, schema);
         seedServerProfile(tenant, schema, keyManager);

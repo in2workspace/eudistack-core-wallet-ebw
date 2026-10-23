@@ -20,17 +20,22 @@ public class DeleteCredentialWorkflow {
     private final WalletCredentialRepository credentialRepository;
     private final CredentialService credentialService;
     private final AuditService auditService;
+    private final PasskeyCustodyPolicy custodyPolicy;
 
     public DeleteCredentialWorkflow(WalletCredentialRepository credentialRepository,
                                      CredentialService credentialService,
-                                     AuditService auditService) {
+                                     AuditService auditService,
+                                     PasskeyCustodyPolicy custodyPolicy) {
         this.credentialRepository = credentialRepository;
         this.credentialService = credentialService;
         this.auditService = auditService;
+        this.custodyPolicy = custodyPolicy;
     }
 
-    public Mono<Void> deleteCredential(UUID userId, UUID credentialId) {
+    /** With passkey custody, an attestation of another passkey is answered as not found (EUD-11 FR-14). */
+    public Mono<Void> deleteCredential(UUID userId, UUID sessionPasskeyId, UUID credentialId) {
         return credentialRepository.findByIdAndUserId(credentialId, userId)
+                .flatMap(credential -> custodyPolicy.visibleToSession(credential, sessionPasskeyId))
                 .switchIfEmpty(Mono.error(new CredentialNotFoundException()))
                 .flatMap(credential -> {
                     var entityHash = credentialService.computeAuditHash(credential.getCredentialRaw());

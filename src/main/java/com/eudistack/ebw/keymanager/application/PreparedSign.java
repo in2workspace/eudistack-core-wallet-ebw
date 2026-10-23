@@ -3,7 +3,7 @@ package com.eudistack.ebw.keymanager.application;
 import com.eudistack.ebw.keymanager.domain.model.CredentialFormat;
 
 /**
- * Immutable snapshot of a pending (or resolved) hybrid signing session.
+ * Immutable snapshot of a pending (or resolved) passkey-prf signing session.
  *
  * <p>Stored by {@link PreparedSignStore} keyed on {@code correlationId} (UUID v7, TTL ≤ 5 min).
  * Transitions from {@code pending} (resolvedKbJwt == null) to {@code resolved}

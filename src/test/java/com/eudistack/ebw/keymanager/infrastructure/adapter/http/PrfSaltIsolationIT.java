@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.keymanager.application.PrfSaltService;
 import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException;
@@ -36,10 +37,10 @@ import static org.mockito.Mockito.when;
 /**
  * HTTP-layer isolation test for PRF salt holder-isolation exception mapping.
  *
- * <p>Exercises the {@link HybridKeyManagerExceptionHandler} mappings for
+ * <p>Exercises the {@link PasskeyPrfKeyManagerExceptionHandler} mappings for
  * {@link HolderIsolationViolationException} → 403 and
  * {@link PrfSaltNotFoundException} → 404 via the real
- * {@code POST /api/v1/keys/hybrid/onboarding/init} endpoint. {@link PrfSaltService}
+ * {@code POST /api/v1/keys/passkey-prf/onboarding/init} endpoint. {@link PrfSaltService}
  * is mocked so no US-04 endpoints are required.</p>
  *
  * <p>Covered criteria:
@@ -66,7 +67,7 @@ class PrfSaltIsolationIT {
     private static final String TENANT        = "prfisolation";
     private static final UUID   HOLDER_UUID   = UUID.fromString("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb");
     private static final String BEARER        = "prf-isolation-bearer";
-    private static final String INIT_URL      = "/api/v1/keys/hybrid/onboarding/init";
+    private static final String INIT_URL      = "/api/v1/keys/passkey-prf/onboarding/init";
 
     @Container
     static final PostgreSQLContainer<?> postgres =
@@ -89,6 +90,10 @@ class PrfSaltIsolationIT {
         registry.add("spring.flyway.password", () -> "test");
         registry.add("spring.flyway.default-schema", () -> "public");
     }
+
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
 
     @MockitoBean TokenSigner tokenSigner;
     @MockitoBean PrfSaltService prfSaltService;
@@ -121,9 +126,11 @@ class PrfSaltIsolationIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         seedWalletProfile();
-        when(tokenSigner.verify(BEARER)).thenReturn(
-                Map.of("sub", HOLDER_UUID.toString(), "email", "test@test.com"));
+        when(tokenSigner.verify(BEARER)).thenAnswer(TestSessions.sessionOfRequestTenant(HOLDER_UUID.toString(), "test@test.com"));
     }
 
     private void seedWalletProfile() throws SQLException {
@@ -131,7 +138,7 @@ class PrfSaltIsolationIT {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
                     "INSERT INTO " + schema + ".tenant_wallet_profile (tenant, wallet_mode, key_manager) "
-                    + "VALUES ('" + TENANT + "', 'server', 'hybrid') "
+                    + "VALUES ('" + TENANT + "', 'server', 'passkey-prf') "
                     + "ON CONFLICT (tenant) DO NOTHING");
         }
     }

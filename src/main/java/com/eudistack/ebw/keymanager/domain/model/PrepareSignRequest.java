@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Size;
 import java.util.Map;
 
 /**
- * Request for the hybrid (Passkey PRF) signing handshake — prepare step.
+ * Request for the passkey+prf signing handshake — prepare step.
  *
  * <p>The client supplies the credential identifier and the full presentation payload, already
  * assembled by the OID4VP engine. The EBW treats {@code payload} as opaque (EC-03) and only

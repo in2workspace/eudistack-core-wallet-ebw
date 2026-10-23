@@ -74,16 +74,14 @@ public record KeyAuditEvent(
         SIGN_TIMEOUT,
         /** A dependency (DB) was unavailable during signing (ES-04). */
         SIGN_DEPENDENCY_FAILURE,
-        /** Holder accepted the multi-device constraint before hybrid onboarding (US-06, EUDISTACK-538). */
+        /** Holder accepted the multi-device constraint before passkey-prf onboarding (US-06, EUDISTACK-538). */
         CONSTRAINT_ACCEPTED,
         /** Holder key wrapped and committed after client-side generation (US-08, EUDISTACK-540). */
         WRAP_COMPLETED,
-        /** Holder key unwrapped and signing completed in hybrid two-step flow (US-04/US-08). */
+        /** Holder key unwrapped and signing completed in passkey-prf two-step flow (US-04/US-08). */
         UNWRAP_SIGN_COMPLETED,
-        /** Holder key unwrap failed during hybrid signing (US-04/US-08). */
-        UNWRAP_FAILED,
-        /** Hybrid onboarding blocked — holder device does not support Passkey PRF (US-08, EUDISTACK-540). */
-        ONBOARDING_BLOCKED_PRF_UNSUPPORTED
+        /** Holder key unwrap failed during passkey-prf signing (US-04/US-08). */
+        UNWRAP_FAILED
     }
 
     public KeyAuditEvent {
@@ -93,9 +91,8 @@ public record KeyAuditEvent(
         if (holderId == null)  throw new KeyAuditEventValidationException("holderId must not be null");
         if (holderId.isBlank()) throw new KeyAuditEventValidationException("holderId must not be blank");
 
-        // Types where no key context exists yet (consent / device-blocked events)
-        boolean noKeyContext = type == KeyAuditEventType.CONSTRAINT_ACCEPTED
-                || type == KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED;
+        // Types where no key context exists yet (consent events)
+        boolean noKeyContext = type == KeyAuditEventType.CONSTRAINT_ACCEPTED;
         // Types where credentialId is present but format/algorithm/jkt are not available server-side
         // (key was generated and wrapped client-side — US-08)
         boolean wrapContext = type == KeyAuditEventType.WRAP_COMPLETED;
@@ -175,23 +172,7 @@ public record KeyAuditEvent(
     }
 
     /**
-     * Factory for US-08 PRF-unsupported events — onboarding blocked at device level, no key material.
-     */
-    public static KeyAuditEvent forPrfUnsupported(
-            String tenantId,
-            String holderId,
-            Instant timestamp,
-            String correlationId) {
-        return new KeyAuditEvent(
-                KeyAuditEventType.ONBOARDING_BLOCKED_PRF_UNSUPPORTED,
-                tenantId, holderId,
-                null, null, null, null,
-                timestamp, correlationId,
-                null, null, null, null, null);
-    }
-
-    /**
-     * Factory for US-08 unwrap-sign-completed events — hybrid two-step signing handshake succeeded.
+     * Factory for US-08 unwrap-sign-completed events — passkey-prf two-step signing handshake succeeded.
      */
     public static KeyAuditEvent forUnwrapSignCompleted(
             String tenantId,
@@ -211,7 +192,7 @@ public record KeyAuditEvent(
     }
 
     /**
-     * Factory for US-08 unwrap-failed events — hybrid signing handshake failed.
+     * Factory for US-08 unwrap-failed events — passkey-prf signing handshake failed.
      *
      * <p>{@code jkt} may be {@code null} when {@code cnf.jwk} could not be parsed
      * (e.g. malformed submission) and the public key thumbprint was therefore not computable.</p>

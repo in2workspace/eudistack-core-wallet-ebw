@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * Request to initialise the hybrid onboarding flow for a credential.
+ * Request to initialise the passkey-prf onboarding flow for a credential.
  *
  * <p>The server generates a PRF salt and returns it together with the KDF parameters so
  * the Wallet PWA can derive the wrap key client-side via

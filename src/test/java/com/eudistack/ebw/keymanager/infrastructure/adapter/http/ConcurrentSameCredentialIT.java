@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.flywaydb.core.Flyway;
@@ -78,6 +79,10 @@ class ConcurrentSameCredentialIT {
         registry.add("spring.flyway.default-schema", () -> "public");
     }
 
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
+
     @MockitoBean
     TokenSigner tokenSigner;
 
@@ -93,12 +98,14 @@ class ConcurrentSameCredentialIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         holderId = UUID.randomUUID();
         tenant = "t" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
         schema = tenant + SCHEMA_SUFFIX;
         provisionTenantSchemaWithServerDbProfile();
-        when(tokenSigner.verify(BEARER)).thenReturn(
-                Map.of("sub", holderId.toString(), "email", "holder@test.com"));
+        when(tokenSigner.verify(BEARER)).thenAnswer(TestSessions.sessionOfRequestTenant(holderId.toString(), "holder@test.com"));
     }
 
     // -------------------------------------------------------------------------

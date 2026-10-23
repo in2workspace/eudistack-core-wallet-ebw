@@ -5,7 +5,7 @@ import reactor.core.publisher.Mono;
 /**
  * Outgoing port for PRF salt persistence.
  *
- * <p>Defines the contract that the {@code hybrid_prf_salt} storage adapter must implement.
+ * <p>Defines the contract that the {@code passkey_prf_salt} storage adapter must implement.
  * The port is declared in the application layer; the R2DBC implementation lives in
  * {@code infrastructure.adapter.r2dbc} (technical-design.md §3.2 AD-4).</p>
  *

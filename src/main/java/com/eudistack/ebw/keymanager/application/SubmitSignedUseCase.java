@@ -21,7 +21,7 @@ import java.text.ParseException;
 import java.time.Instant;
 
 /**
- * Application use case for the hybrid (Passkey PRF) signing handshake — submit step.
+ * Application use case for the passkey+prf signing handshake — submit step.
  *
  * <p>Fetches the pending signing session by {@code correlation_id}, enforces holder isolation,
  * verifies the client's raw ES256 signature against {@code cnf.jwk} (Nimbus
@@ -62,7 +62,7 @@ public class SubmitSignedUseCase {
     }
 
     /**
-     * Executes the submit step of the hybrid signing handshake.
+     * Executes the submit step of the passkey-prf signing handshake.
      *
      * <p>Reads {@code holderId} from the Reactor context (written by the controller from the
      * DPoP JWT) and verifies it matches the session owner before touching any key material.</p>
@@ -142,7 +142,7 @@ public class SubmitSignedUseCase {
                     request.correlationId());
             return preparedSignStore
                     .markResolved(request.correlationId(), result.kbJwt())
-                    .then(emitAuditBestEffort(event, "keymanager.hybrid.unwrap_sign_audit_failed"))
+                    .then(emitAuditBestEffort(event, "keymanager.passkey-prf.unwrap_sign_audit_failed"))
                     .thenReturn(new SubmitSignedAssertionResponse(result.kbJwt()));
         }).onErrorResume(e -> {
             if (e instanceof SignatureInvalidException || e instanceof InvalidSignatureSubmissionException) {
@@ -156,7 +156,7 @@ public class SubmitSignedUseCase {
                         Instant.now(),
                         request.correlationId(),
                         e.getMessage());
-                return emitAuditBestEffort(failEvent, "keymanager.hybrid.unwrap_fail_audit_failed")
+                return emitAuditBestEffort(failEvent, "keymanager.passkey-prf.unwrap_fail_audit_failed")
                         .then(Mono.error(e));
             }
             return Mono.error(e);

@@ -26,6 +26,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -64,13 +65,33 @@ class PrepareSignUseCaseTest {
     @Mock private PrfSaltUseCase prfSaltUseCase;
     @Mock private WrappedKeyHandleRepository wrappedKeyHandleRepository;
     @Mock private PreparedSignStore preparedSignStore;
+    @Mock private SessionPasskeyCredentialPort sessionPasskeyCredentialPort;
+
+    private static final String PASSKEY = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 
     private PrepareSignUseCase useCase;
 
     @BeforeEach
     void setUp() {
         useCase = new PrepareSignUseCase(
-                prfSaltUseCase, wrappedKeyHandleRepository, preparedSignStore, new ObjectMapper());
+                prfSaltUseCase, wrappedKeyHandleRepository, preparedSignStore, new ObjectMapper(),
+                sessionPasskeyCredentialPort);
+        lenient().when(sessionPasskeyCredentialPort.isObtainedWithPasskey(HOLDER, CRED_ID, PASSKEY))
+                .thenReturn(Mono.just(true));
+    }
+
+    // ------------------------------------------------------------------ passkey of the session (EUD-11 FR-14)
+
+    @Test
+    void execute_credentialOfAnotherOrNoPasskey_failsAsNotFoundWithoutReadingTheSalt() {
+        when(sessionPasskeyCredentialPort.isObtainedWithPasskey(HOLDER, CRED_ID, PASSKEY))
+                .thenReturn(Mono.just(false));
+
+        StepVerifier.create(useCase.execute(request(), "test-corr-id").contextWrite(holderContext()))
+                .expectError(PrfSaltNotFoundException.class)
+                .verify();
+        verify(prfSaltUseCase, never()).getForHolder(any(), any(), any());
+        verify(wrappedKeyHandleRepository, never()).findBy(any(), any());
     }
 
     // ------------------------------------------------------------------ happy path
@@ -261,7 +282,8 @@ class PrepareSignUseCaseTest {
     private reactor.util.context.Context holderContext() {
         return reactor.util.context.Context.of(
                 ReactorContextKeys.HOLDER_ID, HOLDER,
-                ReactorContextKeys.TENANT_DOMAIN, TENANT);
+                ReactorContextKeys.TENANT_DOMAIN, TENANT,
+                ReactorContextKeys.PASSKEY_ID, PASSKEY);
     }
 
     private void givenMaterialResolvesSuccessfully() {

@@ -169,10 +169,10 @@ class WalletProfileCheckConstraintIT {
      * AC-04 (extended): All four server key_manager values are rejected when paired
      * with {@code wallet_mode='browser'}.
      *
-     * @param keyManager one of {@code db}, {@code hybrid}, {@code hsm}, {@code qtsp}
+     * @param keyManager one of {@code db}, {@code passkey-prf}, {@code hsm}, {@code qtsp}
      */
     @ParameterizedTest(name = "browser_with_key_manager_{0}_violates_check_constraint")
-    @ValueSource(strings = {"db", "hybrid", "hsm", "qtsp"})
+    @ValueSource(strings = {"db", "passkey-prf", "hsm", "qtsp"})
     void browser_with_any_key_manager_value_violates_check_constraint(String keyManager)
             throws SQLException {
         String tenant = "browser_km_" + keyManager;
@@ -241,7 +241,7 @@ class WalletProfileCheckConstraintIT {
      * {@code key_manager} value outside the allowed enum is rejected with SQLSTATE 23514.
      *
      * <p>The CHECK constraint explicitly enumerates the allowed values
-     * {@code ('db', 'hybrid', 'hsm', 'qtsp')}; any other value must be rejected.
+     * {@code ('db', 'passkey-prf', 'hsm', 'qtsp')}; any other value must be rejected.
      *
      * @param keyManager a value not in the allowed set
      */

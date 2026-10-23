@@ -1,7 +1,7 @@
 package com.eudistack.ebw.application.workflow;
 
+import com.eudistack.ebw.support.TestPasskeys;
 import com.eudistack.ebw.application.workflow.ListPasskeysWorkflow.PasskeyWithSessions;
-import com.eudistack.ebw.domain.model.UserPasskey;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,8 +38,8 @@ class ListPasskeysWorkflowTest {
     @Test
     void listPasskeys_passkeysWithAndWithoutSessions_pairsEachWithItsCountKeepingOrder() {
         // Arrange
-        var laptop = UserPasskey.create(USER_ID, "cred-1", "Laptop", "ua");
-        var phone = UserPasskey.create(USER_ID, "cred-2", "Phone", "ua");
+        var laptop = TestPasskeys.create(USER_ID, "cred-1", "Laptop", "ua");
+        var phone = TestPasskeys.create(USER_ID, "cred-2", "Phone", "ua");
         when(passkeyRepository.findByUserId(USER_ID)).thenReturn(Flux.just(laptop, phone));
         when(refreshTokenRepository.countActiveByPasskeyId(laptop.getId())).thenReturn(Mono.just(3L));
         when(refreshTokenRepository.countActiveByPasskeyId(phone.getId())).thenReturn(Mono.empty());

@@ -41,12 +41,12 @@ class RegisterRateLimitIT extends IntegrationTestBase {
         webClient.post().uri("/api/v1/auth/register")
                 .bodyValue(Map.of("email", email))
                 .exchange()
-                .expectStatus().isOk();
+                .expectStatus().isAccepted();
 
         webClient.post().uri("/api/v1/auth/register")
                 .bodyValue(Map.of("email", email))
                 .exchange()
-                .expectStatus().isOk();
+                .expectStatus().isAccepted();
 
         // Third request breaches the per-email limit
         webClient.post().uri("/api/v1/auth/register")
@@ -55,7 +55,7 @@ class RegisterRateLimitIT extends IntegrationTestBase {
                 .expectStatus().isEqualTo(429)
                 .expectHeader().exists("Retry-After")
                 .expectBody()
-                .jsonPath("$.type").isEqualTo("urn:eudistack:error:rate-limit-exceeded");
+                .jsonPath("$.type").isEqualTo("rate_limited");
 
         verify(emailSender, times(2)).sendOtp(eq(email), anyString());
     }
@@ -68,7 +68,7 @@ class RegisterRateLimitIT extends IntegrationTestBase {
             webClient.post().uri("/api/v1/auth/register")
                     .bodyValue(Map.of("email", email))
                     .exchange()
-                    .expectStatus().isOk();
+                    .expectStatus().isAccepted();
 
             webClient.post().uri("/api/v1/auth/verify-email")
                     .bodyValue(Map.of("email", email, "code", capturedOtps.get(email)))
@@ -86,7 +86,7 @@ class RegisterRateLimitIT extends IntegrationTestBase {
         webClient.post().uri("/api/v1/auth/register")
                 .bodyValue(Map.of("email", email))
                 .exchange()
-                .expectStatus().isOk();
+                .expectStatus().isAccepted();
 
         webClient.post().uri("/api/v1/auth/verify-email")
                 .bodyValue(Map.of("email", email, "code", capturedOtps.get(email)))
@@ -97,7 +97,7 @@ class RegisterRateLimitIT extends IntegrationTestBase {
             webClient.post().uri("/api/v1/auth/register")
                     .bodyValue(Map.of("email", email))
                     .exchange()
-                    .expectStatus().isOk();
+                    .expectStatus().isAccepted();
         }
 
         webClient.post().uri("/api/v1/auth/register")
@@ -116,7 +116,7 @@ class RegisterRateLimitIT extends IntegrationTestBase {
                     .header("X-Forwarded-For", origin)
                     .bodyValue(Map.of("email", "rate-limit-origin-" + i + "-" + System.nanoTime() + "@example.com"))
                     .exchange()
-                    .expectStatus().isOk();
+                    .expectStatus().isAccepted();
         }
 
         // Sixth request from the same origin (register-per-ip=5), a brand new email

@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * Request for the hybrid (Passkey PRF) signing handshake — submit step.
+ * Request for the passkey+prf signing handshake — submit step.
  *
  * <p>The client echoes the {@code correlation_id} received from {@link PrepareSignResponse}
  * along with the PRF-derived signature produced client-side. The EBW verifies structural
