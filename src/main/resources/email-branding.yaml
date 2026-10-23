@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# Email branding data, per tenant. This bundled file is the default: an environment can replace it
+# entirely by pointing EMAIL_BRANDING_PATH at its own file (e.g. file:/etc/eudistack/email-branding.yaml).
+# Same shape as eudistack-core-issuer's email-branding.yaml, so one file can serve both services; this
+# service ignores the support / knowledge-base links (its only email, the OTP code, has none).
+#
+# - logo / header-background (default false): the email shows the image only when the tenant's block
+#   sets it to true. Image locations are not configured; they follow a fixed naming convention under the
+#   assets root (email-branding.assets-base-url, application.yaml):
+#     <assets-base-url>/<tenant-id>/email/logo.png
+#     <assets-base-url>/<tenant-id>/email/header-bg.png
+#   header-bg.png must be exactly 640x190px (the email width x the header height): some clients (e.g. Thunderbird) ignore
+#   background-size and paint it at its natural size, tiling it when the header is taller.
+# - social-links: shown only when the tenant's block lists them (types: github, linkedin). The icons ship
+#   with the app (src/main/resources/email/icons/) and are sent as inline images.
+#
+# Tenants without a block get no images or social links.
+# To brand a tenant: upload its images to eudistack-platform-assets (tenants/<tenant-id>/email/) and add
+# its block here.
+# ---------------------------------------------------------------------------
+email-branding:
+  tenants:
+    dome:
+      logo: true
+      header-background: true
+      social-links:
+        - { type: github, url: "https://github.com/DOME-Marketplace" }
+        - { type: linkedin, url: "https://be.linkedin.com/company/dome-marketplace" }

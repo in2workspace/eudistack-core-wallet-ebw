@@ -1,35 +1,27 @@
 <!DOCTYPE html>
-<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title th:text="#{email.new-passkey.header}">New passkey added</title>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="en">
+<head th:replace="~{fragments/email-layout :: head(title=#{email.new-passkey.subject})}">
+    <title>New passkey added to your Wallet account</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f4f5f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-<table role="presentation" style="width: 100%; border-collapse: collapse; border-spacing: 0; border: 0; background-color: #f4f5f7;">
+<body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Blinker', Arial, Helvetica, sans-serif;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #ffffff;">
     <tr>
-        <td style="text-align: center; padding: 24px 0;">
-            <table role="presentation" style="width: 100%; max-width: 640px; margin: 0 auto; border-collapse: collapse; border-spacing: 0; border: 0; background-color: #ffffff; border-radius: 8px; overflow: hidden;">
-                <!-- HEADER -->
-                <tr>
-                    <td style="text-align: center; background-color: #0F2B5B; padding: 20px; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 24px; font-weight: bold;" th:text="#{email.new-passkey.header}">
-                        New passkey added
-                    </td>
-                </tr>
+        <td align="center" style="padding: 24px 10px;">
+            <table role="presentation" width="640" cellspacing="0" cellpadding="0" border="0" style="width: 100%; max-width: 640px; background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+                <tr th:replace="~{fragments/email-layout :: header(${branding}, #{email.new-passkey.greeting}, 'font-size: 18px; line-height: 1.5; margin-bottom: 8px;')}"></tr>
+
                 <!-- CONTENT -->
                 <tr>
-                    <td style="text-align: center; padding: 40px 30px 30px 30px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 16px; color: #333333;">
-                        <p style="margin: 0 0 16px 0;" th:text="#{email.new-passkey.greeting}">Hello,</p>
-                        <p style="margin: 0 0 24px 0;" th:text="#{email.new-passkey.body}">A new passkey has been added to your Wallet account.</p>
-
-                        <p style="margin: 24px 0 0 0; font-size: 14px; color: #666666;" th:text="#{email.new-passkey.hint}">Please enter this verification code in your Wallet App.</p>
+                    <td align="center" style="padding: 12px 40px 32px 40px; font-family: 'Blinker', Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.5; color: #000000; text-align: center;">
+                        <p style="margin: 0 0 16px 0; font-size: 20px; font-weight: 700;" th:text="#{email.new-passkey.header}">New passkey added</p>
+                        <p style="margin: 0 0 24px 0; font-size: 14px; font-weight: 400;" th:text="#{email.new-passkey.body}">A new passkey has been added to your Wallet account. You can now sign in with it.</p>
+                        <p style="margin: 0; font-size: 14px; font-weight: 400; color: #000000;" th:text="#{email.new-passkey.hint}">If it was you, you do not need to do anything. You can end the sessions of your other devices from the Wallet.</p>
                     </td>
                 </tr>
 
-                <!-- FOOTER -->
-                <tr>
-                    <td style="text-align: center; padding: 20px 30px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 13px; color: #999999; border-top: 1px solid #e0e0e0;">
-                        <p style="margin: 0;" th:text="#{email.new-passkey.footer}">If you did not request this code, please ignore this email.</p>
+                <tr th:replace="~{fragments/email-layout :: footer(${branding}, ~{::footerText})}">
+                    <td>
+                        <span th:fragment="footerText" style="font-size: 12px; font-weight: 400;" th:text="#{email.new-passkey.footer}">If it was not you, someone with access to your email may have added it: sign in to the Wallet and remove the passkey you do not recognize.</span>
                     </td>
                 </tr>
             </table>
