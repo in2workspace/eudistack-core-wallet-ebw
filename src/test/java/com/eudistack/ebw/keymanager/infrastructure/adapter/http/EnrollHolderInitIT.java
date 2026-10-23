@@ -28,6 +28,7 @@ import java.sql.SQLException;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -183,11 +184,9 @@ class EnrollHolderInitIT {
                 .expectStatus().isOk()
                 .expectBody()
                 // Base64url without padding — no '=' characters
-                .jsonPath("$.prf_salt").value((String s) -> {
-                    assert !s.contains("=") : "prf_salt must not contain base64 padding";
-                    assert !s.contains("+") : "prf_salt must use base64url (no '+')";
-                    assert !s.contains("/") : "prf_salt must use base64url (no '/')";
-                });
+                .jsonPath("$.prf_salt").value((String s) -> assertThat(s)
+                        .as("prf_salt must be base64url without padding")
+                        .doesNotContain("=", "+", "/"));
     }
 
     // ------------------------------------------------------------------ ES-02

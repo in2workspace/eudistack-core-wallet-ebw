@@ -81,7 +81,8 @@ class PasskeyPrfKeyManagerControllerIT {
     @org.springframework.test.context.bean.override.mockito.MockitoBean
     com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
 
-    @MockitoBean
+    /** Named as the real bean: the controller asks for it with @Qualifier. */
+    @MockitoBean(name = "passkeyPrfKeyManagerAdapter")
     KeyManagerPort passkeyPrfAdapter;
 
     @MockitoBean

@@ -31,8 +31,6 @@ import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -75,18 +73,23 @@ public class KeyManagerConfiguration {
         return new HolderKeyR2dbcAdapter(repository, objectMapper, databaseClient);
     }
 
+    /**
+     * The only {@link KeyAuditPort}: CloudWatch when {@code keymanager.audit.enabled=true} (which then
+     * requires {@code keymanager.audit.log-group-name}), a no-op otherwise. One bean instead of two
+     * conditional ones, so every injection point resolves to a single candidate.
+     */
     @Bean
-    @ConditionalOnProperty(name = "keymanager.audit.enabled", havingValue = "true")
-    KeyAuditPort keyAuditCloudWatchAdapter(
-            @Value("${keymanager.audit.log-group-name}") String logGroupName,
+    KeyAuditPort keyAuditPort(
+            @Value("${keymanager.audit.enabled:false}") boolean auditEnabled,
+            @Value("${keymanager.audit.log-group-name:}") String logGroupName,
             ObjectMapper objectMapper) {
+        if (!auditEnabled) {
+            return (KeyAuditEvent event) -> Mono.empty();
+        }
+        if (logGroupName.isBlank()) {
+            throw new IllegalStateException("keymanager.audit.enabled=true requires keymanager.audit.log-group-name");
+        }
         return new KeyAuditCloudWatchAdapter(logGroupName, objectMapper);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(KeyAuditPort.class)
-    KeyAuditPort keyAuditNoOpPort() {
-        return (KeyAuditEvent event) -> Mono.empty();
     }
 
     @Bean

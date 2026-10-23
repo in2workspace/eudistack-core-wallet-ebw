@@ -14,6 +14,7 @@ import com.eudistack.ebw.wallet.profile.domain.model.TenantWalletProfile;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -56,9 +57,9 @@ public class PasskeyPrfKeyManagerController {
     private final WalletProfileQueryPort walletProfileQueryPort;
     private final EnrollHolderUseCase enrollHolderUseCase;
 
-    public PasskeyPrfKeyManagerController(KeyManagerPort passkeyPrfAdapter,
-                                       WalletProfileQueryPort walletProfileQueryPort,
-                                       EnrollHolderUseCase enrollHolderUseCase) {
+    public PasskeyPrfKeyManagerController(@Qualifier("passkeyPrfKeyManagerAdapter") KeyManagerPort passkeyPrfAdapter,
+                                          WalletProfileQueryPort walletProfileQueryPort,
+                                          EnrollHolderUseCase enrollHolderUseCase) {
         this.passkeyPrfAdapter = passkeyPrfAdapter;
         this.walletProfileQueryPort = walletProfileQueryPort;
         this.enrollHolderUseCase = enrollHolderUseCase;
