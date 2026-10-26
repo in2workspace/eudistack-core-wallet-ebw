@@ -20,6 +20,7 @@ import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.RegistrationTicketService;
 import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
+import com.eudistack.ebw.domain.spi.TransactionRunner;
 import com.eudistack.ebw.domain.spi.WebAuthnVerifier;
 import com.eudistack.ebw.support.TestPasskeys;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,6 +62,7 @@ class PasskeyAuthenticationWorkflowTest {
     @Mock private SecureRandomGenerator randomGenerator;
     @Mock private SessionOpener sessionOpener;
     @Mock private AuditService auditService;
+    @Mock private TransactionRunner transactionRunner;
 
     private PasskeyAuthenticationWorkflow workflow;
     private WalletUser user;
@@ -71,11 +73,13 @@ class PasskeyAuthenticationWorkflowTest {
     @BeforeEach
     void setUp() {
         workflow = new PasskeyAuthenticationWorkflow(ticketService, userRepository, passkeyRepository,
-                ceremonyRepository, settingsService, webAuthnVerifier, randomGenerator, sessionOpener, auditService);
+                ceremonyRepository, settingsService, webAuthnVerifier, randomGenerator, sessionOpener, auditService,
+                transactionRunner);
         user = TestPasskeys.user("holder@example.com");
         passkey = TestPasskeys.create(user.getId(), "cred-1", "Phone", null);
         ceremony = WebAuthnCeremony.start(CeremonyType.AUTHENTICATION, new byte[32], null);
         session = new IssuedSession("access", 300, "refresh", UUID.randomUUID(), passkey.getId(), Instant.now());
+        lenient().when(transactionRunner.inTransaction(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(ceremonyRepository.consume(ceremony.id(), CeremonyType.AUTHENTICATION))
                 .thenReturn(Mono.just(ceremony));
         lenient().when(passkeyRepository.findByCredentialId("cred-1")).thenReturn(Mono.just(passkey));

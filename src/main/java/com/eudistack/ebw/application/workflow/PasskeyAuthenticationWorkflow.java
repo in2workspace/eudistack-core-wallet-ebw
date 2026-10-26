@@ -19,6 +19,7 @@ import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.RegistrationTicketService;
 import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
+import com.eudistack.ebw.domain.spi.TransactionRunner;
 import com.eudistack.ebw.domain.spi.WebAuthnVerifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +56,7 @@ public class PasskeyAuthenticationWorkflow {
     private final SecureRandomGenerator randomGenerator;
     private final SessionOpener sessionOpener;
     private final AuditService auditService;
+    private final TransactionRunner transactionRunner;
 
     /** Input of {@link #openSession}. {@code rawTicket} and {@code replacedRefreshToken} are optional. */
     public record OpenSessionCommand(String rawTicket, UUID ceremonyId, String credentialJson,
@@ -66,7 +68,7 @@ public class PasskeyAuthenticationWorkflow {
                                          WebAuthnCeremonyRepository ceremonyRepository,
                                          WalletAuthSettingsService settingsService, WebAuthnVerifier webAuthnVerifier,
                                          SecureRandomGenerator randomGenerator, SessionOpener sessionOpener,
-                                         AuditService auditService) {
+                                         AuditService auditService, TransactionRunner transactionRunner) {
         this.ticketService = ticketService;
         this.userRepository = userRepository;
         this.passkeyRepository = passkeyRepository;
@@ -76,6 +78,7 @@ public class PasskeyAuthenticationWorkflow {
         this.randomGenerator = randomGenerator;
         this.sessionOpener = sessionOpener;
         this.auditService = auditService;
+        this.transactionRunner = transactionRunner;
     }
 
     public Mono<AuthenticationOptions> startAuthentication(String rawTicket) {
@@ -100,11 +103,13 @@ public class PasskeyAuthenticationWorkflow {
                                         .doOnNext(passkeyRef::set)
                                         .flatMap(passkey -> accountOf(passkey, ticket, assertion)
                                                 .flatMap(user -> verify(command, ceremony, passkey)
-                                                        .then(Mono.defer(() -> consumeTicket(ticket)))
-                                                        .then(Mono.defer(() -> sessionOpener.open(user,
-                                                                passkey.getId(), command.replacedRefreshToken(),
-                                                                ticket.isPresent() ? "passkey_with_ticket"
-                                                                        : "passkey"))))))))
+                                                        // As in the registration: the ticket is used up only
+                                                        // if the session opens.
+                                                        .then(Mono.defer(() -> transactionRunner.inTransaction(
+                                                                consumeTicket(ticket).then(sessionOpener.open(user,
+                                                                        passkey.getId(), command.replacedRefreshToken(),
+                                                                        ticket.isPresent() ? "passkey_with_ticket"
+                                                                                : "passkey"))))))))))
                 .onErrorResume(e -> e instanceof AuthenticationFailedException
                                 || e instanceof UnknownCredentialException,
                         e -> auditRejection(command.ceremonyId(), passkeyRef.get(), e).then(Mono.error(e)));
