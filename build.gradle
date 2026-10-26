@@ -60,7 +60,7 @@ dependencies {
     implementation 'com.nimbusds:nimbus-jose-jwt:10.9.1'
 
     // --- AWS SDK v2 ---
-    implementation 'software.amazon.awssdk:cloudwatchlogs:2.31.78'
+    implementation 'software.amazon.awssdk:cloudwatchlogs:2.57.3'
 
     // --- WebAuthn Relying Party (EUD-308, design AD-1) ---
     implementation 'com.webauthn4j:webauthn4j-core:0.31.11.RELEASE'
