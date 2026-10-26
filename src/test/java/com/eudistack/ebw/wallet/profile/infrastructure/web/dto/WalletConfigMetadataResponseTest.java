@@ -53,7 +53,7 @@ class WalletConfigMetadataResponseTest {
         assertThat(response.keyManager())
                 .isNotNull()
                 .isEqualTo(keyManager.getDbValue())
-                .isEqualTo(keyManager.name().toLowerCase());
+                .isEqualTo(keyManager.name().toLowerCase().replace('_', '-'));
     }
 
     @Test
@@ -67,13 +67,13 @@ class WalletConfigMetadataResponseTest {
     }
 
     @Test
-    void from_hybridKeyManager_producesDatabaseValue() {
+    void from_passkeyPrfKeyManager_producesDatabaseValue() {
         TenantWalletProfile profile =
-                new TenantWalletProfile("tenant1", WalletMode.SERVER, KeyManager.HYBRID, NOW, NOW);
+                new TenantWalletProfile("tenant1", WalletMode.SERVER, KeyManager.PASSKEY_PRF, NOW, NOW);
 
         WalletConfigMetadataResponse response = WalletConfigMetadataResponse.from(profile);
 
-        assertThat(response.keyManager()).isEqualTo("hybrid");
+        assertThat(response.keyManager()).isEqualTo("passkey-prf");
     }
 
     @Test

@@ -3,7 +3,7 @@ package com.eudistack.ebw.keymanager.domain.model;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Response from the hybrid (Passkey PRF) signing handshake — prepare step.
+ * Response from the passkey+prf signing handshake — prepare step.
  *
  * <p>All byte-array fields ({@code prf_salt}, {@code wrapped_blob}, {@code iv}, {@code tag})
  * are base64url-encoded strings so the JSON body is human-readable and HTTP-safe.

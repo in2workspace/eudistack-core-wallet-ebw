@@ -8,7 +8,7 @@ import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitRequest;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderInitResponse;
 import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
 import com.eudistack.ebw.keymanager.domain.model.WrappedKeyHandle;
-import com.eudistack.ebw.keymanager.domain.port.HybridKeyManagerTelemetryPort;
+import com.eudistack.ebw.keymanager.domain.port.PasskeyPrfKeyManagerTelemetryPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
 import io.micrometer.tracing.Span;
@@ -23,7 +23,7 @@ import java.util.Base64;
 import java.util.UUID;
 
 /**
- * Application use case for hybrid-mode holder key enrolment.
+ * Application use case for passkey-prf-mode holder key enrolment.
  *
  * <h2>init — skeleton (US-02)</h2>
  * <p>Delegates salt generation to {@link PrfSaltUseCase} (implemented by US-05 /
@@ -61,19 +61,20 @@ public class EnrollHolderUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(EnrollHolderUseCase.class);
 
+    // "hybrid-wrap-v1" is a frozen HKDF info label kept for compatibility: existing wrapped keys were derived with it.
     private static final String KDF_PARAMS =
             "{\"algo\":\"HKDF-SHA-256\",\"info\":\"hybrid-wrap-v1\"}";
     private static final String SIGNING_PUBKEY_ENVELOPE_FORMAT = "SD-JWT";
 
     private final PrfSaltUseCase prfSaltUseCase;
     private final WrappedKeyHandleRepository wrappedKeyHandleRepository;
-    private final HybridKeyManagerTelemetryPort telemetry;
+    private final PasskeyPrfKeyManagerTelemetryPort telemetry;
     private final KeyAuditPort auditPort;
     private final Tracer tracer;
 
     public EnrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
                                 WrappedKeyHandleRepository wrappedKeyHandleRepository,
-                                HybridKeyManagerTelemetryPort telemetry,
+                                PasskeyPrfKeyManagerTelemetryPort telemetry,
                                 KeyAuditPort auditPort,
                                 Tracer tracer) {
         this.prfSaltUseCase = prfSaltUseCase;
@@ -94,7 +95,7 @@ public class EnrollHolderUseCase {
     }
 
     /**
-     * Initialises the hybrid onboarding flow.
+     * Initialises the passkey-prf onboarding flow.
      *
      * <p>Generates (or retrieves) the PRF salt via {@link PrfSaltUseCase} and returns it
      * together with static KDF parameters. Implementation of PRF salt persistence lives
@@ -199,7 +200,7 @@ public class EnrollHolderUseCase {
                         return wrappedKeyHandleRepository.insert(handle)
                                 .then(auditPort.emit(event)
                                         .onErrorResume(e -> {
-                                            log.warn("keymanager.hybrid.wrap_audit_failed credentialId={}: {}",
+                                            log.warn("keymanager.passkey_prf.wrap_audit_failed credentialId={}: {}",
                                                     req.credentialId(), e.getMessage());
                                             return Mono.empty();
                                         }))
@@ -222,25 +223,6 @@ public class EnrollHolderUseCase {
     public Mono<Void> recordConsent(String tenantId, String holderId) {
         return Mono.defer(() -> {
             KeyAuditEvent event = KeyAuditEvent.forConsent(
-                    tenantId, holderId, Instant.now(), currentCorrelationId());
-            return auditPort.emit(event);
-        });
-    }
-
-    /**
-     * Records that hybrid onboarding was blocked because the holder's device does not
-     * support Passkey PRF (US-08, AC-01).
-     *
-     * <p>Errors are propagated: the endpoint exists solely to audit this event, so a
-     * CloudWatch failure must surface as a server error.</p>
-     *
-     * @param tenantId tenant domain extracted from Reactor context
-     * @param holderId holder UUID from DPoP session
-     * @return Mono that completes when the audit event is queued, or errors on failure
-     */
-    public Mono<Void> recordPrfUnsupported(String tenantId, String holderId) {
-        return Mono.defer(() -> {
-            KeyAuditEvent event = KeyAuditEvent.forPrfUnsupported(
                     tenantId, holderId, Instant.now(), currentCorrelationId());
             return auditPort.emit(event);
         });

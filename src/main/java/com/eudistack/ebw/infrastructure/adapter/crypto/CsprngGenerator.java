@@ -24,4 +24,11 @@ public class CsprngGenerator implements SecureRandomGenerator {
     public UUID generateUuid() {
         return UUID.randomUUID();
     }
+
+    @Override
+    public byte[] generateBytes(int length) {
+        var bytes = new byte[length];
+        secureRandom.nextBytes(bytes);
+        return bytes;
+    }
 }

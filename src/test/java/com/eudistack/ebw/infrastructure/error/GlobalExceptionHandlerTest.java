@@ -1,7 +1,6 @@
 package com.eudistack.ebw.infrastructure.error;
 
 import com.eudistack.ebw.domain.model.exception.CredentialNotFoundException;
-import com.eudistack.ebw.domain.model.exception.DuplicatePasskeyException;
 import com.eudistack.ebw.domain.model.exception.InvalidOtpException;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.model.exception.InvalidTransitionException;
@@ -81,7 +80,7 @@ class GlobalExceptionHandlerTest {
                         HttpStatus.TOO_MANY_REQUESTS, "too_many_attempts"),
                 Arguments.of(handlerCall(h -> h.handleInvalidToken(new InvalidTokenException("JWT has expired"))),
                         HttpStatus.UNAUTHORIZED, "invalid_token"),
-                Arguments.of(handlerCall(h -> h.handleTokenCompromised(new TokenFamilyCompromisedException())),
+                Arguments.of(handlerCall(h -> h.handleTokenCompromised(new TokenFamilyCompromisedException(java.util.UUID.randomUUID(), java.util.UUID.randomUUID()))),
                         HttpStatus.UNAUTHORIZED, "token_compromised"));
     }
 
@@ -106,8 +105,6 @@ class GlobalExceptionHandlerTest {
                         HttpStatus.PAYLOAD_TOO_LARGE, "payload-too-large"),
                 Arguments.of(problemCall(h -> h.handlePasskeyNotFound(new PasskeyNotFoundException())),
                         HttpStatus.NOT_FOUND, "passkey-not-found"),
-                Arguments.of(problemCall(h -> h.handleDuplicatePasskey(new DuplicatePasskeyException())),
-                        HttpStatus.CONFLICT, "duplicate-passkey"),
                 Arguments.of(problemCall(h -> h.handleLastPasskey(new LastPasskeyException())),
                         HttpStatus.CONFLICT, "last-passkey"),
                 Arguments.of(problemCall(h -> h.handleInvalidTransition(new InvalidTransitionException("REVOKED", "VALID"))),

@@ -148,6 +148,6 @@ class WalletCredentialR2dbcRepositoryTest {
     private static WalletCredential credential() {
         var now = Instant.now();
         return new WalletCredential(UUID.randomUUID(), USER_ID, "raw", CredentialFormat.DC_SD_JWT, "cfg-1", "kid",
-                "Type", "vct", "https://issuer", "sub", now, null, CredentialStatus.VALID, Map.of(), "hk", now, now);
+                "Type", "vct", "https://issuer", "sub", now, null, CredentialStatus.VALID, Map.of(), "hk", now, now, null, false);
     }
 }

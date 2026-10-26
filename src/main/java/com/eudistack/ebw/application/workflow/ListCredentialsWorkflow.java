@@ -21,19 +21,29 @@ public class ListCredentialsWorkflow {
 
     private final WalletCredentialRepository credentialRepository;
     private final CredentialService credentialService;
+    private final PasskeyCustodyPolicy custodyPolicy;
 
     public ListCredentialsWorkflow(WalletCredentialRepository credentialRepository,
-                                    CredentialService credentialService) {
+                                    CredentialService credentialService,
+                                    PasskeyCustodyPolicy custodyPolicy) {
         this.credentialRepository = credentialRepository;
         this.credentialService = credentialService;
+        this.custodyPolicy = custodyPolicy;
     }
 
-    public Flux<VerifiableCredentialResponse> listCredentials(UUID userId, String status,
+    /**
+     * Lists the account's attestations. With passkey custody in the tenant, only the unbound ones
+     * and those of the session's passkey (EUD-11 FR-14); other tenants are unchanged.
+     */
+    public Flux<VerifiableCredentialResponse> listCredentials(UUID userId, UUID sessionPasskeyId, String status,
                                                                String credentialConfigId, String issuer) {
         var normalizedStatus = (status != null && !status.isBlank()) ? status.strip() : null;
         var normalizedConfigId = (credentialConfigId != null && !credentialConfigId.isBlank()) ? credentialConfigId.strip() : null;
         var normalizedIssuer = (issuer != null && !issuer.isBlank()) ? issuer.strip() : null;
-        return resolveCredentials(userId, normalizedStatus, normalizedConfigId, normalizedIssuer)
+        return custodyPolicy.isPasskeyCustody()
+                .flatMapMany(passkeyCustody -> resolveCredentials(userId, normalizedStatus, normalizedConfigId,
+                                normalizedIssuer)
+                        .filter(credential -> !passkeyCustody || credential.isVisibleToPasskey(sessionPasskeyId)))
                 .flatMap(credential -> Mono
                         .fromCallable(() -> credentialService.toVerifiableCredential(credential))
                         .subscribeOn(Schedulers.boundedElastic()))

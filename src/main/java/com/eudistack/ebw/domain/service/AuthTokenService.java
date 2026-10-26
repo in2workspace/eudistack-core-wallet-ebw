@@ -1,10 +1,13 @@
 package com.eudistack.ebw.domain.service;
 
-import com.eudistack.ebw.domain.model.AuthTokenPair;
 import com.eudistack.ebw.domain.model.AuthTokenSettings;
+import com.eudistack.ebw.domain.model.ExpiredSession;
+import com.eudistack.ebw.domain.model.IssuedSession;
 import com.eudistack.ebw.domain.model.RefreshToken;
+import com.eudistack.ebw.domain.model.SessionSettings;
 import com.eudistack.ebw.domain.model.WalletUser;
-import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
+import com.eudistack.ebw.domain.model.exception.InvalidSessionException;
+import com.eudistack.ebw.domain.model.exception.SessionExpiredException;
 import com.eudistack.ebw.domain.model.exception.TokenFamilyCompromisedException;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
@@ -13,16 +16,32 @@ import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Sessions of the wallet. A session is a family of rotating refresh tokens that share a
+ * {@code session_id}; it is opened only after a verified passkey and bound to the account and
+ * to that passkey.
+ *
+ * <ul>
+ *   <li>Access token: ES256 JWT with {@code sub}, {@code email}, {@code tenant}, {@code sid},
+ *       {@code pkid}, {@code iss}, {@code iat}, {@code exp}.</li>
+ *   <li>Refresh token: opaque, rotated on every renewal, expires the tenant's inactivity
+ *       period after it is issued, never past the session's maximum duration. Presenting an
+ *       already rotated token ends the whole session (RFC 9700 reuse detection).</li>
+ * </ul>
+ */
 public class AuthTokenService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthTokenService.class);
+    private static final int REFRESH_TOKEN_BYTES = 32;
 
     private final TokenSigner tokenSigner;
     private final HashProvider hashProvider;
@@ -30,7 +49,6 @@ public class AuthTokenService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final UserPasskeyRepository userPasskeyRepository;
     private final Duration accessTokenTtl;
-    private final Duration refreshTokenTtl;
     private final String issuer;
 
     public AuthTokenService(TokenSigner tokenSigner,
@@ -45,114 +63,165 @@ public class AuthTokenService {
         this.refreshTokenRepository = refreshTokenRepository;
         this.userPasskeyRepository = userPasskeyRepository;
         this.accessTokenTtl = settings.accessTokenTtl();
-        this.refreshTokenTtl = settings.refreshTokenTtl();
         this.issuer = settings.issuer();
     }
 
-    public Mono<AuthTokenPair> issueTokenPair(WalletUser user, UUID passkeyId) {
+    /** Opens a new session for the account, bound to the passkey that was just verified. */
+    public Mono<IssuedSession> openSession(WalletUser user, UUID passkeyId, SessionSettings settings, String tenant) {
         var now = Instant.now();
-        var exp = now.plus(accessTokenTtl);
+        return issue(user, passkeyId, randomGenerator.generateUuid(), now, now, settings, tenant);
+    }
 
+    /**
+     * Renews the session of a refresh token: rotates it and issues a new access token.
+     *
+     * @throws InvalidSessionException          (signal) the token is not the account's
+     * @throws TokenFamilyCompromisedException  (signal) the token was already rotated or ended;
+     *                                          the whole session is ended
+     * @throws SessionExpiredException          (signal) inactivity period or maximum duration reached
+     */
+    public Mono<IssuedSession> rotateRefreshToken(RefreshToken existing, WalletUser user, SessionSettings settings,
+                                                  String tenant) {
+        if (!existing.getUserId().equals(user.getId())) {
+            return Mono.error(new InvalidSessionException());
+        }
+        var now = Instant.now();
+        if (existing.isRevoked()) {
+            return rejectRevoked(existing);
+        }
+        if (existing.isPastMaxDuration(now, settings.maxDuration())) {
+            return expire(existing, SessionExpiredException.Reason.MAX_DURATION);
+        }
+        if (existing.isExpired(now)) {
+            return expire(existing, SessionExpiredException.Reason.IDLE_TIMEOUT);
+        }
+        // The new token is stored before the old one is revoked, so the session always has an
+        // active token (the access-token session check never sees a gap during a renewal).
+        var next = newToken(user, existing.getPasskeyId(), existing.getSessionId(), existing.getSessionStartedAt(),
+                now, settings, tenant);
+        return refreshTokenRepository.insert(next.token())
+                .then(refreshTokenRepository.revokeIfActive(existing.getId()))
+                .flatMap(revoked -> {
+                    if (!Boolean.TRUE.equals(revoked)) {
+                        // Another request rotated it first: the same token was presented twice.
+                        return refreshTokenRepository.deleteById(next.token().getId())
+                                .then(rejectRevoked(existing));
+                    }
+                    return touchPasskey(existing.getPasskeyId()).thenReturn(next.session());
+                });
+    }
+
+    /** Finds the refresh token of a raw cookie value. */
+    public Mono<RefreshToken> findRefreshToken(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return Mono.empty();
+        }
+        return refreshTokenRepository.findByTokenHash(hashProvider.sha256(rawToken));
+    }
+
+    /**
+     * Ends a session: none of its tokens can be renewed any more. Emits {@code true} when this
+     * call ended it, {@code false} when it had already been ended.
+     */
+    public Mono<Boolean> endSession(UUID sessionId) {
+        return refreshTokenRepository.revokeBySessionId(sessionId)
+                .map(revoked -> revoked > 0)
+                .defaultIfEmpty(false);
+    }
+
+    /**
+     * Closes the sessions that lapsed without anyone renewing or ending them, the proactive
+     * counterpart of the {@link SessionExpiredException} of a renewal. Revoking their tokens is
+     * the mark that the session expired, shared with the renewal, so each one is emitted once.
+     */
+    public Flux<ExpiredSession> expireLapsedSessions() {
+        return refreshTokenRepository.expireLapsedSessions();
+    }
+
+    /** Ends every session of the account except the given one. Emits the number of revoked tokens. */
+    public Mono<Long> endOtherSessions(UUID userId, UUID keptSessionId) {
+        return refreshTokenRepository.revokeByUserIdExceptSession(userId, keptSessionId);
+    }
+
+    private Mono<IssuedSession> issue(WalletUser user, UUID passkeyId, UUID sessionId, Instant sessionStartedAt,
+                                      Instant now, SessionSettings settings, String tenant) {
+        var next = newToken(user, passkeyId, sessionId, sessionStartedAt, now, settings, tenant);
+        return refreshTokenRepository.insert(next.token()).thenReturn(next.session());
+    }
+
+    private record NextToken(RefreshToken token, IssuedSession session) {}
+
+    private NextToken newToken(WalletUser user, UUID passkeyId, UUID sessionId, Instant sessionStartedAt,
+                               Instant now, SessionSettings settings, String tenant) {
+        var accessExp = now.plus(accessTokenTtl);
         var claims = Map.<String, Object>of(
                 "sub", user.getId().toString(),
                 "email", user.getEmail(),
+                "tenant", tenant,
+                "sid", sessionId.toString(),
+                "pkid", passkeyId.toString(),
                 "iss", issuer,
                 "iat", now.getEpochSecond(),
-                "exp", exp.getEpochSecond()
+                "exp", accessExp.getEpochSecond()
         );
-
         var accessToken = tokenSigner.sign(claims);
-        var rawRefreshToken = randomGenerator.generateUuid().toString();
-        var tokenHash = hashProvider.sha256(rawRefreshToken);
 
-        var refreshToken = RefreshToken.create(
-                user.getId(), passkeyId, tokenHash, now.plus(refreshTokenTtl));
+        var sessionExpiresAt = sessionStartedAt.plus(settings.maxDuration());
+        var idleExpiresAt = now.plus(settings.idleTimeout());
+        var refreshExpiresAt = idleExpiresAt.isBefore(sessionExpiresAt) ? idleExpiresAt : sessionExpiresAt;
 
-        return refreshTokenRepository.save(refreshToken)
-                .thenReturn(new AuthTokenPair(accessToken, rawRefreshToken, accessTokenTtl.toSeconds()));
-    }
+        var rawRefreshToken = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(randomGenerator.generateBytes(REFRESH_TOKEN_BYTES));
+        var refreshToken = RefreshToken.create(user.getId(), passkeyId, sessionId, sessionStartedAt,
+                hashProvider.sha256(rawRefreshToken), refreshExpiresAt);
 
-    public Map<String, Object> validateAccessToken(String token) {
-        return tokenSigner.verify(token);
-    }
-
-    public Mono<AuthTokenPair> rotateRefreshToken(String rawToken, WalletUser user) {
-        var tokenHash = hashProvider.sha256(rawToken);
-        return refreshTokenRepository.findByTokenHash(tokenHash)
-                .switchIfEmpty(Mono.error(new InvalidTokenException()))
-                .flatMap(existing -> {
-                    if (existing.isRevoked()) {
-                        var revoke = existing.getPasskeyId() != null
-                                ? refreshTokenRepository.revokeByPasskeyId(existing.getPasskeyId())
-                                : refreshTokenRepository.revokeByUserId(existing.getUserId());
-                        return revoke.then(Mono.error(new TokenFamilyCompromisedException()));
-                    }
-                    if (existing.isExpired()) {
-                        return Mono.error(new InvalidTokenException());
-                    }
-                    existing.revoke();
-                    return refreshTokenRepository.save(existing)
-                            .then(touchPasskey(existing.getPasskeyId()))
-                            .then(issueTokenPair(user, existing.getPasskeyId()));
-                });
-    }
-
-    public Mono<Void> revokeRefreshToken(String rawToken) {
-        var tokenHash = hashProvider.sha256(rawToken);
-        return refreshTokenRepository.findByTokenHash(tokenHash)
-                .flatMap(token -> {
-                    token.revoke();
-                    return refreshTokenRepository.save(token).then();
-                })
-                .then();
+        return new NextToken(refreshToken, new IssuedSession(accessToken, accessTokenTtl.toSeconds(), rawRefreshToken,
+                sessionId, passkeyId, sessionExpiresAt));
     }
 
     /**
-     * Global logout: finds the token by hash, revokes ALL tokens for that user.
-     * Returns the userId for audit purposes, or empty if token not found (idempotent).
+     * Whether the session of an access token is still alive: it has a token that can renew it
+     * (not revoked, not past its inactivity period, which is capped at the maximum duration).
      */
-    public Mono<UUID> revokeAllByRefreshToken(String rawToken) {
-        var tokenHash = hashProvider.sha256(rawToken);
-        return refreshTokenRepository.findByTokenHash(tokenHash)
-                .flatMap(token -> {
-                    var userId = token.getUserId();
-                    return refreshTokenRepository.revokeByUserId(userId)
-                            .thenReturn(userId);
-                });
-    }
-
-    public Mono<Void> revokeAllByUser(UUID userId) {
-        return refreshTokenRepository.revokeByUserId(userId);
-    }
-
-    public Mono<Void> revokeAllByPasskey(UUID passkeyId) {
-        return refreshTokenRepository.revokeByPasskeyId(passkeyId);
+    public Mono<Boolean> isSessionActive(UUID sessionId) {
+        return refreshTokenRepository.hasActiveToken(sessionId);
     }
 
     /**
-     * Attributes one specific session (identified by its raw refresh token) to a passkey.
-     * Scoped to a single token hash rather than "all of this user's unlinked sessions":
-     * two devices can each hold an unlinked session at the same time, and attributing by
-     * user id alone would let whichever device confirms first steal the other's session.
+     * Revokes the session of an expired token. The expiry is reported only by the caller that
+     * revoked it: if the housekeeping pass closed the session first, it already recorded it.
      */
-    public Mono<Void> linkSessionToPasskey(String rawRefreshToken, UUID userId, UUID passkeyId) {
-        var tokenHash = hashProvider.sha256(rawRefreshToken);
-        return refreshTokenRepository.findByTokenHash(tokenHash)
-                .filter(token -> token.getUserId().equals(userId))
-                .switchIfEmpty(Mono.error(new InvalidTokenException()))
-                .flatMap(token -> refreshTokenRepository.updatePasskeyIdByTokenHash(tokenHash, passkeyId))
-                .then(touchPasskey(passkeyId));
+    private <T> Mono<T> expire(RefreshToken existing, SessionExpiredException.Reason reason) {
+        return refreshTokenRepository.revokeBySessionId(existing.getSessionId())
+                .defaultIfEmpty(0L)
+                .flatMap(revoked -> Mono.<T>error(revoked > 0
+                        ? new SessionExpiredException(existing.getSessionId(), existing.getUserId(), reason)
+                        : new InvalidSessionException()));
     }
 
     /**
-     * Records device activity for the devices list ("Última actividad", #1061961): a session
-     * refresh or a session attribution means the device behind this passkey is in use.
-     * Best-effort: a bookkeeping failure must never fail the token operation that triggered it.
+     * A revoked token is a reuse only while its session can still be renewed with another token
+     * (RFC 9700): then the whole session is ended. A token of an already ended or expired session
+     * is just an invalid session, without the reuse alarm.
+     */
+    private <T> Mono<T> rejectRevoked(RefreshToken existing) {
+        return refreshTokenRepository.hasActiveToken(existing.getSessionId())
+                .flatMap(active -> Boolean.TRUE.equals(active)
+                        ? this.<T>endFamilyOnReuse(existing)
+                        : Mono.<T>error(new InvalidSessionException()));
+    }
+
+    private <T> Mono<T> endFamilyOnReuse(RefreshToken existing) {
+        log.warn("Refresh token reuse detected; ending session {}", existing.getSessionId());
+        return refreshTokenRepository.revokeBySessionId(existing.getSessionId())
+                .then(Mono.error(new TokenFamilyCompromisedException(existing.getSessionId(), existing.getUserId())));
+    }
+
+    /**
+     * Records device activity for the devices list: a session renewal means the device behind
+     * this passkey is in use. Best-effort: never fails the renewal.
      */
     private Mono<Void> touchPasskey(UUID passkeyId) {
-        if (passkeyId == null) {
-            return Mono.empty();
-        }
         return Mono.defer(() -> userPasskeyRepository.touchLastUsed(passkeyId))
                 .doOnError(e -> log.warn("Could not record last_used_at for passkey {}: {}", passkeyId, e.toString()))
                 .onErrorResume(e -> Mono.empty());

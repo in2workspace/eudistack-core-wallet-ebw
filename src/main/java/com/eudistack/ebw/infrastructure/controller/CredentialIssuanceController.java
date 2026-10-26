@@ -33,7 +33,8 @@ public class CredentialIssuanceController {
                         request.credentialConfigurationId(),
                         request.holderKid() != null ? request.holderKid() : "",
                         request.issuerMetadata() != null ? request.issuerMetadata() : java.util.Map.of(),
-                        request.holderKeyId())
+                        request.holderKeyId(),
+                        auth.getPasskeyId())
                 .map(CredentialDetailResponse::from);
     }
 }

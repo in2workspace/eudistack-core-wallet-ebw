@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.controller;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
@@ -97,6 +98,10 @@ class PasskeyRevocationIsolationIT {
         registry.add("spring.flyway.default-schema", () -> "public");
     }
 
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
+
     @MockitoBean
     TokenSigner tokenSigner;
 
@@ -134,12 +139,13 @@ class PasskeyRevocationIsolationIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         cleanTables(SCHEMA_1);
         cleanTables(SCHEMA_2);
-        when(tokenSigner.verify(TOKEN_USER_A)).thenReturn(
-                Map.of("sub", USER_A.toString(), "email", "user-a@test.com"));
-        when(tokenSigner.verify(TOKEN_USER_B)).thenReturn(
-                Map.of("sub", USER_B.toString(), "email", "user-b@test.com"));
+        when(tokenSigner.verify(TOKEN_USER_A)).thenAnswer(TestSessions.sessionOfRequestTenant(USER_A.toString(), "user-a@test.com"));
+        when(tokenSigner.verify(TOKEN_USER_B)).thenAnswer(TestSessions.sessionOfRequestTenant(USER_B.toString(), "user-b@test.com"));
     }
 
     // -------------------------------------------------------------------------
@@ -167,10 +173,10 @@ class PasskeyRevocationIsolationIT {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
                     "INSERT INTO " + schema + ".user_passkey "
-                    + "(id, user_id, credential_id, display_name, user_agent, created_at, last_used_at) VALUES ('"
+                    + "(id, user_id, credential_id, display_name, user_agent, created_at, last_used_at, attested_credential_data, sign_count, uv_initialized, backup_eligible, backup_state, prf_enabled) VALUES ('"
                     + id + "', '" + userId + "', '" + credentialId + "', '"
                     + displayName.replace("'", "''")
-                    + "', 'test-agent', '2026-01-01T10:00:00Z', NULL)");
+                    + "', 'test-agent', '2026-01-01T10:00:00Z', NULL, decode('010203', 'hex'), 0, true, true, true, true)");
         }
     }
 

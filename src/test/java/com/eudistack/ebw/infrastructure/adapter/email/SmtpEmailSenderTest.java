@@ -97,6 +97,26 @@ class SmtpEmailSenderTest {
     }
 
     @Test
+    void sendNewPasskeyNotice_brandedTenant_usesTheSameLayoutAndBrandingAsTheOtpEmail() throws Exception {
+        when(tenantRegistryRepository.findDisplayName("dome")).thenReturn(Mono.just("DOME"));
+
+        StepVerifier.create(sender.sendNewPasskeyNotice(TO)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "dome")))
+                .verifyComplete();
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        MimeMessage message = captor.getValue();
+
+        assertThat(message.getSubject()).isEqualTo("New passkey added to your Wallet account");
+        assertThat(message.getFrom()).extracting(Address::toString).containsExactly("wallet@dome.example");
+        assertThat(htmlOf(message))
+                .contains("A new passkey has been added to your Wallet account.")
+                .contains("https://assets.example.com/tenants/dome/email/logo.png")
+                .contains("cid:icon-github.png");
+        assertThat(contentIds(message)).containsExactly("<icon-github.png>");
+    }
+
+    @Test
     void sendOtp_smtpRejectsTheMessage_propagatesTheError() {
         when(tenantRegistryRepository.findDisplayName("dome")).thenReturn(Mono.just("DOME"));
         doThrow(new MailSendException("relay denied")).when(mailSender).send(any(MimeMessage.class));

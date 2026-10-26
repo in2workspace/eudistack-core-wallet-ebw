@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.controller;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.infrastructure.controller.dto.PasskeyResponse;
@@ -25,7 +26,6 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -98,6 +98,10 @@ class PasskeyControllerIT {
         registry.add("spring.flyway.default-schema", () -> "public");
     }
 
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
+
     @MockitoBean
     TokenSigner tokenSigner;
 
@@ -129,11 +133,12 @@ class PasskeyControllerIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         cleanTables();
-        when(tokenSigner.verify(VALID_TOKEN)).thenReturn(
-                Map.of("sub", USER_A.toString(), "email", "user-a@test.com"));
-        when(tokenSigner.verify(VALID_TOKEN_B)).thenReturn(
-                Map.of("sub", USER_B.toString(), "email", "user-b@test.com"));
+        when(tokenSigner.verify(VALID_TOKEN)).thenAnswer(TestSessions.sessionOfRequestTenant(USER_A.toString(), "user-a@test.com"));
+        when(tokenSigner.verify(VALID_TOKEN_B)).thenAnswer(TestSessions.sessionOfRequestTenant(USER_B.toString(), "user-b@test.com"));
         when(tokenSigner.verify(INVALID_TOKEN)).thenThrow(new InvalidTokenException());
     }
 
@@ -163,9 +168,9 @@ class PasskeyControllerIT {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
                     "INSERT INTO " + SCHEMA + ".user_passkey "
-                    + "(id, user_id, credential_id, display_name, user_agent, created_at, last_used_at) VALUES ('"
+                    + "(id, user_id, credential_id, display_name, user_agent, created_at, last_used_at, attested_credential_data, sign_count, uv_initialized, backup_eligible, backup_state, prf_enabled) VALUES ('"
                     + id + "', '" + userId + "', '" + credentialId + "', '" + displayName
-                    + "', 'test-agent', '" + createdAt + "', " + lastUsedSql + ")");
+                    + "', 'test-agent', '" + createdAt + "', " + lastUsedSql + ", decode('010203', 'hex'), 0, true, true, true, true)");
         }
     }
 

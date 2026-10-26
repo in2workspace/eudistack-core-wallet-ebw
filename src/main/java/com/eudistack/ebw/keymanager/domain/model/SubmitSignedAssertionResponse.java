@@ -3,7 +3,7 @@ package com.eudistack.ebw.keymanager.domain.model;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Response from the hybrid (Passkey PRF) signing handshake — submit step.
+ * Response from the passkey+prf signing handshake — submit step.
  *
  * <p>Contains the key-binding JWT ({@code kb+jwt}) produced by the EBW after
  * verifying the client's signed assertion. The {@code kb_jwt} is a compact JWS

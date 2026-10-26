@@ -29,8 +29,19 @@ import static org.mockito.Mockito.when;
  */
 @Tag("integration")
 @WebFluxTest(controllers = KeyManagerHealthController.class)
+@org.springframework.context.annotation.Import(com.eudistack.ebw.infrastructure.controller.support.RefreshCookies.class)
 @WithMockUser
 class KeyManagerHealthControllerIT {
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubActiveSessions() {
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+    }
+
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
 
     @MockitoBean
     ConnectionFactory connectionFactory;

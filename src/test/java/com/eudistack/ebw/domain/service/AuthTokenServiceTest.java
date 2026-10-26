@@ -1,350 +1,294 @@
 package com.eudistack.ebw.domain.service;
 
 import com.eudistack.ebw.domain.model.AuthTokenSettings;
+import com.eudistack.ebw.domain.model.ExpiredSession;
 import com.eudistack.ebw.domain.model.RefreshToken;
+import com.eudistack.ebw.domain.model.SessionSettings;
 import com.eudistack.ebw.domain.model.WalletUser;
-import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
+import com.eudistack.ebw.domain.model.exception.InvalidSessionException;
+import com.eudistack.ebw.domain.model.exception.SessionExpiredException;
 import com.eudistack.ebw.domain.model.exception.TokenFamilyCompromisedException;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TokenSigner;
+import com.eudistack.ebw.support.TestPasskeys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+/** Unit tests for {@link AuthTokenService}: session opening, rotation, limits and reuse detection. */
+@ExtendWith(MockitoExtension.class)
 class AuthTokenServiceTest {
 
-    private TokenSigner tokenSigner;
-    private HashProvider hashProvider;
-    private SecureRandomGenerator randomGenerator;
-    private RefreshTokenRepository refreshTokenRepository;
-    private UserPasskeyRepository userPasskeyRepository;
-    private AuthTokenService authTokenService;
+    private static final String TENANT = "sandbox";
+    private static final SessionSettings SETTINGS = new SessionSettings(Duration.ofMinutes(15), Duration.ofHours(8));
 
-    private WalletUser testUser;
+    @Mock private TokenSigner tokenSigner;
+    @Mock private HashProvider hashProvider;
+    @Mock private SecureRandomGenerator randomGenerator;
+    @Mock private RefreshTokenRepository refreshTokenRepository;
+    @Mock private UserPasskeyRepository userPasskeyRepository;
+
+    private AuthTokenService service;
+    private WalletUser user;
+    private UUID passkeyId;
 
     @BeforeEach
     void setUp() {
-        tokenSigner = mock(TokenSigner.class);
-        hashProvider = mock(HashProvider.class);
-        randomGenerator = mock(SecureRandomGenerator.class);
-        refreshTokenRepository = mock(RefreshTokenRepository.class);
-        userPasskeyRepository = mock(UserPasskeyRepository.class);
-        when(userPasskeyRepository.touchLastUsed(any())).thenReturn(Mono.empty());
-        authTokenService = new AuthTokenService(tokenSigner, hashProvider, randomGenerator,
-                refreshTokenRepository, userPasskeyRepository,
-                new AuthTokenSettings(Duration.ofMinutes(15), Duration.ofDays(7), "eudistack-ebw"));
+        service = new AuthTokenService(tokenSigner, hashProvider, randomGenerator, refreshTokenRepository,
+                userPasskeyRepository, new AuthTokenSettings(Duration.ofMinutes(5), "https://ebw"));
+        user = TestPasskeys.user("holder@example.com");
+        passkeyId = UUID.randomUUID();
+        lenient().when(tokenSigner.sign(any())).thenReturn("access-token");
+        lenient().when(hashProvider.sha256(anyString())).thenAnswer(inv -> "sha:" + inv.getArgument(0));
+        lenient().when(randomGenerator.generateBytes(anyInt())).thenReturn(new byte[32]);
+        lenient().when(randomGenerator.generateUuid()).thenReturn(UUID.randomUUID());
+        lenient().when(refreshTokenRepository.insert(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+    }
 
-        testUser = WalletUser.create("user@example.com");
+    private RefreshToken token(Instant sessionStartedAt, Instant expiresAt, boolean revoked) {
+        return new RefreshToken(UUID.randomUUID(), user.getId(), passkeyId, UUID.randomUUID(), sessionStartedAt,
+                "sha:raw", expiresAt, revoked, Instant.now());
     }
 
     @Test
-    void issueTokenPair_validUser_returnsAccessAndRefreshToken() {
-        // Arrange
-        var refreshUuid = UUID.randomUUID();
-        when(tokenSigner.sign(anyMap())).thenReturn("jwt-access-token");
-        when(randomGenerator.generateUuid()).thenReturn(refreshUuid);
-        when(hashProvider.sha256(refreshUuid.toString())).thenReturn("sha256-hash");
-        when(refreshTokenRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-
+    @SuppressWarnings("unchecked")
+    void openSession_newSession_signsSessionClaimsAndStoresFirstToken() {
         // Act
-        var result = authTokenService.issueTokenPair(testUser, null);
+        var result = service.openSession(user, passkeyId, SETTINGS, TENANT);
 
         // Assert
         StepVerifier.create(result)
-                .assertNext(pair -> {
-                    assertThat(pair.accessToken()).isEqualTo("jwt-access-token");
-                    assertThat(pair.refreshToken()).isEqualTo(refreshUuid.toString());
-                    assertThat(pair.expiresIn()).isEqualTo(900);
+                .assertNext(session -> {
+                    assertThat(session.accessToken()).isEqualTo("access-token");
+                    assertThat(session.expiresIn()).isEqualTo(300);
+                    assertThat(session.passkeyId()).isEqualTo(passkeyId);
+                    assertThat(session.refreshToken()).isNotBlank();
                 })
                 .verifyComplete();
+        var claims = ArgumentCaptor.forClass(Map.class);
+        verify(tokenSigner).sign(claims.capture());
+        assertThat(claims.getValue()).containsKeys("sub", "email", "tenant", "sid", "pkid", "iss", "iat", "exp");
+        assertThat(claims.getValue()).containsEntry("tenant", TENANT);
+        assertThat(claims.getValue()).containsEntry("pkid", passkeyId.toString());
+        var stored = ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokenRepository).insert(stored.capture());
+        assertThat(stored.getValue().getPasskeyId()).isEqualTo(passkeyId);
+        assertThat(stored.getValue().getExpiresAt())
+                .isCloseTo(Instant.now().plus(Duration.ofMinutes(15)), org.assertj.core.api.Assertions.within(5, ChronoUnit.SECONDS));
     }
 
     @Test
-    void rotateRefreshToken_validToken_revokesOldAndIssuesNew() {
+    void rotateRefreshToken_activeToken_rotatesWithinTheSameSession() {
         // Arrange
-        var rawToken = "old-refresh-token";
-        var newRefreshUuid = UUID.randomUUID();
-        var existingToken = RefreshToken.create(testUser.getId(), null, "sha256-hash",
-                Instant.now().plusSeconds(3600));
-        when(hashProvider.sha256(anyString())).thenAnswer(inv -> {
-            String arg = inv.getArgument(0);
-            if (rawToken.equals(arg)) return "sha256-hash";
-            return "new-sha256";
-        });
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(existingToken));
-        when(refreshTokenRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-        when(tokenSigner.sign(anyMap())).thenReturn("new-jwt");
-        when(randomGenerator.generateUuid()).thenReturn(newRefreshUuid);
+        var started = Instant.now().minus(Duration.ofHours(1));
+        var existing = token(started, Instant.now().plusSeconds(600), false);
+        when(refreshTokenRepository.revokeIfActive(existing.getId())).thenReturn(Mono.just(true));
+        when(userPasskeyRepository.touchLastUsed(passkeyId)).thenReturn(Mono.empty());
 
         // Act
-        var result = authTokenService.rotateRefreshToken(rawToken, testUser);
+        var result = service.rotateRefreshToken(existing, user, SETTINGS, TENANT);
 
         // Assert
         StepVerifier.create(result)
-                .assertNext(pair -> {
-                    assertThat(pair.accessToken()).isEqualTo("new-jwt");
-                    assertThat(pair.expiresIn()).isEqualTo(900);
+                .assertNext(session -> {
+                    assertThat(session.sessionId()).isEqualTo(existing.getSessionId());
+                    assertThat(session.sessionExpiresAt()).isEqualTo(started.plus(Duration.ofHours(8)));
                 })
                 .verifyComplete();
-        assertThat(existingToken.isRevoked()).isTrue();
-        verify(userPasskeyRepository, never()).touchLastUsed(any());
+        var stored = ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokenRepository).insert(stored.capture());
+        assertThat(stored.getValue().getSessionId()).isEqualTo(existing.getSessionId());
+        assertThat(stored.getValue().getSessionStartedAt()).isEqualTo(started);
     }
 
     @Test
-    void rotateRefreshToken_tokenLinkedToPasskey_touchesPasskeyLastUsed() {
-        // Arrange: #1061961 — a refresh is device activity ("Última actividad")
-        var rawToken = "device-refresh-token";
-        var passkeyId = UUID.randomUUID();
-        var existingToken = RefreshToken.create(testUser.getId(), passkeyId, "sha256-hash",
-                Instant.now().plusSeconds(3600));
-        when(hashProvider.sha256(anyString())).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(existingToken));
-        when(refreshTokenRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-        when(tokenSigner.sign(anyMap())).thenReturn("new-jwt");
-        when(randomGenerator.generateUuid()).thenReturn(UUID.randomUUID());
+    void rotateRefreshToken_nearMaxDuration_capsTheNewTokenAtTheSessionEnd() {
+        // Arrange
+        var started = Instant.now().minus(Duration.ofHours(8)).plusSeconds(60);
+        var existing = token(started, Instant.now().plusSeconds(60), false);
+        when(refreshTokenRepository.revokeIfActive(existing.getId())).thenReturn(Mono.just(true));
+        when(userPasskeyRepository.touchLastUsed(passkeyId)).thenReturn(Mono.empty());
 
         // Act
-        var result = authTokenService.rotateRefreshToken(rawToken, testUser);
-
-        // Assert
-        StepVerifier.create(result)
-                .assertNext(pair -> assertThat(pair.accessToken()).isEqualTo("new-jwt"))
+        StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT)).expectNextCount(1)
                 .verifyComplete();
-        verify(userPasskeyRepository).touchLastUsed(passkeyId);
-    }
-
-    @Test
-    void rotateRefreshToken_touchFails_stillIssuesNewPair() {
-        // Arrange: activity bookkeeping must never break the session refresh
-        var rawToken = "device-refresh-token";
-        var passkeyId = UUID.randomUUID();
-        var existingToken = RefreshToken.create(testUser.getId(), passkeyId, "sha256-hash",
-                Instant.now().plusSeconds(3600));
-        when(hashProvider.sha256(anyString())).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(existingToken));
-        when(refreshTokenRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-        when(tokenSigner.sign(anyMap())).thenReturn("new-jwt");
-        when(randomGenerator.generateUuid()).thenReturn(UUID.randomUUID());
-        when(userPasskeyRepository.touchLastUsed(passkeyId))
-                .thenReturn(Mono.error(new RuntimeException("db down")));
-
-        // Act
-        var result = authTokenService.rotateRefreshToken(rawToken, testUser);
 
         // Assert
-        StepVerifier.create(result)
-                .assertNext(pair -> assertThat(pair.accessToken()).isEqualTo("new-jwt"))
-                .verifyComplete();
+        var stored = ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokenRepository).insert(stored.capture());
+        assertThat(stored.getValue().getExpiresAt()).isEqualTo(started.plus(Duration.ofHours(8)));
     }
 
     @Test
-    void rotateRefreshToken_revokedToken_compromiseDetected() {
+    void rotateRefreshToken_idleExpired_endsSessionWithIdleReason() {
         // Arrange
-        var rawToken = "reused-token";
-        var revokedToken = RefreshToken.create(testUser.getId(), null, "sha256-hash",
-                Instant.now().plusSeconds(3600));
-        revokedToken.revoke();
-        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(revokedToken));
-        when(refreshTokenRepository.revokeByUserId(testUser.getId())).thenReturn(Mono.empty());
+        var existing = token(Instant.now().minus(Duration.ofHours(1)), Instant.now().minusSeconds(1), false);
+        when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.just(1L));
 
-        // Act
-        var result = authTokenService.rotateRefreshToken(rawToken, testUser);
-
-        // Assert
-        StepVerifier.create(result)
-                .expectError(TokenFamilyCompromisedException.class)
+        // Act + Assert
+        StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
+                .expectErrorSatisfies(e -> assertThat(e).isInstanceOf(SessionExpiredException.class)
+                        .extracting("reason").isEqualTo(SessionExpiredException.Reason.IDLE_TIMEOUT))
                 .verify();
-        verify(refreshTokenRepository).revokeByUserId(testUser.getId());
+        verify(refreshTokenRepository, never()).insert(any());
     }
 
     @Test
-    void rotateRefreshToken_revokedTokenWithPasskey_revokesOnlyThatDevice() {
+    void rotateRefreshToken_pastMaxDuration_endsSessionEvenWithActivity() {
         // Arrange
-        var rawToken = "reused-token";
-        var passkeyId = UUID.randomUUID();
-        var revokedToken = RefreshToken.create(testUser.getId(), passkeyId, "sha256-hash",
-                Instant.now().plusSeconds(3600));
-        revokedToken.revoke();
-        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(revokedToken));
-        when(refreshTokenRepository.revokeByPasskeyId(passkeyId)).thenReturn(Mono.empty());
+        var existing = token(Instant.now().minus(Duration.ofHours(9)), Instant.now().plusSeconds(600), false);
+        when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.just(1L));
 
-        // Act
-        var result = authTokenService.rotateRefreshToken(rawToken, testUser);
-
-        // Assert
-        StepVerifier.create(result)
-                .expectError(TokenFamilyCompromisedException.class)
-                .verify();
-        verify(refreshTokenRepository).revokeByPasskeyId(passkeyId);
-        verify(refreshTokenRepository, never()).revokeByUserId(any());
-    }
-
-    @Test
-    void rotateRefreshToken_expiredToken_throwsInvalidTokenException() {
-        // Arrange
-        var rawToken = "expired-token";
-        var expiredToken = RefreshToken.create(testUser.getId(), null, "sha256-hash",
-                Instant.now().minusSeconds(1));
-        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(expiredToken));
-
-        // Act
-        var result = authTokenService.rotateRefreshToken(rawToken, testUser);
-
-        // Assert
-        StepVerifier.create(result)
-                .expectError(InvalidTokenException.class)
+        // Act + Assert
+        StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
+                .expectErrorSatisfies(e -> assertThat(e).isInstanceOf(SessionExpiredException.class)
+                        .extracting("reason").isEqualTo(SessionExpiredException.Reason.MAX_DURATION))
                 .verify();
     }
 
     @Test
-    void rotateRefreshToken_notFound_throwsInvalidTokenException() {
+    void rotateRefreshToken_expiredSessionAlreadyClosedByHousekeeping_isInvalidSessionWithoutExpiry() {
         // Arrange
-        var rawToken = "unknown-token";
-        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.empty());
+        var existing = token(Instant.now().minus(Duration.ofHours(1)), Instant.now().minusSeconds(1), false);
+        when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.just(0L));
 
-        // Act
-        var result = authTokenService.rotateRefreshToken(rawToken, testUser);
-
-        // Assert
-        StepVerifier.create(result)
-                .expectError(InvalidTokenException.class)
-                .verify();
+        // Act + Assert
+        StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
+                .expectError(InvalidSessionException.class).verify();
     }
 
     @Test
-    void revokeRefreshToken_existingToken_revokesSuccessfully() {
+    void rotateRefreshToken_revokedToken_endsTheWholeSession() {
         // Arrange
-        var rawToken = "token-to-revoke";
-        var token = RefreshToken.create(testUser.getId(), null, "sha256-hash",
-                Instant.now().plusSeconds(3600));
-        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(token));
-        when(refreshTokenRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        var existing = token(Instant.now(), Instant.now().plusSeconds(600), true);
+        when(refreshTokenRepository.hasActiveToken(existing.getSessionId())).thenReturn(Mono.just(true));
+        when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.empty());
 
-        // Act
-        var result = authTokenService.revokeRefreshToken(rawToken);
-
-        // Assert
-        StepVerifier.create(result)
-                .verifyComplete();
-        assertThat(token.isRevoked()).isTrue();
+        // Act + Assert
+        StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
+                .expectError(TokenFamilyCompromisedException.class).verify();
+        verify(refreshTokenRepository).revokeBySessionId(existing.getSessionId());
     }
 
     @Test
-    void revokeRefreshToken_notFound_completesSuccessfully() {
+    void rotateRefreshToken_revokedTokenOfAnEndedSession_isInvalidSessionWithoutReuseAlarm() {
         // Arrange
-        var rawToken = "unknown-token";
-        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.empty());
+        var existing = token(Instant.now(), Instant.now().plusSeconds(600), true);
+        when(refreshTokenRepository.hasActiveToken(existing.getSessionId())).thenReturn(Mono.just(false));
 
-        // Act
-        var result = authTokenService.revokeRefreshToken(rawToken);
-
-        // Assert
-        StepVerifier.create(result)
-                .verifyComplete();
+        // Act + Assert
+        StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
+                .expectError(InvalidSessionException.class).verify();
+        verify(refreshTokenRepository, never()).revokeBySessionId(any());
     }
 
     @Test
-    void linkSessionToPasskey_ownedByCaller_updatesPasskeyIdByTokenHash() {
+    void rotateRefreshToken_concurrentRotationLost_treatedAsReuse() {
         // Arrange
-        var rawToken = "session-token";
-        var passkeyId = UUID.randomUUID();
-        var existingToken = RefreshToken.create(testUser.getId(), null, "sha256-hash",
-                Instant.now().plusSeconds(3600));
-        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(existingToken));
-        when(refreshTokenRepository.updatePasskeyIdByTokenHash("sha256-hash", passkeyId)).thenReturn(Mono.empty());
+        var existing = token(Instant.now(), Instant.now().plusSeconds(600), false);
+        when(refreshTokenRepository.revokeIfActive(existing.getId())).thenReturn(Mono.just(false));
+        when(refreshTokenRepository.hasActiveToken(existing.getSessionId())).thenReturn(Mono.just(true));
+        when(refreshTokenRepository.revokeBySessionId(existing.getSessionId())).thenReturn(Mono.empty());
+        when(refreshTokenRepository.deleteById(any())).thenReturn(Mono.empty());
 
-        // Act
-        var result = authTokenService.linkSessionToPasskey(rawToken, testUser.getId(), passkeyId);
-
-        // Assert
-        StepVerifier.create(result)
-                .verifyComplete();
-        verify(refreshTokenRepository).updatePasskeyIdByTokenHash("sha256-hash", passkeyId);
-        verify(userPasskeyRepository).touchLastUsed(passkeyId);
+        // Act + Assert
+        StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
+                .expectError(TokenFamilyCompromisedException.class).verify();
+        // The token stored for the lost renewal is removed again.
+        var stored = org.mockito.ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokenRepository).insert(stored.capture());
+        verify(refreshTokenRepository).deleteById(stored.getValue().getId());
     }
 
     @Test
-    void linkSessionToPasskey_touchFails_stillCompletes() {
-        // Arrange: activity bookkeeping must never break the session attribution
-        var rawToken = "session-token";
-        var passkeyId = UUID.randomUUID();
-        var existingToken = RefreshToken.create(testUser.getId(), null, "sha256-hash",
-                Instant.now().plusSeconds(3600));
-        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(existingToken));
-        when(refreshTokenRepository.updatePasskeyIdByTokenHash("sha256-hash", passkeyId)).thenReturn(Mono.empty());
-        when(userPasskeyRepository.touchLastUsed(passkeyId))
-                .thenReturn(Mono.error(new RuntimeException("db down")));
-
-        // Act
-        var result = authTokenService.linkSessionToPasskey(rawToken, testUser.getId(), passkeyId);
-
-        // Assert
-        StepVerifier.create(result)
-                .verifyComplete();
-        verify(refreshTokenRepository).updatePasskeyIdByTokenHash("sha256-hash", passkeyId);
-        verify(userPasskeyRepository).touchLastUsed(passkeyId);
-    }
-
-    @Test
-    void linkSessionToPasskey_tokenNotFound_throwsInvalidTokenException() {
+    void rotateRefreshToken_tokenOfAnotherAccount_failsWithInvalidSession() {
         // Arrange
-        var rawToken = "unknown-token";
-        var passkeyId = UUID.randomUUID();
-        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.empty());
+        var existing = token(Instant.now(), Instant.now().plusSeconds(600), false);
+        var other = TestPasskeys.user("other@example.com");
 
-        // Act
-        var result = authTokenService.linkSessionToPasskey(rawToken, testUser.getId(), passkeyId);
-
-        // Assert
-        StepVerifier.create(result)
-                .expectError(InvalidTokenException.class)
-                .verify();
-        verify(refreshTokenRepository, never()).updatePasskeyIdByTokenHash(any(), any());
-        verify(userPasskeyRepository, never()).touchLastUsed(any());
+        // Act + Assert
+        StepVerifier.create(service.rotateRefreshToken(existing, other, SETTINGS, TENANT))
+                .expectError(InvalidSessionException.class).verify();
     }
 
     @Test
-    void linkSessionToPasskey_tokenBelongsToAnotherUser_throwsInvalidTokenException() {
-        // Arrange: the token is real, but it was issued to a different account — This is
-        // the guard against attributing someone else's session to your own passkey.
-        var rawToken = "someone-elses-token";
-        var passkeyId = UUID.randomUUID();
-        var otherUsersToken = RefreshToken.create(UUID.randomUUID(), null, "sha256-hash",
-                Instant.now().plusSeconds(3600));
-        when(hashProvider.sha256(rawToken)).thenReturn("sha256-hash");
-        when(refreshTokenRepository.findByTokenHash("sha256-hash")).thenReturn(Mono.just(otherUsersToken));
+    void findRefreshToken_blankValue_completesEmpty() {
+        StepVerifier.create(service.findRefreshToken(" ")).verifyComplete();
+        verify(refreshTokenRepository, never()).findByTokenHash(any());
+    }
 
-        // Act
-        var result = authTokenService.linkSessionToPasskey(rawToken, testUser.getId(), passkeyId);
+    @Test
+    void endOtherSessions_delegatesKeepingTheCurrentSession() {
+        // Arrange
+        var current = UUID.randomUUID();
+        when(refreshTokenRepository.revokeByUserIdExceptSession(user.getId(), current)).thenReturn(Mono.just(2L));
 
-        // Assert
-        StepVerifier.create(result)
-                .expectError(InvalidTokenException.class)
-                .verify();
-        verify(refreshTokenRepository, never()).updatePasskeyIdByTokenHash(any(), any());
-        verify(userPasskeyRepository, never()).touchLastUsed(any());
+        // Act + Assert
+        StepVerifier.create(service.endOtherSessions(user.getId(), current)).expectNext(2L).verifyComplete();
+    }
+
+    @Test
+    void endSession_activeSession_emitsTrue() {
+        // Arrange
+        var sessionId = UUID.randomUUID();
+        when(refreshTokenRepository.revokeBySessionId(sessionId)).thenReturn(Mono.just(1L));
+
+        // Act + Assert
+        StepVerifier.create(service.endSession(sessionId)).expectNext(true).verifyComplete();
+    }
+
+    @Test
+    void endSession_alreadyEndedSession_emitsFalse() {
+        // Arrange
+        var sessionId = UUID.randomUUID();
+        when(refreshTokenRepository.revokeBySessionId(sessionId)).thenReturn(Mono.just(0L));
+
+        // Act + Assert
+        StepVerifier.create(service.endSession(sessionId)).expectNext(false).verifyComplete();
+    }
+
+    @Test
+    void endSession_repositoryReportsNothing_emitsFalse() {
+        // Arrange
+        var sessionId = UUID.randomUUID();
+        when(refreshTokenRepository.revokeBySessionId(sessionId)).thenReturn(Mono.empty());
+
+        // Act + Assert
+        StepVerifier.create(service.endSession(sessionId)).expectNext(false).verifyComplete();
+    }
+
+    @Test
+    void expireLapsedSessions_delegatesToTheRepository() {
+        // Arrange
+        var expired = new ExpiredSession(UUID.randomUUID(), user.getId(), Instant.now().minus(Duration.ofHours(1)),
+                Instant.now().minus(Duration.ofMinutes(30)));
+        when(refreshTokenRepository.expireLapsedSessions()).thenReturn(Flux.just(expired));
+
+        // Act + Assert
+        StepVerifier.create(service.expireLapsedSessions()).expectNext(expired).verifyComplete();
     }
 }

@@ -16,7 +16,7 @@ class CaffeineEmailRateLimiterTest {
 
     @BeforeEach
     void setUp() {
-        var properties = new RateLimitProperties(2, 10, 2, 20, 60, 20, 30, Duration.ofHours(1));
+        var properties = new RateLimitProperties(2, 10, 2, 20, 60, 20, 30, 30, Duration.ofHours(1));
         rateLimiter = new CaffeineEmailRateLimiter(properties);
     }
 

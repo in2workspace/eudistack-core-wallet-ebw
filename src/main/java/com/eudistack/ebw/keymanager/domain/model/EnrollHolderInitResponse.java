@@ -3,7 +3,7 @@ package com.eudistack.ebw.keymanager.domain.model;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Response to the hybrid onboarding init step.
+ * Response to the passkey-prf onboarding init step.
  *
  * <p>All byte fields are base64url-encoded without padding. The Wallet PWA uses these
  * values to:

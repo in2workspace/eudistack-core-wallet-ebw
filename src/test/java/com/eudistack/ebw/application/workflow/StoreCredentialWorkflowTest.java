@@ -63,13 +63,13 @@ class StoreCredentialWorkflowTest {
                 .thenReturn(Mono.just(" jwt_vc_json , DC+SD-JWT "));
         when(credentialService.parseCredential(RAW, CredentialFormat.DC_SD_JWT))
                 .thenReturn(Mono.just(new ParsedCredential("https://issuer", "did:sub", issuance, expiration,
-                        "LEARCredentialEmployee", "urn:vct:lear")));
+                        "LEARCredentialEmployee", "urn:vct:lear", false)));
         when(credentialRepository.insert(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         when(credentialService.computeAuditHash(RAW)).thenReturn("abc123");
         when(auditService.record(eq("credential"), any(), eq("CREATED"), eq(USER_ID), any())).thenReturn(Mono.empty());
 
         // Act
-        var result = workflow.storeCredential(USER_ID, RAW, "dc+sd-jwt", "cfg-1", "kid-1", ISSUER_METADATA, "hk-1");
+        var result = workflow.storeCredential(USER_ID, RAW, "dc+sd-jwt", "cfg-1", "kid-1", ISSUER_METADATA, "hk-1", null);
 
         // Assert
         StepVerifier.create(result)
@@ -102,13 +102,13 @@ class StoreCredentialWorkflowTest {
         when(tenantConfigService.getStringOrDefault(ALLOWED_FORMATS_KEY, DEFAULT_ALLOWED_FORMATS))
                 .thenReturn(Mono.just("*"));
         when(credentialService.parseCredential(RAW, CredentialFormat.JWT_VC_JSON))
-                .thenReturn(Mono.just(new ParsedCredential("iss", "sub", Instant.now(), null, "Type", null)));
+                .thenReturn(Mono.just(new ParsedCredential("iss", "sub", Instant.now(), null, "Type", null, false)));
         when(credentialRepository.insert(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         when(credentialService.computeAuditHash(RAW)).thenReturn("h");
         when(auditService.record(anyString(), any(), anyString(), any(), any())).thenReturn(Mono.empty());
 
         // Act
-        var result = workflow.storeCredential(USER_ID, RAW, "jwt_vc_json", "cfg", null, Map.of(), null);
+        var result = workflow.storeCredential(USER_ID, RAW, "jwt_vc_json", "cfg", null, Map.of(), null, null);
 
         // Assert
         StepVerifier.create(result)
@@ -124,7 +124,7 @@ class StoreCredentialWorkflowTest {
                 .thenReturn(Mono.just("dc+sd-jwt"));
 
         // Act
-        var result = workflow.storeCredential(USER_ID, RAW, "jwt_vc_json", "cfg", null, Map.of(), null);
+        var result = workflow.storeCredential(USER_ID, RAW, "jwt_vc_json", "cfg", null, Map.of(), null, null);
 
         // Assert
         StepVerifier.create(result)
@@ -140,7 +140,7 @@ class StoreCredentialWorkflowTest {
         when(credentialService.validateFormat("mso_mdoc")).thenThrow(new UnsupportedFormatException("mso_mdoc"));
 
         // Act
-        var result = workflow.storeCredential(USER_ID, RAW, "mso_mdoc", "cfg", null, Map.of(), null);
+        var result = workflow.storeCredential(USER_ID, RAW, "mso_mdoc", "cfg", null, Map.of(), null, null);
 
         // Assert
         StepVerifier.create(result)
@@ -156,17 +156,78 @@ class StoreCredentialWorkflowTest {
         when(tenantConfigService.getStringOrDefault(ALLOWED_FORMATS_KEY, DEFAULT_ALLOWED_FORMATS))
                 .thenReturn(Mono.just(DEFAULT_ALLOWED_FORMATS));
         when(credentialService.parseCredential(RAW, CredentialFormat.DC_SD_JWT))
-                .thenReturn(Mono.just(new ParsedCredential("iss", "sub", Instant.now(), null, "Type", "vct")));
+                .thenReturn(Mono.just(new ParsedCredential("iss", "sub", Instant.now(), null, "Type", "vct", false)));
         when(credentialRepository.insert(any(WalletCredential.class)))
                 .thenReturn(Mono.error(new IllegalStateException("db down")));
 
         // Act
-        var result = workflow.storeCredential(USER_ID, RAW, "dc+sd-jwt", "cfg", null, Map.of(), null);
+        var result = workflow.storeCredential(USER_ID, RAW, "dc+sd-jwt", "cfg", null, Map.of(), null, null);
 
         // Assert
         StepVerifier.create(result)
                 .expectErrorMessage("db down")
                 .verify();
         verify(auditService, never()).record(anyString(), any(), anyString(), any(), any());
+    }
+
+    @Test
+    void storeCredential_boundCredential_storesTheSessionPasskey() {
+        // Arrange — EUD-11 FR-13: the Wallet App never sends the passkey, it comes from the session
+        var passkeyId = UUID.randomUUID();
+        givenParsed(true);
+
+        // Act
+        var result = workflow.storeCredential(USER_ID, RAW, "dc+sd-jwt", "cfg", null, Map.of(), null, passkeyId);
+
+        // Assert
+        StepVerifier.create(result)
+                .assertNext(saved -> {
+                    assertThat(saved.isBound()).isTrue();
+                    assertThat(saved.getPasskeyId()).isEqualTo(passkeyId);
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void storeCredential_unboundCredential_storesNoPasskey() {
+        // Arrange
+        givenParsed(false);
+
+        // Act
+        var result = workflow.storeCredential(USER_ID, RAW, "dc+sd-jwt", "cfg", null, Map.of(), null,
+                UUID.randomUUID());
+
+        // Assert
+        StepVerifier.create(result)
+                .assertNext(saved -> {
+                    assertThat(saved.isBound()).isFalse();
+                    assertThat(saved.getPasskeyId()).isNull();
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void storeCredential_holderKeyWithoutCnfClaim_isStillBound() {
+        // Arrange — fallback when the parsed attestation does not expose cnf
+        var passkeyId = UUID.randomUUID();
+        givenParsed(false);
+
+        // Act
+        var result = workflow.storeCredential(USER_ID, RAW, "dc+sd-jwt", "cfg", null, Map.of(), "hk-1", passkeyId);
+
+        // Assert
+        StepVerifier.create(result).assertNext(saved -> assertThat(saved.getPasskeyId()).isEqualTo(passkeyId))
+                .verifyComplete();
+    }
+
+    private void givenParsed(boolean hasCnf) {
+        when(credentialService.validateFormat("dc+sd-jwt")).thenReturn(CredentialFormat.DC_SD_JWT);
+        when(tenantConfigService.getStringOrDefault(ALLOWED_FORMATS_KEY, DEFAULT_ALLOWED_FORMATS))
+                .thenReturn(Mono.just("*"));
+        when(credentialService.parseCredential(RAW, CredentialFormat.DC_SD_JWT))
+                .thenReturn(Mono.just(new ParsedCredential("iss", "sub", Instant.now(), null, "Type", "vct", hasCnf)));
+        when(credentialRepository.insert(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(credentialService.computeAuditHash(RAW)).thenReturn("h");
+        when(auditService.record(any(), any(), any(), any(), any())).thenReturn(Mono.empty());
     }
 }

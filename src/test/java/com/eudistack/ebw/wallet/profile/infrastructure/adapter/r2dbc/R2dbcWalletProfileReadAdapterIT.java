@@ -203,7 +203,7 @@ class R2dbcWalletProfileReadAdapterIT {
     /**
      * Seeds a server profile in the test tenant schema via a plain JDBC INSERT.
      *
-     * @param keyManager the {@code key_manager} value (must be one of db, hybrid, hsm, qtsp)
+     * @param keyManager the {@code key_manager} value (must be one of db, passkey-prf, hsm, qtsp)
      */
     private void seedServerProfile(String keyManager) throws SQLException {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {

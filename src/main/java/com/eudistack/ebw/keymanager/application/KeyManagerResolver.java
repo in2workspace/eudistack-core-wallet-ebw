@@ -11,18 +11,18 @@ import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
  *
  * <p>{@code null} key-manager (BROWSER-mode tenant) defaults to the {@code db} adapter,
  * which rejects both handshake calls with {@link UnsupportedOperationException} — the correct
- * response because browser tenants never reach the hybrid endpoints.</p>
+ * response because browser tenants never reach the passkey-prf endpoints.</p>
  *
  * <p>Spec: EUDISTACK-474 FR-01, AC-01, AC-02; EUDISTACK-533 technical-design.md §3.4.</p>
  */
 public class KeyManagerResolver {
 
     private final KeyManagerPort dbAdapter;
-    private final KeyManagerPort hybridAdapter;
+    private final KeyManagerPort passkeyPrfAdapter;
 
-    public KeyManagerResolver(KeyManagerPort dbAdapter, KeyManagerPort hybridAdapter) {
+    public KeyManagerResolver(KeyManagerPort dbAdapter, KeyManagerPort passkeyPrfAdapter) {
         this.dbAdapter = dbAdapter;
-        this.hybridAdapter = hybridAdapter;
+        this.passkeyPrfAdapter = passkeyPrfAdapter;
     }
 
     /**
@@ -36,8 +36,8 @@ public class KeyManagerResolver {
         if (keyManager == null || keyManager == KeyManager.DB) {
             return dbAdapter;
         }
-        if (keyManager == KeyManager.HYBRID) {
-            return hybridAdapter;
+        if (keyManager == KeyManager.PASSKEY_PRF) {
+            return passkeyPrfAdapter;
         }
         throw new IllegalArgumentException(
                 "Unsupported key_manager value: " + keyManager.getDbValue()

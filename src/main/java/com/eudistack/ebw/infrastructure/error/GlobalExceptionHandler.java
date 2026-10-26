@@ -88,13 +88,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
     }
 
-    @ExceptionHandler(DuplicatePasskeyException.class)
-    public ResponseEntity<ProblemDetail> handleDuplicatePasskey(DuplicatePasskeyException ex) {
-        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
-        problem.setType(URI.create("urn:eudistack:error:duplicate-passkey"));
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
-    }
-
     @ExceptionHandler(LastPasskeyException.class)
     public ResponseEntity<ProblemDetail> handleLastPasskey(LastPasskeyException ex) {
         var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());

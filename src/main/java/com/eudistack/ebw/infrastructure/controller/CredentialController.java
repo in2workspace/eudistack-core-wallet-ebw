@@ -59,7 +59,8 @@ public class CredentialController {
             JwtAuthenticationToken auth) {
         return storeCredentialWorkflow.storeCredential(
                         auth.getUserId(), request.credentialRaw(), request.format(),
-                        request.credentialConfigurationId(), request.kid(), request.issuerMetadata(), null)
+                        request.credentialConfigurationId(), request.kid(), request.issuerMetadata(), null,
+                        auth.getPasskeyId())
                 .map(credential -> ResponseEntity
                         .created(URI.create("/api/v1/credentials/" + credential.getId()))
                         .body(CredentialDetailResponse.from(credential)));
@@ -71,26 +72,27 @@ public class CredentialController {
             @RequestParam(name = "credential_configuration_id", required = false) String credentialConfigId,
             @RequestParam(required = false) String issuer,
             JwtAuthenticationToken auth) {
-        return listCredentialsWorkflow.listCredentials(auth.getUserId(), status, credentialConfigId, issuer)
+        return listCredentialsWorkflow.listCredentials(auth.getUserId(), auth.getPasskeyId(), status,
+                        credentialConfigId, issuer)
                 .collectList();
     }
 
     @GetMapping("/{id}")
     public Mono<VerifiableCredentialResponse> getById(@PathVariable UUID id, JwtAuthenticationToken auth) {
-        return getCredentialWorkflow.getCredential(auth.getUserId(), id);
+        return getCredentialWorkflow.getCredential(auth.getUserId(), auth.getPasskeyId(), id);
     }
 
     @PatchMapping("/{id}/status")
     public Mono<CredentialDetailResponse> updateStatus(@PathVariable UUID id,
                                                         @Valid @RequestBody UpdateStatusRequest request,
                                                         JwtAuthenticationToken auth) {
-        return updateCredentialStatusWorkflow.updateStatus(auth.getUserId(), id, request.status())
+        return updateCredentialStatusWorkflow.updateStatus(auth.getUserId(), auth.getPasskeyId(), id, request.status())
                 .map(CredentialDetailResponse::from);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public Mono<Void> delete(@PathVariable UUID id, JwtAuthenticationToken auth) {
-        return deleteCredentialWorkflow.deleteCredential(auth.getUserId(), id);
+        return deleteCredentialWorkflow.deleteCredential(auth.getUserId(), auth.getPasskeyId(), id);
     }
 }

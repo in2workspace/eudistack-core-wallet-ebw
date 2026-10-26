@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.controller;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.infrastructure.controller.dto.ActivityResponse;
@@ -103,6 +104,10 @@ class ActivityControllerIT {
         registry.add("spring.flyway.default-schema", () -> "public");
     }
 
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
+
     @MockitoBean
     TokenSigner tokenSigner;
 
@@ -140,12 +145,13 @@ class ActivityControllerIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         cleanTables(SCHEMA_1);
         cleanTables(SCHEMA_2);
-        when(tokenSigner.verify(TOKEN_A)).thenReturn(
-                Map.of("sub", USER_A.toString(), "email", "user-a@test.com"));
-        when(tokenSigner.verify(TOKEN_B)).thenReturn(
-                Map.of("sub", USER_B.toString(), "email", "user-b@test.com"));
+        when(tokenSigner.verify(TOKEN_A)).thenAnswer(TestSessions.sessionOfRequestTenant(USER_A.toString(), "user-a@test.com"));
+        when(tokenSigner.verify(TOKEN_B)).thenAnswer(TestSessions.sessionOfRequestTenant(USER_B.toString(), "user-b@test.com"));
         when(tokenSigner.verify(INVALID_TOKEN)).thenThrow(new InvalidTokenException());
     }
 
