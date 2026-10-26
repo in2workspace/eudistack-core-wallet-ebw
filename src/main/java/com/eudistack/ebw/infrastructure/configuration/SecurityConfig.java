@@ -1,8 +1,8 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
-import com.eudistack.ebw.infrastructure.controller.support.AuthProblems;
 import com.eudistack.ebw.infrastructure.controller.support.RefreshCookies;
 import com.eudistack.ebw.infrastructure.security.CorsOriginsLoader;
+import com.eudistack.ebw.infrastructure.security.InvalidSessionResponse;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationWebFilter;
 import com.eudistack.ebw.infrastructure.security.PublicRoutes;
 import com.eudistack.ebw.infrastructure.security.TenantCorsConfigurationSource;
@@ -10,9 +10,7 @@ import com.eudistack.ebw.infrastructure.security.TenantOrigins;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -25,10 +23,6 @@ import reactor.core.publisher.Mono;
 @Configuration
 @EnableWebFluxSecurity
 public class SecurityConfig {
-
-    /** Session endpoints whose 401 is the contract's {@code invalid_session} problem. */
-    // Fixed route of the public API contract (OpenAPI), not deployment configuration.
-    private static final String SESSIONS_PATH = "/api/v1/auth/sessions/"; // NOSONAR java:S1075
 
     private final JwtAuthenticationWebFilter jwtAuthFilter;
     private final CorsConfigurationSource corsConfigurationSource;
@@ -96,20 +90,10 @@ public class SecurityConfig {
      * {@code invalid_session} problem and clear the refresh cookie.
      */
     private Mono<Void> unauthenticated(ServerWebExchange exchange) {
-        var response = exchange.getResponse();
-        response.setStatusCode(HttpStatus.UNAUTHORIZED);
-        var path = exchange.getRequest().getPath().pathWithinApplication().value();
-        if (!path.startsWith(SESSIONS_PATH)) {
-            return response.setComplete();
+        if (!InvalidSessionResponse.isSessionEndpoint(exchange)) {
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
         }
-        response.getHeaders().setContentType(MediaType.APPLICATION_PROBLEM_JSON);
-        response.getHeaders().add(HttpHeaders.SET_COOKIE, refreshCookies.clear().toString());
-        byte[] body;
-        try {
-            body = objectMapper.writeValueAsBytes(AuthProblems.of(HttpStatus.UNAUTHORIZED, AuthProblems.INVALID_SESSION));
-        } catch (Exception _) {
-            body = new byte[0];
-        }
-        return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
+        return InvalidSessionResponse.write(exchange, objectMapper, refreshCookies);
     }
 }

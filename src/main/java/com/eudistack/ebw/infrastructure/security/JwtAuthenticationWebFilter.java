@@ -5,12 +5,9 @@ import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.eudistack.ebw.infrastructure.controller.support.AuthProblems;
 import com.eudistack.ebw.infrastructure.controller.support.RefreshCookies;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
@@ -50,10 +47,6 @@ public class JwtAuthenticationWebFilter implements WebFilter {
 
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationWebFilter.class);
     private static final String BEARER_PREFIX = "Bearer ";
-
-    /** Session endpoints, whose {@code invalid_session} also clears the refresh cookie. */
-    // Fixed route of the public API contract (OpenAPI), not deployment configuration.
-    private static final String SESSIONS_PATH = "/api/v1/auth/sessions/"; // NOSONAR java:S1075
 
     private final TokenSigner tokenSigner;
     private final ActiveSessionChecker activeSessionChecker;
@@ -101,25 +94,9 @@ public class JwtAuthenticationWebFilter implements WebFilter {
                         : activeSessionChecker.isActive(auth.getSessionId()));
     }
 
-    private static String pathOf(ServerWebExchange exchange) {
-        return exchange.getRequest().getPath().pathWithinApplication().value();
-    }
-
     private Mono<Void> invalidSession(ServerWebExchange exchange) {
         log.debug("Access token rejected: its session is no longer active");
-        var response = exchange.getResponse();
-        response.setStatusCode(HttpStatus.UNAUTHORIZED);
-        response.getHeaders().setContentType(MediaType.APPLICATION_PROBLEM_JSON);
-        if (pathOf(exchange).startsWith(SESSIONS_PATH)) {
-            response.getHeaders().add(HttpHeaders.SET_COOKIE, refreshCookies.clear().toString());
-        }
-        byte[] body;
-        try {
-            body = objectMapper.writeValueAsBytes(AuthProblems.of(HttpStatus.UNAUTHORIZED, AuthProblems.INVALID_SESSION));
-        } catch (Exception _) {
-            body = new byte[0];
-        }
-        return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
+        return InvalidSessionResponse.write(exchange, objectMapper, refreshCookies);
     }
 
     private JwtAuthenticationToken toAuthentication(Map<String, Object> claims, String requestTenant) {
