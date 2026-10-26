@@ -24,13 +24,15 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class WalletAuthSettingsServiceTest {
 
+    private static final Duration ACCESS_TOKEN_TTL = Duration.ofMinutes(5);
+
     @Mock private TenantConfigService tenantConfigService;
 
     private WalletAuthSettingsService service;
 
     @BeforeEach
     void setUp() {
-        service = new WalletAuthSettingsService(tenantConfigService);
+        service = new WalletAuthSettingsService(tenantConfigService, ACCESS_TOKEN_TTL);
         lenient().when(tenantConfigService.getStringOrDefault(anyString(), anyString()))
                 .thenAnswer(inv -> Mono.just(inv.getArgument(1)));
     }
@@ -93,6 +95,29 @@ class WalletAuthSettingsServiceTest {
                 .verifyComplete();
     }
 
+    @Test
+    void session_idleEqualToTheAccessTokenLifetime_isAccepted() {
+        // Arrange
+        config("ebw.session.idle_timeout", "PT5M");
+        config("ebw.session.max_duration", "PT8H");
+
+        // Act + Assert
+        StepVerifier.create(service.session())
+                .expectNext(new SessionSettings(Duration.ofMinutes(5), Duration.ofHours(8)))
+                .verifyComplete();
+    }
+
+    @Test
+    void session_accessTokenLongerThanTheDefaultIdle_usesTheAccessTokenLifetimeAsDefault() {
+        // Arrange: a 10-minute access token would outlive the 5-minute default refresh token
+        var longTokens = new WalletAuthSettingsService(tenantConfigService, Duration.ofMinutes(10));
+
+        // Act + Assert
+        StepVerifier.create(longTokens.session())
+                .expectNext(new SessionSettings(Duration.ofMinutes(10), Duration.ofHours(8)))
+                .verifyComplete();
+    }
+
     @ParameterizedTest
     @CsvSource({
             "PT2H, PT8H, PT5M, PT8H",      // idle above PT1H
@@ -100,6 +125,8 @@ class WalletAuthSettingsServiceTest {
             "nonsense, PT8H, PT5M, PT8H",  // not ISO-8601
             "-PT5M, PT8H, PT5M, PT8H",     // negative
             "PT0S, PT8H, PT5M, PT8H",      // zero
+            "PT2M, PT8H, PT5M, PT8H",      // below the access token lifetime: an active session would expire
+            "PT4M59S, PT8H, PT5M, PT8H",   // just below it
             "PT1H, PT30M, PT5M, PT8H"      // idle longer than max: both defaults
     })
     void session_outOfRange_fallsBackToTheDefaults(String idle, String max, String expectedIdle, String expectedMax) {

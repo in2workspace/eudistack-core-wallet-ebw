@@ -49,8 +49,9 @@ public class DomainConfig {
     }
 
     @Bean
-    public WalletAuthSettingsService walletAuthSettingsService(TenantConfigService tenantConfigService) {
-        return new WalletAuthSettingsService(tenantConfigService);
+    public WalletAuthSettingsService walletAuthSettingsService(TenantConfigService tenantConfigService,
+                                                               JwtProperties jwtProperties) {
+        return new WalletAuthSettingsService(tenantConfigService, jwtProperties.accessTokenTtl());
     }
 
     @Bean
