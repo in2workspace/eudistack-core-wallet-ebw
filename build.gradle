@@ -66,8 +66,8 @@ dependencies {
     implementation 'com.webauthn4j:webauthn4j-core:0.31.11.RELEASE'
 
     // --- Cryptography ---
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.85'
-    implementation 'org.bouncycastle:bcpkix-jdk18on:1.85'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.86'
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.86'
 
     // --- Monitoring & Telemetry ---
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
