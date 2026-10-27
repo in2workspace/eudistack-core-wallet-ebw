@@ -50,7 +50,8 @@ class RegistrationTicketServiceTest {
 
     private RegistrationTicket ticket() {
         var now = Instant.now();
-        return new RegistrationTicket(UUID.randomUUID(), UUID.randomUUID(), "hash", now.plusSeconds(300), null, now);
+        return new RegistrationTicket(UUID.randomUUID(), UUID.randomUUID(), null, "hash", now.plusSeconds(300), null,
+                now);
     }
 
     @Test
