@@ -1,0 +1,58 @@
+package com.eudistack.ebw.infrastructure.configuration.logging;
+
+import ch.qos.logback.classic.PatternLayout;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+
+import java.util.AbstractMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
+
+/**
+ * Redacts PII and secrets from every rendered log line: emails, JWTs, bearer tokens, OTPs and
+ * tokens or secrets written as {@code key=value} / JSON fields, and every UUID — the user,
+ * credential, passkey, key and session identifiers are all UUIDs, and together with the activity
+ * type and time they would let anyone rebuild an individual holder's use of the wallet.
+ */
+public class MaskingPatternLayout extends PatternLayout {
+
+    static final String REPLACEMENT = "***";
+
+    private static final List<Map.Entry<Pattern, String>> MASKS = List.of(
+            new AbstractMap.SimpleImmutableEntry<>(
+                    Pattern.compile("[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}"),
+                    REPLACEMENT),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    Pattern.compile("eyJ[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]+"),
+                    REPLACEMENT),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    Pattern.compile("(?i)(Bearer\\s+)\\S+"),
+                    "$1" + REPLACEMENT),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    Pattern.compile(
+                            "(?i)(?<!\\w)(\"?(?:tx_code|otp|code|token|access_?token|refresh_?token|id_?token"
+                                    + "|password|client_?secret|secret)\"?\\s*[:=]\\s*\"?)([^\"&\\s,}]+)"),
+                    "$1" + REPLACEMENT),
+            new AbstractMap.SimpleImmutableEntry<>(
+                    Pattern.compile(
+                            "(?i)\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b"),
+                    REPLACEMENT)
+    );
+
+    @Override
+    public String doLayout(ILoggingEvent event) {
+        return mask(super.doLayout(event));
+    }
+
+    // Shared with MaskingOpenTelemetryAppender, which reads the raw event and bypasses doLayout
+    static String mask(final String input) {
+        if (input == null || input.isBlank()) {
+            return input;
+        }
+        String result = input;
+        for (Map.Entry<Pattern, String> entry : MASKS) {
+            result = entry.getKey().matcher(result).replaceAll(entry.getValue());
+        }
+        return result;
+    }
+}

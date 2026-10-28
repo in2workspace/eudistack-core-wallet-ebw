@@ -150,8 +150,7 @@ email-branding:
   assets-base-url: ${EMAIL_ASSETS_BASE_URL:}
 
 logging:
-  pattern:
-    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+  # The console pattern (service name, traceId, spanId) and the PII masking live in logback-spring.xml
   level:
     org.springframework.security: ${LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY:INFO}
     com.eudistack.ebw: ${LOG_LEVEL:INFO}
