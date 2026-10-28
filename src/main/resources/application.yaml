@@ -1,6 +1,7 @@
 spring:
   application:
-    name: eudistack-core-wallet-ebw
+    # Also the OTLP service.name; each environment can rename it (DEV: wallet-ebw).
+    name: ${OTEL_SERVICE_NAME:eudistack-core-wallet-ebw}
   config:
     import:
       # Email branding per tenant (image flags, social links). Each environment can replace the whole file:
@@ -77,13 +78,25 @@ ebw:
     trust-forwarded-host: ${TRUST_FORWARDED_HOST:false}
 
 management:
+  # OTLP/gRPC export to the OTel Collector → OpenObserve. Exports default off:
+  # local runs and tests must not try to export.
   otlp:
-    tracing:
-      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
     metrics:
       export:
-        enabled: false
-  endpoints:                          # ← Note: 'endpoints' (plural) for web exposure settings
+        enabled: ${MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED:false}
+        url: ${OTEL_COLLECTOR_GRPC_URL:http://127.0.0.1:4317}
+        step: 5s
+        resource-attributes:
+          service.name: ${spring.application.name}
+    tracing:
+      transport: grpc
+      endpoint: ${OTEL_COLLECTOR_GRPC_URL:http://127.0.0.1:4317}
+      export:
+        enabled: ${MANAGEMENT_OTLP_TRACING_EXPORT_ENABLED:false}
+  tracing:
+    sampling:
+      probability: ${OTEL_SAMPLING_PROBABILITY:1.0}
+  endpoints:                         # ← Note: 'endpoints' (plural) for web exposure settings
     web:
       exposure:
         include: health, info, prometheus    # ← Also missing comma between 'info' and 'prometheus'
