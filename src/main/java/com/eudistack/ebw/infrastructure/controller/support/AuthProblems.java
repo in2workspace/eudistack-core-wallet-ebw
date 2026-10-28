@@ -22,6 +22,11 @@ public final class AuthProblems {
     public static final String UNKNOWN_CREDENTIAL = "unknown_credential";
     public static final String AUTHENTICATION_FAILED = "authentication_failed";
     public static final String INVALID_SESSION = "invalid_session";
+    /** System token, or "it was not me" token, not accepted (EUD-315). */
+    public static final String INVALID_TOKEN = "invalid_token";
+    public static final String INSUFFICIENT_PERMISSION = "insufficient_permission";
+    /** Not in the contract: the Verifier keys cannot be read, so no system token can be checked (EUD-315). */
+    public static final String SERVICE_UNAVAILABLE = "service_unavailable";
     /** Not in the contract: cookie endpoint called without {@code X-Wallet-Request: 1}. */
     public static final String FORBIDDEN = "forbidden";
     /** Not in the contract: server failure, for instance a tenant without {@code ebw.webauthn.rp_id}. */

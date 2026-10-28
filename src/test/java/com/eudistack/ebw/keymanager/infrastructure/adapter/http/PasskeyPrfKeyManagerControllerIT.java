@@ -100,6 +100,10 @@ class PasskeyPrfKeyManagerControllerIT {
     @MockitoBean
     WalletProfileQueryTelemetry walletProfileQueryTelemetry;
 
+    /** Dependency of SystemTokenWebFilter (EUD-315), a WebFilter the slice loads; unused by these routes. */
+    @MockitoBean
+    com.eudistack.ebw.infrastructure.security.SystemTokenVerifier systemTokenVerifier;
+
     @Autowired
     WebTestClient webTestClient;
 
