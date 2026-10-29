@@ -28,16 +28,22 @@ public class MaskingPatternLayout extends PatternLayout {
             new AbstractMap.SimpleImmutableEntry<>(
                     Pattern.compile("(?i)(Bearer\\s+)\\S+"),
                     "$1" + REPLACEMENT),
-            new AbstractMap.SimpleImmutableEntry<>(
-                    Pattern.compile(
-                            "(?i)(?<!\\w)(\"?(?:tx_code|otp|code|token|access_?token|refresh_?token|id_?token"
-                                    + "|password|client_?secret|secret)\"?\\s*[:=]\\s*\"?)([^\"&\\s,}]+)"),
-                    "$1" + REPLACEMENT),
+            keyValueMask("tx_code|otp|code"),
+            keyValueMask("token|access_?token|refresh_?token|id_?token"),
+            keyValueMask("password|client_?secret|secret"),
             new AbstractMap.SimpleImmutableEntry<>(
                     Pattern.compile(
                             "(?i)\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b"),
                     REPLACEMENT)
     );
+
+    // Masks the value of the given keys written as key=value or as a JSON field ("key":"value").
+    // The keys must not be the suffix of a longer word: error_code is not code.
+    private static Map.Entry<Pattern, String> keyValueMask(String keys) {
+        return new AbstractMap.SimpleImmutableEntry<>(
+                Pattern.compile("(?i)(?<!\\w)(\"?(?:" + keys + ")\"?\\s*[:=]\\s*\"?)[^\"&\\s,}]+"),
+                "$1" + REPLACEMENT);
+    }
 
     @Override
     public String doLayout(ILoggingEvent event) {

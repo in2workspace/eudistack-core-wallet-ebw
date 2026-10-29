@@ -5,6 +5,8 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static com.eudistack.ebw.infrastructure.configuration.logging.MaskingPatternLayout.REPLACEMENT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,13 +46,6 @@ class MaskingPatternLayoutTest {
     @Test
     void mask_BlankString_ReturnsBlankString() {
         assertThat(MaskingPatternLayout.mask("   ")).isBlank();
-    }
-
-    @Test
-    void mask_PlainTextWithNoSensitiveData_ReturnsUnchanged() {
-        String input = "Application started successfully on port 8080";
-
-        assertThat(MaskingPatternLayout.mask(input)).isEqualTo(input);
     }
 
     // ─── mask() – Email ───────────────────────────────────────────────────────
@@ -151,37 +146,17 @@ class MaskingPatternLayoutTest {
 
     // ─── mask() – False positive prevention ──────────────────────────────────
 
-    @Test
-    void mask_TraceAndSpanIds_NotMasked() {
-        String input = "[wallet-ebw,4bf92f3577b34da6a3ce929d0e0e4736,00f067aa0ba902b7]";
-
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Application started successfully on port 8080",
+            "[wallet-ebw,4bf92f3577b34da6a3ce929d0e0e4736,00f067aa0ba902b7]",
+            "error_code=expired_code notsecret=value",
+            "Email verification rejected: invalid_code",
+            "Calling external service at https://api.example.com/v1/resources",
+            "eyJ.onlyone"
+    })
+    void mask_NoSensitiveData_ReturnsUnchanged(String input) {
         assertThat(MaskingPatternLayout.mask(input)).isEqualTo(input);
-    }
-
-    @Test
-    void mask_KeyNameContainingSensitiveKeyAsSuffix_NotMasked() {
-        String input = "error_code=expired_code notsecret=value";
-
-        assertThat(MaskingPatternLayout.mask(input)).isEqualTo(input);
-    }
-
-    @Test
-    void mask_RejectionReasonWithoutKeyValue_NotMasked() {
-        String input = "Email verification rejected: invalid_code";
-
-        assertThat(MaskingPatternLayout.mask(input)).isEqualTo(input);
-    }
-
-    @Test
-    void mask_UrlWithoutEmail_NotMasked() {
-        String input = "Calling external service at https://api.example.com/v1/resources";
-
-        assertThat(MaskingPatternLayout.mask(input)).isEqualTo(input);
-    }
-
-    @Test
-    void mask_EyJPrefixWithoutTwoSeparators_NotMasked() {
-        assertThat(MaskingPatternLayout.mask("eyJ.onlyone")).isEqualTo("eyJ.onlyone");
     }
 
     // ─── doLayout() ───────────────────────────────────────────────────────────

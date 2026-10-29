@@ -46,13 +46,13 @@ class MaskingOpenTelemetryAppenderTest {
     // ─── getArgumentArray() ─────────────────────────────────────────────────────
 
     @Test
-    void mask_ArgumentArray_IsNulledOutSoOriginalCannotBeReRendered() {
+    void mask_ArgumentArray_IsEmptiedSoOriginalCannotBeReRendered() {
         ILoggingEvent source = mock(ILoggingEvent.class);
         when(source.getArgumentArray()).thenReturn(new Object[]{USER_ID});
 
         ILoggingEvent masked = MaskingOpenTelemetryAppender.mask(source);
 
-        assertThat(masked.getArgumentArray()).isNull();
+        assertThat(masked.getArgumentArray()).isEmpty();
     }
 
     // ─── getMDCPropertyMap() / getMdc() ─────────────────────────────────────────
@@ -93,11 +93,11 @@ class MaskingOpenTelemetryAppenderTest {
     }
 
     @Test
-    void mask_NullMdc_ReturnsNull() {
+    void mask_NullMdc_ReturnsEmptyMap() {
         ILoggingEvent source = mock(ILoggingEvent.class);
         when(source.getMDCPropertyMap()).thenReturn(null);
 
-        assertThat(MaskingOpenTelemetryAppender.mask(source).getMDCPropertyMap()).isNull();
+        assertThat(MaskingOpenTelemetryAppender.mask(source).getMDCPropertyMap()).isEmpty();
     }
 
     // ─── Unmasked passthrough ────────────────────────────────────────────────────
