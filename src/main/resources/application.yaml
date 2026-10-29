@@ -68,6 +68,10 @@ ebw:
     passkey-registration-per-ip: 20
     session-per-ip: 60
     passkey-prf-sign-per-ip: 30
+    # Proxies of ours in front of the service (CloudFront + ALB): the client address is the entry this
+    # many places from the end of X-Forwarded-For, never the first one, which the client controls.
+    # A request with fewer entries did not go through all of them and is counted by its connection address.
+    trusted-proxies: ${RATE_LIMIT_TRUSTED_PROXIES:2}
     window: 1h
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:4200}

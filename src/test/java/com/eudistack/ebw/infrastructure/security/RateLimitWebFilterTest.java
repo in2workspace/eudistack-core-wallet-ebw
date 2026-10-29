@@ -1,12 +1,16 @@
 package com.eudistack.ebw.infrastructure.security;
 
 import com.eudistack.ebw.infrastructure.adapter.properties.RateLimitProperties;
+import com.eudistack.ebw.support.InMemoryIpRateLimiter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.Ordered;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
@@ -16,6 +20,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -28,9 +33,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RateLimitWebFilterTest {
 
     // registerPerIp=2, verifyPerIp=2, refreshPerIp=2, passkeyRegistrationPerIp=2, sessionPerIp=2,
-    // passkeyPrfSignPerIp=2, window=1h
+    // passkeyPrfSignPerIp=2, trustedProxies=2 (CloudFront + ALB), window=1h
     private static final RateLimitProperties PROPERTIES =
-            new RateLimitProperties(10, 2, 10, 2, 2, 2, 2, 2, Duration.ofHours(1));
+            new RateLimitProperties(10, 2, 10, 2, 2, 2, 2, 2, 2, Duration.ofHours(1));
 
     private RateLimitWebFilter filter;
     private AtomicInteger chainCalls;
@@ -38,7 +43,8 @@ class RateLimitWebFilterTest {
 
     @BeforeEach
     void setUp() {
-        filter = new RateLimitWebFilter(PROPERTIES, new ObjectMapper());
+        filter = new RateLimitWebFilter(PROPERTIES, new ObjectMapper(),
+                new InMemoryIpRateLimiter(PROPERTIES.window()), new ClientIpResolver(PROPERTIES));
         chainCalls = new AtomicInteger();
         chain = exchange -> Mono.fromRunnable(chainCalls::incrementAndGet);
     }
@@ -135,22 +141,98 @@ class RateLimitWebFilterTest {
         assertThat(chainCalls).hasValue(3);
     }
 
-    @Test
-    void filter_forwardedForHeader_usesTheFirstAddress() {
-        // Arrange
-        var request = MockServerHttpRequest.post("/api/v1/auth/register")
-                .header("X-Forwarded-For", " 203.0.113.7 , 10.0.0.1")
-                .remoteAddress(new InetSocketAddress("10.0.0.1", 443));
-        StepVerifier.create(filter.filter(MockServerWebExchange.from(request), chain)).verifyComplete();
-        StepVerifier.create(filter.filter(post("/api/v1/auth/register", "203.0.113.7"), chain)).verifyComplete();
-        var third = MockServerWebExchange.from(MockServerHttpRequest.post("/api/v1/auth/register")
-                .header("X-Forwarded-For", "203.0.113.7"));
+    @Nested
+    @DisplayName("Behind the base-path and the trusted proxies")
+    class BehindTheProxies {
 
-        // Act
-        StepVerifier.create(filter.filter(third, chain)).verifyComplete();
+        @Test
+        void filter_requestUnderTheBasePath_isCountedAgainstTheRouteBudget() {
+            // Arrange
+            StepVerifier.create(filter.filter(underBasePath("/api/v1/auth/register", "10.0.0.6"), chain))
+                    .verifyComplete();
+            StepVerifier.create(filter.filter(underBasePath("/api/v1/auth/register", "10.0.0.6"), chain))
+                    .verifyComplete();
+            var third = underBasePath("/api/v1/auth/register", "10.0.0.6");
 
-        // Assert — the three requests were counted against 203.0.113.7
-        assertThat(third.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+            // Act
+            StepVerifier.create(filter.filter(third, chain)).verifyComplete();
+
+            // Assert
+            assertThat(chainCalls).hasValue(2);
+            assertThat(third.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        }
+
+        @Test
+        void filter_forwardedForWithSpoofedFirstValue_stillCountsTheAddressOurProxiesAppended() {
+            // Arrange
+            StepVerifier.create(filter.filter(forwarded("198.51.100.1, 203.0.113.7, 10.0.0.1"), chain))
+                    .verifyComplete();
+            StepVerifier.create(filter.filter(forwarded("198.51.100.2, 203.0.113.7, 10.0.0.1"), chain))
+                    .verifyComplete();
+            var third = forwarded("198.51.100.3, 203.0.113.7, 10.0.0.1");
+
+            // Act
+            StepVerifier.create(filter.filter(third, chain)).verifyComplete();
+
+            // Assert
+            assertThat(chainCalls).hasValue(2);
+            assertThat(third.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        }
+
+        private MockServerWebExchange underBasePath(String path, String ip) {
+            return MockServerWebExchange.from(MockServerHttpRequest.post("/business-wallet" + path)
+                    .contextPath("/business-wallet")
+                    .remoteAddress(new InetSocketAddress(ip, 443)));
+        }
+
+        private MockServerWebExchange forwarded(String forwardedFor) {
+            return MockServerWebExchange.from(MockServerHttpRequest.post("/api/v1/auth/register")
+                    .header("X-Forwarded-For", forwardedFor)
+                    .remoteAddress(new InetSocketAddress("10.0.0.1", 443)));
+        }
+    }
+
+    @Nested
+    @DisplayName("Route matching as Spring does it")
+    class RouteMatching {
+
+        @ParameterizedTest
+        @ValueSource(strings = {"/api/v1/auth/register;x=1", "/api/v1/auth/regist%65r"})
+        void filter_variantOfALimitedRoute_isCountedAgainstTheSameBudget(String variant) {
+            // Arrange
+            StepVerifier.create(filter.filter(rawPost("/api/v1/auth/register", "10.0.0.7"), chain)).verifyComplete();
+            StepVerifier.create(filter.filter(rawPost(variant, "10.0.0.7"), chain)).verifyComplete();
+            var third = rawPost("/api/v1/auth/register", "10.0.0.7");
+
+            // Act
+            StepVerifier.create(filter.filter(third, chain)).verifyComplete();
+
+            // Assert
+            assertThat(chainCalls).hasValue(2);
+            assertThat(third.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        }
+
+        @Test
+        void filter_variantsOnly_neverSkipTheLimit() {
+            // Arrange
+            StepVerifier.create(filter.filter(rawPost("/api/v1/auth/register;a=1", "10.0.0.8"), chain))
+                    .verifyComplete();
+            StepVerifier.create(filter.filter(rawPost("/api/v1/auth/register;a=2", "10.0.0.8"), chain))
+                    .verifyComplete();
+            var third = rawPost("/api/v1/auth/register;a=3", "10.0.0.8");
+
+            // Act
+            StepVerifier.create(filter.filter(third, chain)).verifyComplete();
+
+            // Assert
+            assertThat(chainCalls).hasValue(2);
+            assertThat(third.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        }
+
+        private MockServerWebExchange rawPost(String rawPath, String ip) {
+            return MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.POST, URI.create(rawPath))
+                    .remoteAddress(new InetSocketAddress(ip, 443)));
+        }
     }
 
     @Test

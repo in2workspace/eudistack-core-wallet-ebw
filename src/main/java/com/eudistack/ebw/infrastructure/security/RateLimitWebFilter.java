@@ -1,49 +1,53 @@
 package com.eudistack.ebw.infrastructure.security;
 
 import com.eudistack.ebw.domain.model.exception.RateLimitExceededException;
+import com.eudistack.ebw.domain.spi.IpRateLimiter;
 import com.eudistack.ebw.infrastructure.adapter.properties.RateLimitProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
+import lombok.RequiredArgsConstructor;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.server.PathContainer;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
 
 @Component
+@RequiredArgsConstructor
 public class RateLimitWebFilter implements WebFilter, Ordered {
 
-    private static final String AUTH_PREFIX = "/api/v1/auth/";
-    private static final String PASSKEY_REGISTRATION_OPTIONS = "/api/v1/auth/passkeys/registration/options";
-    private static final String PASSKEY_REGISTRATION = "/api/v1/auth/passkeys/registration";
-    private static final String SESSION_OPTIONS = "/api/v1/auth/sessions/options";
-    private static final String SESSION = "/api/v1/auth/sessions";
-    private static final String PASSKEY_PRF_ONBOARDING_INIT = "/api/v1/keys/passkey-prf/onboarding/init";
-    private static final String PASSKEY_PRF_ONBOARDING_COMMIT = "/api/v1/keys/passkey-prf/onboarding/commit";
-    private static final String PASSKEY_PRF_SIGN_PREPARE = "/api/v1/keys/passkey-prf/sign/prepare";
-    private static final String PASSKEY_PRF_SIGN_SUBMIT = "/api/v1/keys/passkey-prf/sign/submit";
+    // PathPattern, like the handler mappings: a plain string comparison would miss the variants Spring still
+    // routes to the controller (path parameters such as ";x=1" and percent-encoded characters).
+    private static final PathPattern AUTH_ROUTES = pattern("/api/v1/auth/**");
+    private static final PathPattern REGISTER = pattern("/api/v1/auth/register");
+    private static final PathPattern VERIFY_EMAIL = pattern("/api/v1/auth/verify-email");
+    private static final PathPattern REFRESH = pattern("/api/v1/auth/refresh");
+    private static final List<PathPattern> PASSKEY_REGISTRATION = patterns(
+            "/api/v1/auth/passkeys/registration/options", "/api/v1/auth/passkeys/registration");
+    private static final List<PathPattern> SESSION = patterns("/api/v1/auth/sessions/options", "/api/v1/auth/sessions");
+    private static final List<PathPattern> PASSKEY_PRF = patterns(
+            "/api/v1/keys/passkey-prf/onboarding/init", "/api/v1/keys/passkey-prf/onboarding/commit",
+            "/api/v1/keys/passkey-prf/sign/prepare", "/api/v1/keys/passkey-prf/sign/submit");
+
+    private record Budget(String name, int limit) {
+    }
 
     private final RateLimitProperties properties;
     private final ObjectMapper objectMapper;
-    private final Cache<String, AtomicInteger> cache;
-
-    public RateLimitWebFilter(RateLimitProperties properties, ObjectMapper objectMapper) {
-        this.properties = properties;
-        this.objectMapper = objectMapper;
-        this.cache = Caffeine.newBuilder()
-                .expireAfterWrite(properties.window())
-                .maximumSize(100_000)
-                .build();
-    }
+    private final IpRateLimiter ipRateLimiter;
+    private final ClientIpResolver clientIpResolver;
 
     @Override
     public int getOrder() {
@@ -57,41 +61,54 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        var path = request.getPath().value();
-        var ip = resolveIp(exchange);
+        // Without the base-path prefix (/business-wallet): getPath().value() includes it and would never match.
+        var path = request.getPath().pathWithinApplication();
 
-        Mono<Void> result = switch (path) {
-            case "/api/v1/auth/register" -> checkRateLimit("register:ip:" + ip, properties.registerPerIp())
-                    .then(chain.filter(exchange));
-            case "/api/v1/auth/verify-email" -> checkRateLimit("verify:ip:" + ip, properties.verifyPerIp())
-                    .then(chain.filter(exchange));
-            case "/api/v1/auth/refresh" -> checkRateLimit("refresh:ip:" + ip, properties.refreshPerIp())
-                    .then(chain.filter(exchange));
-            case PASSKEY_REGISTRATION_OPTIONS, PASSKEY_REGISTRATION ->
-                    checkRateLimit("passkey-registration:ip:" + ip, properties.passkeyRegistrationPerIp())
-                            .then(chain.filter(exchange));
-            case SESSION_OPTIONS, SESSION -> checkRateLimit("session:ip:" + ip, properties.sessionPerIp())
-                    .then(chain.filter(exchange));
-            case PASSKEY_PRF_ONBOARDING_INIT, PASSKEY_PRF_ONBOARDING_COMMIT, PASSKEY_PRF_SIGN_PREPARE, PASSKEY_PRF_SIGN_SUBMIT ->
-                    checkRateLimit("passkey-prf:ip:" + ip, properties.passkeyPrfSignPerIp())
-                            .then(chain.filter(exchange));
-            default -> chain.filter(exchange);
-        };
+        Mono<Void> result = budgetOf(path)
+                .map(budget -> ipRateLimiter
+                        .check(budget.name() + ":ip:" + clientIpResolver.resolve(request), budget.limit())
+                        .then(chain.filter(exchange)))
+                .orElseGet(() -> chain.filter(exchange));
 
         // A WebFilter runs outside the DispatcherHandler's exception-handling scope,
         // so @ControllerAdvice (GlobalExceptionHandler) never sees this error — it
         // must be turned into a response here, or it falls through to a generic 500.
         return result.onErrorResume(RateLimitExceededException.class,
-                ex -> writeRateLimitResponse(exchange, ex, path.startsWith(AUTH_PREFIX)));
+                ex -> writeRateLimitResponse(exchange, ex, AUTH_ROUTES.matches(path)));
     }
 
-    private Mono<Void> checkRateLimit(String key, int limit) {
-        var counter = cache.get(key, k -> new AtomicInteger(0));
-        if (counter.incrementAndGet() > limit) {
-            var retryAfter = properties.window().toSeconds();
-            return Mono.error(new RateLimitExceededException(retryAfter));
+    private Optional<Budget> budgetOf(PathContainer path) {
+        if (REGISTER.matches(path)) {
+            return Optional.of(new Budget("register", properties.registerPerIp()));
         }
-        return Mono.empty();
+        if (VERIFY_EMAIL.matches(path)) {
+            return Optional.of(new Budget("verify", properties.verifyPerIp()));
+        }
+        if (REFRESH.matches(path)) {
+            return Optional.of(new Budget("refresh", properties.refreshPerIp()));
+        }
+        if (matchesAny(PASSKEY_REGISTRATION, path)) {
+            return Optional.of(new Budget("passkey-registration", properties.passkeyRegistrationPerIp()));
+        }
+        if (matchesAny(SESSION, path)) {
+            return Optional.of(new Budget("session", properties.sessionPerIp()));
+        }
+        if (matchesAny(PASSKEY_PRF, path)) {
+            return Optional.of(new Budget("passkey-prf", properties.passkeyPrfSignPerIp()));
+        }
+        return Optional.empty();
+    }
+
+    private static boolean matchesAny(List<PathPattern> patterns, PathContainer path) {
+        return patterns.stream().anyMatch(pattern -> pattern.matches(path));
+    }
+
+    private static PathPattern pattern(String route) {
+        return PathPatternParser.defaultInstance.parse(route);
+    }
+
+    private static List<PathPattern> patterns(String... routes) {
+        return Arrays.stream(routes).map(RateLimitWebFilter::pattern).toList();
     }
 
     /**
@@ -115,14 +132,5 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
             body = new byte[0];
         }
         return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
-    }
-
-    private String resolveIp(ServerWebExchange exchange) {
-        var forwarded = exchange.getRequest().getHeaders().getFirst("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
-        var remoteAddress = exchange.getRequest().getRemoteAddress();
-        return remoteAddress != null ? remoteAddress.getAddress().getHostAddress() : "unknown";
     }
 }

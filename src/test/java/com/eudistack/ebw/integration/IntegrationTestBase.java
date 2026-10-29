@@ -146,6 +146,12 @@ public abstract class IntegrationTestBase {
         webClient = webClient.mutate()
                 .defaultHeader(TenantDomainWebFilter.HEADER_X_TENANT, TEST_TENANT)
                 .build();
+        clearIpRateLimits();
+    }
+
+    /** The per-IP counters live in the shared database, so they would carry over from one test to the next. */
+    private static void clearIpRateLimits() {
+        sql("DELETE FROM public.ip_rate_limit");
     }
 
     @MockitoBean
