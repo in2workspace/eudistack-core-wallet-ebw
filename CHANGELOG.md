@@ -49,6 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated Netty to 4.1.132.Final to address CVE-2026-33870.
 - Updated Bouncy Castle (bcprov-jdk18on and bcpkix-jdk18on) to version 1.84 to address CVE-2026-0636.
 
+## [2.0.1] - 2026-10-29
+
+EUD-310 (per-IP rate limits of the registration and access API). The per-email limit is not changed.
+
+### Fixed
+
+- **Per-IP rate limits were not applied behind the `/business-wallet` base path**: the filter matched the route with the prefix included, so no limited route ever matched. It now matches the route the way Spring routes it: without the prefix, and ignoring path parameters (`;x=1`) and percent-encoding, which used to let a request reach the controller without being counted.
+- **The client address could be chosen by the client**: it was the first value of `X-Forwarded-For`. It is now read from the end, counting the trusted proxies (`ebw.rate-limit.trusted-proxies`, default 2 for CloudFront and the load balancer; 1 behind a single proxy such as the local nginx). A request with fewer values, or with an invalid one, is counted by its connection address. IPv6 clients are counted by their /64 prefix, so rotating addresses inside it does not skip the limit.
+- **The per-IP limit was multiplied by the number of tasks**: the counters lived in memory in each task. They are now shared in `public.ip_rate_limit` (migration V2) and lapsed ones are removed every ten minutes. A client found over its limit is remembered in memory until its window ends, so it costs no further database writes. If the table is unavailable the request is let through, logged as an error (once a minute) and counted in `ip_rate_limit_store_errors_total`.
+
 ## [2.0.0] - 2026-10-15
 
 EUD-308 (feature EUD-8, registration and access to the wallet; EUD-11 FR-13/FR-14).

@@ -1,12 +1,15 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.domain.spi.IpRateLimiter;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.infrastructure.adapter.properties.RateLimitProperties;
 import com.eudistack.ebw.infrastructure.adapter.properties.SecurityProperties;
+import com.eudistack.ebw.infrastructure.security.ClientIpResolver;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import com.eudistack.ebw.keymanager.application.EnrollHolderUseCase;
 import com.eudistack.ebw.keymanager.domain.model.EnrollHolderCommitResponse;
+import com.eudistack.ebw.support.InMemoryIpRateLimiter;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.TenantWalletProfile;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
@@ -131,7 +134,17 @@ class PasskeyPrfOnboardingControllerIT {
 
         @Bean
         RateLimitProperties rateLimitProperties() {
-            return new RateLimitProperties(100, 100, 100, 100, 100, 100, 100, 100, Duration.ofMinutes(1));
+            return new RateLimitProperties(100, 100, 100, 100, 100, 100, 100, 100, 2, Duration.ofMinutes(1));
+        }
+
+        @Bean
+        ClientIpResolver clientIpResolver(RateLimitProperties properties) {
+            return new ClientIpResolver(properties);
+        }
+
+        @Bean
+        IpRateLimiter ipRateLimiter(RateLimitProperties properties) {
+            return new InMemoryIpRateLimiter(properties.window());
         }
 
         @Bean

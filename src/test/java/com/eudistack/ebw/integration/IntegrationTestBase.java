@@ -148,6 +148,12 @@ public abstract class IntegrationTestBase {
                 .build();
     }
 
+    /** The per-IP counters live in the shared database, so they would carry over from one test to the next. */
+    @BeforeEach
+    void clearIpRateLimits() {
+        sql("DELETE FROM public.ip_rate_limit");
+    }
+
     @MockitoBean
     protected EmailSender emailSender;
 

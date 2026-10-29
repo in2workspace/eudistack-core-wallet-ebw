@@ -14,6 +14,13 @@ public record RateLimitProperties(
         int passkeyRegistrationPerIp,
         int sessionPerIp,
         int passkeyPrfSignPerIp,
+        int trustedProxies,
         Duration window
 ) {
+
+    public RateLimitProperties {
+        if (trustedProxies < 1) {
+            throw new IllegalArgumentException("ebw.rate-limit.trusted-proxies must be at least 1");
+        }
+    }
 }
