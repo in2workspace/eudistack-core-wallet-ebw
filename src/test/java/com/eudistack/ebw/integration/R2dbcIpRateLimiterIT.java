@@ -2,10 +2,14 @@ package com.eudistack.ebw.integration;
 
 import com.eudistack.ebw.domain.model.exception.RateLimitExceededException;
 import com.eudistack.ebw.domain.spi.IpRateLimiter;
+import com.eudistack.ebw.infrastructure.adapter.properties.RateLimitProperties;
+import com.eudistack.ebw.infrastructure.adapter.ratelimit.R2dbcIpRateLimiter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.r2dbc.core.DatabaseClient;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
@@ -21,6 +25,15 @@ class R2dbcIpRateLimiterIT extends IntegrationTestBase {
 
     @Autowired
     private IpRateLimiter rateLimiter;
+
+    @Autowired
+    private DatabaseClient databaseClient;
+
+    @Autowired
+    private RateLimitProperties properties;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @Nested
     @DisplayName("check")
@@ -71,6 +84,25 @@ class R2dbcIpRateLimiterIT extends IntegrationTestBase {
             assertThat(query("SELECT hits FROM public.ip_rate_limit WHERE rate_key = '" + key + "'"))
                     .singleElement()
                     .satisfies(row -> assertThat((Integer) row.get("hits")).isBetween(11, 20));
+        }
+
+        @Test
+        void check_twoInstancesSharingTheDatabase_letExactlyTheLimitThrough() {
+            // Arrange — a second, independent limiter, as a second EBW task would have: its own memory, the same table
+            var key = "register:ip:" + System.nanoTime();
+            var otherInstance = new R2dbcIpRateLimiter(databaseClient, properties, meterRegistry);
+
+            // Act — 11 requests alternated between both: neither instance alone goes over the limit of 10
+            var outcomes = Flux.range(0, 11)
+                    .concatMap(i -> (i % 2 == 0 ? rateLimiter : otherInstance).check(key, 10).materialize())
+                    .collectList()
+                    .block(Duration.ofSeconds(30));
+
+            // Assert
+            assertThat(outcomes).hasSize(11);
+            assertThat(outcomes.stream().filter(signal -> signal.isOnComplete()).count()).isEqualTo(10);
+            assertThat(outcomes.get(10).isOnError()).isTrue();
+            StepVerifier.create(otherInstance.check(key, 10)).expectError(RateLimitExceededException.class).verify();
         }
 
         @Test
