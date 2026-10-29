@@ -99,6 +99,13 @@ class MaskingPatternLayoutTest {
     }
 
     @Test
+    void mask_AlphanumericCodeAsKeyValue_MasksCode() {
+        String result = MaskingPatternLayout.mask("Exchanging code=SplxlOBeZQQYbYS6WxSbIA for tokens");
+
+        assertThat(result).isEqualTo("Exchanging code=" + REPLACEMENT + " for tokens");
+    }
+
+    @Test
     void mask_OtpAsKeyValue_MasksOtp() {
         String result = MaskingPatternLayout.mask("Verifying otp=482913 for tenant sandbox");
 
@@ -160,6 +167,8 @@ class MaskingPatternLayoutTest {
             "error_code=expired_code notsecret=value",
             "Email verification rejected: invalid_code",
             "Failed to send a verification code: org.springframework.mail.MailSendException",
+            "Failed to resolve name. status=Status{code=UNAVAILABLE, description=Unable to resolve host}",
+            "{\"code\":\"invalid_request\"}",
             "Calling external service at https://api.example.com/v1/resources",
             "eyJ.onlyone"
     })

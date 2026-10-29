@@ -30,9 +30,11 @@ public class MaskingPatternLayout extends PatternLayout {
                     "$1" + REPLACEMENT),
             keyValueMask("tx_code|otp"),
             // The OTP travels as "code": only as a JSON field or code=, since prose such as
-            // "Failed to send a verification code: <exception>" is not a secret
+            // "Failed to send a verification code: <exception>" is not a secret, and only when the
+            // value has a digit, since status names such as gRPC's code=UNAVAILABLE are not either
             new AbstractMap.SimpleImmutableEntry<>(
-                    Pattern.compile("(?i)(?<!\\w)(\"code\"\\s*:\\s*\"?|code\\s*=\\s*)[^\"&\\s,}]+"),
+                    Pattern.compile(
+                            "(?i)(?<!\\w)(\"code\"\\s*:\\s*\"?|code\\s*=\\s*)(?=[^\"&\\s,}]*\\d)[^\"&\\s,}]+"),
                     "$1" + REPLACEMENT),
             keyValueMask("token|access_?token|refresh_?token|id_?token"),
             keyValueMask("password|client_?secret|secret"),
