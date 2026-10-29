@@ -11,7 +11,7 @@ plugins {
 }
 
 group = 'com.eudistack'
-version = '2.0.0'
+version = '2.1.0'
 ext['netty.version'] = '4.1.132.Final'
 
 java {
@@ -33,6 +33,14 @@ configurations {
 repositories {
     mavenCentral()
     maven { url = uri('https://jitpack.io') }
+    maven {
+        name = 'GitHubPackages'
+        url = uri('https://maven.pkg.github.com/in2workspace/eudistack-platform-audit-starter')
+        credentials {
+            username = System.getenv('GITHUB_ACTOR') ?: findProperty('gpr.user')
+            password = System.getenv('GITHUB_TOKEN') ?: findProperty('gpr.token')
+        }
+    }
 }
 
 dependencies {
@@ -42,6 +50,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
     implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'
+    implementation 'com.eudistack:auditoria-spring-boot-starter:0.1.0'
     implementation 'org.springframework.boot:spring-boot-starter-mail'
     implementation 'org.springframework.boot:spring-boot-starter-security'
 

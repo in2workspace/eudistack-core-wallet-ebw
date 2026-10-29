@@ -1,8 +1,12 @@
 package com.eudistack.ebw.infrastructure.adapter.email;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.domain.model.audit.AuditEntry;
+import com.eudistack.ebw.domain.model.audit.AuditResult;
 import com.eudistack.ebw.domain.repository.TenantRegistryRepository;
 import com.eudistack.ebw.domain.service.TenantConfigService;
+import com.eudistack.ebw.infrastructure.adapter.audit.ExternalSystemAccessRecorder;
+import com.eudistack.ebw.infrastructure.adapter.audit.RecordingAuditTrail;
 import com.eudistack.ebw.infrastructure.adapter.properties.EmailBrandingProperties;
 import com.eudistack.ebw.infrastructure.adapter.properties.EmailBrandingProperties.SocialLink;
 import com.eudistack.ebw.infrastructure.adapter.properties.EmailBrandingProperties.TenantEmailBranding;
@@ -42,6 +46,7 @@ class SmtpEmailSenderTest {
 
     private JavaMailSender mailSender;
     private TenantRegistryRepository tenantRegistryRepository;
+    private final RecordingAuditTrail auditTrail = new RecordingAuditTrail();
     private SmtpEmailSender sender;
 
     @BeforeEach
@@ -64,7 +69,7 @@ class SmtpEmailSenderTest {
 
         sender = new SmtpEmailSender(mailSender, VerificationCodeEmailTemplateTest.engine(), messageSource,
                 tenantConfigService, tenantRegistryRepository, branding,
-                new OtpProperties(6, Duration.ofMinutes(15), 5), "noreply@eudistack.com");
+                new ExternalSystemAccessRecorder(auditTrail), new OtpProperties(6, Duration.ofMinutes(15), 5), "noreply@eudistack.com");
     }
 
     @Test
@@ -125,6 +130,34 @@ class SmtpEmailSenderTest {
                         .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "dome")))
                 .expectError(MailSendException.class)
                 .verify();
+    }
+
+    @Test
+    void sendOtp_smtpAccepts_stagesASuccessfulExternalSystemAccessWithoutTheRecipientOrTheCode() {
+        when(tenantRegistryRepository.findDisplayName("dome")).thenReturn(Mono.just("DOME"));
+
+        send("dome");
+
+        AuditEntry entry = auditTrail.staged().getFirst();
+        assertThat(entry.result()).isEqualTo(AuditResult.SUCCESS);
+        assertThat(entry.details()).containsEntry("system_type", "MailProvider")
+                .containsEntry("operation", "verification-code-email");
+        assertThat(entry.toString()).doesNotContain(TO).doesNotContain("123456");
+    }
+
+    @Test
+    void sendOtp_smtpRejectsTheMessage_stagesAFailedExternalSystemAccess() {
+        when(tenantRegistryRepository.findDisplayName("dome")).thenReturn(Mono.just("DOME"));
+        doThrow(new MailSendException("relay denied")).when(mailSender).send(any(MimeMessage.class));
+
+        StepVerifier.create(sender.sendOtp(TO, "123456")
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "dome")))
+                .expectError(MailSendException.class)
+                .verify();
+
+        AuditEntry entry = auditTrail.staged().getFirst();
+        assertThat(entry.result()).isEqualTo(AuditResult.FAILURE);
+        assertThat(entry.reason()).isEqualTo("ErrorResponse");
     }
 
     private MimeMessage send(String tenant) {

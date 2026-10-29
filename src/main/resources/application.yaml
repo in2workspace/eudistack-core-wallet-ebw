@@ -43,6 +43,13 @@ spring:
             enable: ${SMTP_SSL_ENABLE:false}
             trust: ${SMTP_SSL_TRUST:}
 
+auditoria:
+  source: wallet-ebw
+  publisher:
+    enabled: ${AUDIT_PUBLISHER_ENABLED:false}
+  dispatcher:
+    enabled: ${AUDIT_DISPATCHER_ENABLED:false}
+
 server:
   port: 8080
 
