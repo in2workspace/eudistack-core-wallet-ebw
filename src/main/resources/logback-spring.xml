@@ -18,8 +18,22 @@
         </encoder>
     </appender>
 
+    <!-- OTLP export to the OTel Collector → OpenObserve (management.otlp.logging.*, off by default).
+         MaskingOpenTelemetryAppender redacts PII and secrets, since the OTel appender reads the raw
+         event and bypasses MaskingPatternLayout. Kept at INFO regardless of the console level:
+         shipping DEBUG volume to OpenObserve is pure storage cost. -->
+    <appender name="OTLP" class="com.eudistack.ebw.infrastructure.configuration.logging.MaskingOpenTelemetryAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
+        <captureMdcAttributes>*</captureMdcAttributes>
+        <captureKeyValuePairAttributes>true</captureKeyValuePairAttributes>
+        <captureLoggerContext>true</captureLoggerContext>
+    </appender>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="OTLP"/>
     </root>
 
     <logger name="io.micrometer" level="INFO"/>

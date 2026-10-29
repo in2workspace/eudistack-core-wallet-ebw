@@ -93,6 +93,12 @@ management:
       endpoint: ${OTEL_COLLECTOR_GRPC_URL:http://127.0.0.1:4317}
       export:
         enabled: ${MANAGEMENT_OTLP_TRACING_EXPORT_ENABLED:false}
+    logging:
+      # INFO and above only (threshold of the OTLP appender in logback-spring.xml)
+      endpoint: ${OTEL_COLLECTOR_GRPC_URL:http://127.0.0.1:4317}
+      transport: ${MANAGEMENT_OTLP_LOGGING_TRANSPORT:grpc}
+      export:
+        enabled: ${MANAGEMENT_OTLP_LOGGING_EXPORT_ENABLED:false}
   tracing:
     sampling:
       probability: ${OTEL_SAMPLING_PROBABILITY:1.0}
