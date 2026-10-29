@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.controller;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
@@ -22,7 +23,6 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -86,6 +86,10 @@ class DeletePasskeyWorkflowIT {
         registry.add("spring.flyway.default-schema", () -> "public");
     }
 
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
+
     @MockitoBean
     TokenSigner tokenSigner;
 
@@ -117,9 +121,11 @@ class DeletePasskeyWorkflowIT {
 
     @BeforeEach
     void setUp() throws SQLException {
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         cleanTables();
-        when(tokenSigner.verify(VALID_TOKEN)).thenReturn(
-                Map.of("sub", USER_A.toString(), "email", "user-a@test.com"));
+        when(tokenSigner.verify(VALID_TOKEN)).thenAnswer(TestSessions.sessionOfRequestTenant(USER_A.toString(), "user-a@test.com"));
     }
 
     // -------------------------------------------------------------------------
@@ -147,9 +153,9 @@ class DeletePasskeyWorkflowIT {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
                     "INSERT INTO " + SCHEMA + ".user_passkey "
-                    + "(id, user_id, credential_id, display_name, user_agent, created_at) VALUES ('"
+                    + "(id, user_id, credential_id, display_name, user_agent, created_at, attested_credential_data, sign_count, uv_initialized, backup_eligible, backup_state, prf_enabled) VALUES ('"
                     + id + "', '" + userId + "', '" + credentialId + "', '" + displayName
-                    + "', 'test-agent', NOW())");
+                    + "', 'test-agent', NOW(), decode('010203', 'hex'), 0, true, true, true, true)");
         }
     }
 
@@ -157,20 +163,22 @@ class DeletePasskeyWorkflowIT {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
                     "INSERT INTO " + SCHEMA + ".refresh_token "
-                    + "(id, user_id, passkey_id, token_hash, expires_at, revoked) VALUES ('"
+                    + "(id, user_id, passkey_id, token_hash, expires_at, revoked, session_id, session_started_at) VALUES ('"
                     + id + "', '" + userId + "', '" + passkeyId + "', '" + tokenHash
-                    + "', NOW() + INTERVAL '30 days', FALSE)");
+                    + "', NOW() + INTERVAL '30 days', FALSE, gen_random_uuid(), NOW())");
         }
     }
 
-    /** Looked up by the token's own id, not passkey_id: the FK is ON DELETE SET NULL, so
-     *  passkey_id on this row is nulled out by Postgres once the passkey row is deleted. */
+    /**
+     * A token can no longer renew a session when it is revoked or gone: since EUD-308
+     * {@code refresh_token.passkey_id} is NOT NULL with ON DELETE CASCADE, so deleting the passkey
+     * deletes the tokens of its sessions after revoking them.
+     */
     private boolean isRefreshTokenRevoked(UUID id) throws SQLException {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
                      "SELECT revoked FROM " + SCHEMA + ".refresh_token WHERE id = '" + id + "'")) {
-            assertThat(rs.next()).as("refresh_token row must still exist").isTrue();
-            return rs.getBoolean("revoked");
+            return !rs.next() || rs.getBoolean("revoked");
         }
     }
 

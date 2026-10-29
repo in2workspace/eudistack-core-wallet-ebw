@@ -1,5 +1,7 @@
 package com.eudistack.ebw.infrastructure.controller;
 
+import com.eudistack.ebw.support.SoftwareAuthenticator;
+import com.eudistack.ebw.support.WalletAuthClient;
 import com.eudistack.ebw.domain.spi.EmailSender;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
@@ -29,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.when;
 
 /**
  * EUD-104 ES-04: associating a device is the register -&gt; verify-email -&gt; passkeys
@@ -110,6 +113,10 @@ class RegisterTenantIsolationIT {
         }
         runTenantMigrations(jdbcUrl, SCHEMA_1);
         runTenantMigrations(jdbcUrl, SCHEMA_2);
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
+            WalletAuthClient.configureRelyingParty(conn, SCHEMA_1, HOST_1, "https://" + HOST_1);
+            WalletAuthClient.configureRelyingParty(conn, SCHEMA_2, HOST_2, "https://" + HOST_2);
+        }
     }
 
     private static void runTenantMigrations(String jdbcUrl, String schema) {
@@ -135,6 +142,7 @@ class RegisterTenantIsolationIT {
             capturedOtps.put(email, code);
             return Mono.empty();
         }).when(emailSender).sendOtp(anyString(), anyString());
+        when(emailSender.sendNewPasskeyNotice(anyString())).thenReturn(Mono.empty());
     }
 
     // -------------------------------------------------------------------------
@@ -149,32 +157,13 @@ class RegisterTenantIsolationIT {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private void registerVerifyAndCreatePasskey(String host, String email, String credentialId) {
-        webClient.post().uri("/api/v1/auth/register")
-                .header("Host", host)
-                .bodyValue(Map.of("email", email))
-                .exchange()
-                .expectStatus().isOk();
+    private WalletAuthClient client(String host) {
+        return new WalletAuthClient(webClient, capturedOtps, h -> h.set("Host", host), "https://" + host);
+    }
 
-        var otp = capturedOtps.get(email);
-        assertThat(otp).as("OTP must have been captured for " + email + " on host " + host).isNotNull();
-
-        var tokens = webClient.post().uri("/api/v1/auth/verify-email")
-                .header("Host", host)
-                .bodyValue(Map.of("email", email, "code", otp))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(Map.class)
-                .returnResult().getResponseBody();
-        var accessToken = (String) tokens.get("accessToken");
-
-        webClient.post().uri("/api/v1/auth/passkeys")
-                .header("Host", host)
-                .headers(h -> h.setBearerAuth(accessToken))
-                .bodyValue(Map.of("credentialId", credentialId, "displayName", "Device on " + host))
-                .exchange()
-                .expectStatus().isCreated();
+    private WalletAuthClient.Session registerVerifyAndCreatePasskey(String host, String email,
+                                                                    SoftwareAuthenticator authenticator) {
+        return client(host).signUp(email, authenticator);
     }
 
     private UUID fetchUserId(String schema, String email) throws SQLException {
@@ -201,11 +190,13 @@ class RegisterTenantIsolationIT {
     void register_sameEmailTwoTenants_createsTwoIndependentAccounts_noCrossTenantReuse()
             throws SQLException {
         var email = "cross-tenant-" + System.nanoTime() + "@example.com";
-        var credentialTenant1 = "cred-tenant1-" + System.nanoTime();
-        var credentialTenant2 = "cred-tenant2-" + System.nanoTime();
+        var authenticator1 = new SoftwareAuthenticator("https://" + HOST_1);
+        var authenticator2 = new SoftwareAuthenticator("https://" + HOST_2);
+        var credentialTenant1 = authenticator1.credentialIdBase64Url();
+        var credentialTenant2 = authenticator2.credentialIdBase64Url();
 
-        registerVerifyAndCreatePasskey(HOST_1, email, credentialTenant1);
-        registerVerifyAndCreatePasskey(HOST_2, email, credentialTenant2);
+        registerVerifyAndCreatePasskey(HOST_1, email, authenticator1);
+        registerVerifyAndCreatePasskey(HOST_2, email, authenticator2);
 
         var userIdTenant1 = fetchUserId(SCHEMA_1, email);
         var userIdTenant2 = fetchUserId(SCHEMA_2, email);
@@ -225,5 +216,40 @@ class RegisterTenantIsolationIT {
         assertThat(passkeyExistsForCredential(SCHEMA_1, credentialTenant2))
                 .as("tenant 2's passkey must not leak into tenant 1's schema")
                 .isFalse();
+    }
+
+    // -------------------------------------------------------------------------
+    // EUD-8 NFR multi-tenancy: sessions and passkeys of a tenant are not accepted in another
+    // -------------------------------------------------------------------------
+
+    @Test
+    void accessToken_ofAnotherTenant_isRejected() {
+        var session = registerVerifyAndCreatePasskey(HOST_1, "token-" + System.nanoTime() + "@example.com",
+                new SoftwareAuthenticator("https://" + HOST_1));
+
+        webClient.get().uri("/api/v1/auth/passkeys").header("Host", HOST_1)
+                .headers(h -> h.setBearerAuth(session.accessToken()))
+                .exchange().expectStatus().isOk();
+        webClient.get().uri("/api/v1/auth/passkeys").header("Host", HOST_2)
+                .headers(h -> h.setBearerAuth(session.accessToken()))
+                .exchange().expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void passkey_ofAnotherTenant_isUnknown() {
+        var authenticator = new SoftwareAuthenticator("https://" + HOST_1);
+        registerVerifyAndCreatePasskey(HOST_1, "passkey-" + System.nanoTime() + "@example.com", authenticator);
+        authenticator.withOrigin("https://" + HOST_2);
+
+        client(HOST_2).signInSpec(authenticator, null, null).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("unknown_credential");
+    }
+
+    @Test
+    void refreshCookie_ofAnotherTenant_isInvalid() {
+        var session = registerVerifyAndCreatePasskey(HOST_1, "cookie-" + System.nanoTime() + "@example.com",
+                new SoftwareAuthenticator("https://" + HOST_1));
+
+        client(HOST_2).refreshSpec(session.refreshToken(), true).expectStatus().isUnauthorized();
     }
 }

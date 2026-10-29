@@ -14,6 +14,7 @@ public class WalletUserEntity implements Persistable<UUID> {
     @Id
     private UUID id;
     private String email;
+    private byte[] webauthnUserHandle;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -22,9 +23,10 @@ public class WalletUserEntity implements Persistable<UUID> {
 
     public WalletUserEntity() {}
 
-    public WalletUserEntity(UUID id, String email, Instant createdAt, Instant updatedAt) {
+    public WalletUserEntity(UUID id, String email, byte[] webauthnUserHandle, Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.email = email;
+        this.webauthnUserHandle = webauthnUserHandle;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
@@ -38,6 +40,8 @@ public class WalletUserEntity implements Persistable<UUID> {
 
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
+    public byte[] getWebauthnUserHandle() { return webauthnUserHandle; }
+    public void setWebauthnUserHandle(byte[] webauthnUserHandle) { this.webauthnUserHandle = webauthnUserHandle; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

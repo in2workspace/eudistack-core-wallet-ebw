@@ -28,9 +28,18 @@ public class StoreCredentialWorkflow {
     private final WalletCredentialRepository credentialRepository;
     private final AuditService auditService;
 
+    /**
+     * Stores an attestation. When it is bound to the holder (has {@code cnf}, or was issued with a
+     * holder key), it is stored with the passkey of the session that obtained it (EUD-11 FR-13);
+     * the Wallet App never sends the passkey.
+     *
+     * @param sessionPasskeyId passkey of the session ({@code pkid} of the access token)
+     */
+    @SuppressWarnings("java:S107")
     public Mono<WalletCredential> storeCredential(UUID userId, String credentialRaw, String format,
                                                     String credentialConfigId, String kid,
-                                                    Map<String, Object> issuerMetadata, String holderKeyId) {
+                                                    Map<String, Object> issuerMetadata, String holderKeyId,
+                                                    UUID sessionPasskeyId) {
         return Mono.fromCallable(() -> credentialService.validateFormat(format))
                 .flatMap(credentialFormat ->
                         tenantConfigService.getStringOrDefault("ebw.allowed_credential_formats", DEFAULT_ALLOWED_FORMATS)
@@ -49,7 +58,8 @@ public class StoreCredentialWorkflow {
                             return WalletCredential.create(userId, credentialRaw, credentialFormat,
                                     credentialConfigId, kid, parsed.credentialType(), parsed.vct(),
                                     parsed.issuer(), parsed.subject(), parsed.issuanceDate(),
-                                    parsed.expirationDate(), issuerMetadata, holderKeyId);
+                                    parsed.expirationDate(), issuerMetadata, holderKeyId,
+                                    parsed.hasCnf() || holderKeyId != null, sessionPasskeyId);
                         })
                         .flatMap(credentialRepository::insert)
                         .flatMap(saved -> {

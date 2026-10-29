@@ -181,6 +181,29 @@ class CredentialServiceTest {
     }
 
     @Test
+    void parseCredential_sdJwtWithCnf_reportsHolderBinding() {
+        // Arrange
+        var sdJwt = signedJwt(new JWTClaimsSet.Builder().issuer("iss")
+                .claim("cnf", java.util.Map.of("jwk", java.util.Map.of("kty", "EC"))).build()) + "~";
+
+        // Act + Assert
+        StepVerifier.create(credentialService.parseCredential(sdJwt, CredentialFormat.DC_SD_JWT))
+                .assertNext(parsed -> assertThat(parsed.hasCnf()).isTrue())
+                .verifyComplete();
+    }
+
+    @Test
+    void parseCredential_sdJwtWithoutCnf_reportsNoHolderBinding() {
+        // Arrange
+        var sdJwt = signedJwt(new JWTClaimsSet.Builder().issuer("iss").build()) + "~";
+
+        // Act + Assert
+        StepVerifier.create(credentialService.parseCredential(sdJwt, CredentialFormat.DC_SD_JWT))
+                .assertNext(parsed -> assertThat(parsed.hasCnf()).isFalse())
+                .verifyComplete();
+    }
+
+    @Test
     void parseCredential_sdJwtWithoutTimes_defaultsIssuanceToNow() {
         // Arrange
         var sdJwt = signedJwt(new JWTClaimsSet.Builder().issuer("iss").build()) + "~";
@@ -428,7 +451,7 @@ class CredentialServiceTest {
     private WalletCredential credential(String raw, CredentialFormat format, Instant issuance, Instant expiration) {
         return new WalletCredential(UUID.randomUUID(), UUID.randomUUID(), raw, format, "config-1", "kid-1",
                 "Type", null, "https://stored-issuer", "subject", issuance, expiration,
-                CredentialStatus.VALID, Map.of(), "holder-key-1", Instant.now(), Instant.now());
+                CredentialStatus.VALID, Map.of(), "holder-key-1", Instant.now(), Instant.now(), null, false);
     }
 
     private static String disclosure(String salt, String name, Object value) {

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Response confirming a successful hybrid onboarding commit (201 new / 200 replay).
+ * Response confirming a successful passkey-prf onboarding commit (201 new / 200 replay).
  *
  * <p>Returns only the enrolled {@code credential_id}. No cryptographic material
  * (wrapped blob, PRF salt, IV, or tag) is echoed back in the response (NFR-04, NFR-06).</p>

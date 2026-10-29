@@ -1,40 +1,52 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
-import com.eudistack.ebw.infrastructure.security.JwtAuthenticationWebFilter;
+import com.eudistack.ebw.infrastructure.security.TenantCorsConfigurationSource;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.server.RequestPath;
-import org.springframework.http.server.PathContainer;
-import org.springframework.http.server.reactive.ServerHttpRequest;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.reactive.CorsConfigurationSource;
-import org.springframework.web.server.ServerWebExchange;
+import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
+import org.springframework.mock.web.server.MockServerWebExchange;
 
 import java.util.List;
+import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThat;
 
+/** Unit tests for {@link TenantCorsConfigurationSource}. */
 class SecurityConfigTest {
 
+    private final TenantCorsConfigurationSource source = new TenantCorsConfigurationSource(
+            new TenantDomainWebFilter(true),
+            tenant -> Map.of("sandbox", List.of("https://sandbox.stg.eudistack.net")).getOrDefault(tenant, List.of()),
+            List.of("https://status.eudistack.net"));
+
     @Test
-    void corsConfigurationSource_usesAsteriskOrigin() {
-        JwtAuthenticationWebFilter filter = mock(JwtAuthenticationWebFilter.class);
+    void getCorsConfiguration_tenantRequest_admitsOnlyTheTenantOriginsWithCredentials() {
+        // Arrange
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.post("/api/v1/auth/refresh")
+                .header("X-Tenant", "sandbox"));
 
-        SecurityConfig config = new SecurityConfig(filter);
-        CorsConfigurationSource source = config.corsConfigurationSource();
+        // Act
+        var config = source.getCorsConfiguration(exchange);
 
-        ServerWebExchange exchange = mock(ServerWebExchange.class);
-        ServerHttpRequest request = mock(ServerHttpRequest.class);
-        RequestPath requestPath = mock(RequestPath.class);
-        when(exchange.getRequest()).thenReturn(request);
-        when(request.getPath()).thenReturn(requestPath);
-        when(requestPath.pathWithinApplication()).thenReturn(PathContainer.parsePath("/"));
+        // Assert
+        assertThat(config.getAllowedOrigins()).containsExactly("https://sandbox.stg.eudistack.net");
+        assertThat(config.getAllowedOriginPatterns()).isNull();
+        assertThat(config.getAllowedHeaders()).contains("X-Wallet-Request", "Authorization");
+        assertThat(config.getAllowCredentials()).isTrue();
+    }
 
-        CorsConfiguration corsConfig = source.getCorsConfiguration(exchange);
+    @Test
+    void getCorsConfiguration_unknownTenant_admitsNoOrigin() {
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.post("/api/v1/auth/refresh")
+                .header("X-Tenant", "unknown"));
 
-        assertNotNull(corsConfig);
-        assertEquals(List.of("*"), corsConfig.getAllowedOriginPatterns());
-        assertTrue(corsConfig.getAllowCredentials());
+        assertThat(source.getCorsConfiguration(exchange).getAllowedOrigins()).isEmpty();
+    }
+
+    @Test
+    void getCorsConfiguration_wellKnownPath_usesTheGlobalOrigins() {
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/.well-known/wallet-config-metadata"));
+
+        assertThat(source.getCorsConfiguration(exchange).getAllowedOrigins())
+                .containsExactly("https://status.eudistack.net");
     }
 }

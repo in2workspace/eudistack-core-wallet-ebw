@@ -7,4 +7,7 @@ public interface SecureRandomGenerator {
     String generateOtp(int length);
 
     UUID generateUuid();
+
+    /** Cryptographically secure random bytes. */
+    byte[] generateBytes(int length);
 }

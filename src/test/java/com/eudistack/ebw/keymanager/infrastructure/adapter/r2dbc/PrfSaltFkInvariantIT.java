@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
 /**
- * Integration tests for the FK invariant R-5 of the {@code hybrid_prf_salt} table:
+ * Integration tests for the FK invariant R-5 of the {@code passkey_prf_salt} table:
  * every {@code holder_id} must reference a UUID v4 row in {@code wallet_user(id)}.
  *
  * <p>This test class is the canonical owner of invariant R-5 as declared in
@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.fail;
  *       succeeds and the row is persisted</li>
  *   <li>ES-01 — INSERT with a non-existent {@code holder_id} → FK violation, no row
  *       persisted</li>
- *   <li>NFR-S-537-03 — all {@code holder_id} values in {@code hybrid_prf_salt} are UUID v4
+ *   <li>NFR-S-537-03 — all {@code holder_id} values in {@code passkey_prf_salt} are UUID v4
  *       (opaque, from {@code wallet_user.id}), not PII-like strings</li>
  * </ul>
  *
@@ -103,7 +103,7 @@ class PrfSaltFkInvariantIT {
 
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.createStatement().execute(
-                    "INSERT INTO " + testSchema + ".hybrid_prf_salt "
+                    "INSERT INTO " + testSchema + ".passkey_prf_salt "
                     + "(holder_id, credential_id, prf_salt) VALUES "
                     + "('" + knownHolderUuid + "', '" + credId + "', "
                     + "decode('" + hex(salt) + "', 'hex'))");
@@ -112,7 +112,7 @@ class PrfSaltFkInvariantIT {
         // Verify the row is present
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT COUNT(*) FROM " + testSchema + ".hybrid_prf_salt "
+                     "SELECT COUNT(*) FROM " + testSchema + ".passkey_prf_salt "
                      + "WHERE holder_id = '" + knownHolderUuid + "' AND credential_id = '" + credId + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1)).isEqualTo(1);
@@ -130,7 +130,7 @@ class PrfSaltFkInvariantIT {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             try {
                 conn.createStatement().execute(
-                        "INSERT INTO " + testSchema + ".hybrid_prf_salt "
+                        "INSERT INTO " + testSchema + ".passkey_prf_salt "
                         + "(holder_id, credential_id, prf_salt) VALUES "
                         + "('" + nonExistentHolder + "', '" + credId + "', "
                         + "decode('" + hex(salt) + "', 'hex'))");
@@ -146,7 +146,7 @@ class PrfSaltFkInvariantIT {
         // Verify no row was persisted
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT COUNT(*) FROM " + testSchema + ".hybrid_prf_salt "
+                     "SELECT COUNT(*) FROM " + testSchema + ".passkey_prf_salt "
                      + "WHERE credential_id = '" + credId + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1)).as("No row must be persisted after FK violation").isEqualTo(0);
@@ -165,7 +165,7 @@ class PrfSaltFkInvariantIT {
             try {
                 // Attempting to insert a non-UUID literal fails at the type-cast level
                 conn.createStatement().execute(
-                        "INSERT INTO " + testSchema + ".hybrid_prf_salt "
+                        "INSERT INTO " + testSchema + ".passkey_prf_salt "
                         + "(holder_id, credential_id, prf_salt) VALUES "
                         + "('user@example.com'::uuid, '" + credId + "', "
                         + "decode('" + hex(salt) + "', 'hex'))");
@@ -181,7 +181,7 @@ class PrfSaltFkInvariantIT {
         // No row must exist
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT COUNT(*) FROM " + testSchema + ".hybrid_prf_salt "
+                     "SELECT COUNT(*) FROM " + testSchema + ".passkey_prf_salt "
                      + "WHERE credential_id = '" + credId + "'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getLong(1)).as("No row must be persisted for PII-like holder_id").isEqualTo(0);
@@ -191,7 +191,7 @@ class PrfSaltFkInvariantIT {
     // ------------------------------------------------------------------ NFR-S-537-03: holder_id is UUID v4
 
     @Test
-    void allHolderIds_inHybridPrfSalt_areUuidV4() throws SQLException {
+    void allHolderIds_inPasskeyPrfPrfSalt_areUuidV4() throws SQLException {
         // Insert several rows with valid UUID v4 holder IDs (using knownHolderUuid + extra users)
         UUID holder2 = UUID.randomUUID();
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
@@ -199,14 +199,14 @@ class PrfSaltFkInvariantIT {
                     "INSERT INTO " + testSchema + ".wallet_user (id, email) "
                     + "VALUES ('" + holder2 + "', 'fk2@test.com')");
             conn.createStatement().execute(
-                    "INSERT INTO " + testSchema + ".hybrid_prf_salt (holder_id, credential_id, prf_salt) VALUES "
+                    "INSERT INTO " + testSchema + ".passkey_prf_salt (holder_id, credential_id, prf_salt) VALUES "
                     + "('" + knownHolderUuid + "', 'cred-uuid-check-1', decode('" + hex(randomSalt()) + "', 'hex')), "
                     + "('" + holder2 + "', 'cred-uuid-check-2', decode('" + hex(randomSalt()) + "', 'hex'))");
         }
 
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT holder_id::text FROM " + testSchema + ".hybrid_prf_salt")) {
+                     "SELECT holder_id::text FROM " + testSchema + ".passkey_prf_salt")) {
             int rowCount = 0;
             while (rs.next()) {
                 String holderId = rs.getString(1);
@@ -218,13 +218,13 @@ class PrfSaltFkInvariantIT {
                 assertThat(parsed.version()).as("holder_id must be UUID version 4").isEqualTo(4);
                 rowCount++;
             }
-            assertThat(rowCount).as("Expected rows in hybrid_prf_salt").isGreaterThan(0);
+            assertThat(rowCount).as("Expected rows in passkey_prf_salt").isGreaterThan(0);
         }
     }
 
     @Test
     void holderIds_areOpaqueUuids_notDerivedFromEmail() throws SQLException {
-        // The holder UUID stored in hybrid_prf_salt comes from wallet_user.id,
+        // The holder UUID stored in passkey_prf_salt comes from wallet_user.id,
         // which is generated server-side (UUID v4). It must not equal or embed any
         // PII such as the user's email address.
         String email = "fk-opaque@test.com";
@@ -235,13 +235,13 @@ class PrfSaltFkInvariantIT {
                     "INSERT INTO " + testSchema + ".wallet_user (id, email) "
                     + "VALUES ('" + holderUuid + "', '" + email + "')");
             conn.createStatement().execute(
-                    "INSERT INTO " + testSchema + ".hybrid_prf_salt (holder_id, credential_id, prf_salt) VALUES "
+                    "INSERT INTO " + testSchema + ".passkey_prf_salt (holder_id, credential_id, prf_salt) VALUES "
                     + "('" + holderUuid + "', 'cred-opaque-1', decode('" + hex(randomSalt()) + "', 'hex'))");
         }
 
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT holder_id::text FROM " + testSchema + ".hybrid_prf_salt "
+                     "SELECT holder_id::text FROM " + testSchema + ".passkey_prf_salt "
                      + "WHERE credential_id = 'cred-opaque-1'")) {
             assertThat(rs.next()).isTrue();
             String storedHolderId = rs.getString(1);

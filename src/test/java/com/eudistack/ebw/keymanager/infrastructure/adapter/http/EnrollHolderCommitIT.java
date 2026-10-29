@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
+import com.eudistack.ebw.support.TestSessions;
 import com.eudistack.ebw.domain.spi.TokenSigner;
 import com.eudistack.ebw.keymanager.application.PrfSaltUseCase;
 import org.flywaydb.core.Flyway;
@@ -29,7 +30,7 @@ import java.util.UUID;
 import static org.mockito.Mockito.when;
 
 /**
- * Integration tests for the {@code POST /api/v1/keys/hybrid/onboarding/commit} endpoint.
+ * Integration tests for the {@code POST /api/v1/keys/passkey-prf/onboarding/commit} endpoint.
  *
  * <p>Covered criteria:
  * <ul>
@@ -37,12 +38,12 @@ import static org.mockito.Mockito.when;
  *   <li>AC-07 — identical re-submit → 200 ACK (idempotent)</li>
  *   <li>ES-03 — different blob for same (holderId, credentialId) → 409</li>
  *   <li>ES-01 — missing required field → 400</li>
- *   <li>ES-02 — non-hybrid tenant → 403 opaque</li>
+ *   <li>ES-02 — non-passkey-prf tenant → 403 opaque</li>
  * </ul>
  *
- * <p>The {@code hybrid_wrapped_key_handle} table is created by the real Flyway V4 tenant
- * migration (EUDISTACK-535). The composite FK to {@code hybrid_prf_salt} requires
- * pre-seeding a {@code wallet_user} row and one {@code hybrid_prf_salt} row per
+ * <p>The {@code passkey_prf_wrapped_key_handle} table is created by the real Flyway V4 tenant
+ * migration (EUDISTACK-535). The composite FK to {@code passkey_prf_salt} requires
+ * pre-seeding a {@code wallet_user} row and one {@code passkey_prf_salt} row per
  * {@code (HOLDER_UUID, credentialId)} pair used in each test. {@link PrfSaltUseCase} is
  * mocked — the prf_salt rows are seeded directly by the test setup rather than through the
  * application layer.</p>
@@ -60,11 +61,11 @@ import static org.mockito.Mockito.when;
 class EnrollHolderCommitIT {
 
     private static final String SCHEMA_SUFFIX   = "_business_wallet";
-    private static final String HYBRID_TENANT   = "hcommit";
+    private static final String PASSKEY_PRF_TENANT   = "hcommit";
     private static final String DB_TENANT       = "hcommitdb";
     private static final UUID   HOLDER_UUID     = UUID.fromString("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb");
-    private static final String BEARER          = "hybrid-commit-bearer";
-    private static final String COMMIT_URL      = "/api/v1/keys/hybrid/onboarding/commit";
+    private static final String BEARER          = "passkey-prf-commit-bearer";
+    private static final String COMMIT_URL      = "/api/v1/keys/passkey-prf/onboarding/commit";
 
     // Minimal valid commit payload fixtures
     private static final String BLOB_B64 =
@@ -98,6 +99,10 @@ class EnrollHolderCommitIT {
         registry.add("spring.flyway.default-schema", () -> "public");
     }
 
+    /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessionChecker;
+
     @MockitoBean TokenSigner tokenSigner;
     @MockitoBean PrfSaltUseCase prfSaltUseCase;
 
@@ -114,21 +119,21 @@ class EnrollHolderCommitIT {
                     "DO $$ BEGIN CREATE ROLE config_manager_role; "
                     + "EXCEPTION WHEN duplicate_object THEN NULL; END $$");
             conn.createStatement().execute(
-                    "CREATE SCHEMA IF NOT EXISTS " + HYBRID_TENANT + SCHEMA_SUFFIX);
+                    "CREATE SCHEMA IF NOT EXISTS " + PASSKEY_PRF_TENANT + SCHEMA_SUFFIX);
             conn.createStatement().execute(
                     "CREATE SCHEMA IF NOT EXISTS " + DB_TENANT + SCHEMA_SUFFIX);
         }
-        runTenantMigrations(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX);
+        runTenantMigrations(jdbcUrl, PASSKEY_PRF_TENANT + SCHEMA_SUFFIX);
         runTenantMigrations(jdbcUrl, DB_TENANT + SCHEMA_SUFFIX);
-        // Seed wallet_user for HOLDER_UUID in both schemas (required by V1 FK on hybrid_wrapped_key_handle)
-        seedWalletUser(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX, HOLDER_UUID);
+        // Seed wallet_user for HOLDER_UUID in both schemas (required by V1 FK on passkey_prf_wrapped_key_handle)
+        seedWalletUser(jdbcUrl, PASSKEY_PRF_TENANT + SCHEMA_SUFFIX, HOLDER_UUID);
         seedWalletUser(jdbcUrl, DB_TENANT + SCHEMA_SUFFIX, HOLDER_UUID);
-        // Seed prf_salt in the hybrid schema for all credential IDs used in tests
+        // Seed prf_salt in the passkey-prf schema for all credential IDs used in tests
         // (composite FK in V4 requires a prf_salt row per (holder_id, credential_id);
         //  PrfSaltUseCase is mocked so prf_salt is not written through the application layer)
-        seedPrfSalt(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX, HOLDER_UUID, "cred-new-1");
-        seedPrfSalt(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX, HOLDER_UUID, "cred-replay-1");
-        seedPrfSalt(jdbcUrl, HYBRID_TENANT + SCHEMA_SUFFIX, HOLDER_UUID, "cred-conflict-1");
+        seedPrfSalt(jdbcUrl, PASSKEY_PRF_TENANT + SCHEMA_SUFFIX, HOLDER_UUID, "cred-new-1");
+        seedPrfSalt(jdbcUrl, PASSKEY_PRF_TENANT + SCHEMA_SUFFIX, HOLDER_UUID, "cred-replay-1");
+        seedPrfSalt(jdbcUrl, PASSKEY_PRF_TENANT + SCHEMA_SUFFIX, HOLDER_UUID, "cred-conflict-1");
     }
 
     private static void runTenantMigrations(String jdbcUrl, String schema) {
@@ -157,7 +162,7 @@ class EnrollHolderCommitIT {
             throws SQLException {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test")) {
             conn.createStatement().execute(
-                    "INSERT INTO " + schema + ".hybrid_prf_salt "
+                    "INSERT INTO " + schema + ".passkey_prf_salt "
                     + "(holder_id, credential_id, prf_salt) "
                     + "VALUES ('" + holderId + "', '" + credId + "', "
                     + " decode('" + hex(new byte[32]) + "', 'hex')) "
@@ -167,11 +172,13 @@ class EnrollHolderCommitIT {
 
     @BeforeEach
     void setUp() throws SQLException {
-        seedWalletProfile(HYBRID_TENANT, "server", "hybrid");
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(true));
+        webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
+        seedWalletProfile(PASSKEY_PRF_TENANT, "server", "passkey-prf");
         seedWalletProfile(DB_TENANT, "server", "db");
-        when(tokenSigner.verify(BEARER)).thenReturn(
-                Map.of("sub", HOLDER_UUID.toString(), "email", "test@test.com"));
-        clearHandleTable(HYBRID_TENANT + SCHEMA_SUFFIX);
+        when(tokenSigner.verify(BEARER)).thenAnswer(TestSessions.sessionOfRequestTenant(HOLDER_UUID.toString(), "test@test.com"));
+        clearHandleTable(PASSKEY_PRF_TENANT + SCHEMA_SUFFIX);
     }
 
     private void seedWalletProfile(String tenant, String mode, String km) throws SQLException {
@@ -187,7 +194,7 @@ class EnrollHolderCommitIT {
     }
 
     /**
-     * Clears handle rows between tests. The {@code hybrid_prf_salt} rows seeded in
+     * Clears handle rows between tests. The {@code passkey_prf_salt} rows seeded in
      * {@link #provisionSchemas()} are intentionally kept — HOLDER_UUID is constant across
      * all tests and prf_salt seeding is idempotent; re-deleting and re-inserting on every
      * test would add no value and break FK ordering.
@@ -195,16 +202,16 @@ class EnrollHolderCommitIT {
     private void clearHandleTable(String schema) throws SQLException {
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             conn.createStatement().execute(
-                    "DELETE FROM " + schema + ".hybrid_wrapped_key_handle");
+                    "DELETE FROM " + schema + ".passkey_prf_wrapped_key_handle");
         }
     }
 
     // ------------------------------------------------------------------ AC-04/AC-06
 
     @Test
-    void commit_hybridTenant_newHandle_returns201WithCredentialId() {
+    void commit_passkeyPrfTenant_newHandle_returns201WithCredentialId() {
         webClient.post().uri(COMMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(validBody("cred-new-1"))
@@ -221,7 +228,7 @@ class EnrollHolderCommitIT {
         String credId = "cred-replay-1";
         // First commit
         webClient.post().uri(COMMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(validBody(credId))
@@ -230,7 +237,7 @@ class EnrollHolderCommitIT {
 
         // Identical replay
         webClient.post().uri(COMMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(validBody(credId))
@@ -246,7 +253,7 @@ class EnrollHolderCommitIT {
     void commit_differentBlob_returns409WithIdempotencyReplay() {
         String credId = "cred-conflict-1";
         webClient.post().uri(COMMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(validBody(credId))
@@ -258,7 +265,7 @@ class EnrollHolderCommitIT {
         differentBlob[0] = 0x42;
         String differentBlobB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(differentBlob);
         webClient.post().uri(COMMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(bodyWith(credId, differentBlobB64, IV_B64, TAG_B64))
@@ -273,7 +280,7 @@ class EnrollHolderCommitIT {
     @Test
     void commit_missingRequiredField_returns400() {
         webClient.post().uri(COMMIT_URL)
-                .header("Host", HYBRID_TENANT + ".eudistack.net")
+                .header("Host", PASSKEY_PRF_TENANT + ".eudistack.net")
                 .header("Authorization", "Bearer " + BEARER)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"credential_id\":\"cred-1\"}")  // missing all crypto fields

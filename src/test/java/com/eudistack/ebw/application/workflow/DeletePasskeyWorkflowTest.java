@@ -1,5 +1,6 @@
 package com.eudistack.ebw.application.workflow;
 
+import com.eudistack.ebw.support.TestPasskeys;
 import com.eudistack.ebw.domain.model.UserPasskey;
 import com.eudistack.ebw.domain.model.exception.LastPasskeyException;
 import com.eudistack.ebw.domain.model.exception.PasskeyNotFoundException;
@@ -43,7 +44,7 @@ class DeletePasskeyWorkflowTest {
     @BeforeEach
     void setUp() {
         workflow = new DeletePasskeyWorkflow(passkeyRepository, refreshTokenRepository, auditService);
-        passkey = UserPasskey.create(USER_ID, "cred-1", "Office laptop", "ua");
+        passkey = TestPasskeys.create(USER_ID, "cred-1", "Office laptop", "ua");
     }
 
     @Test

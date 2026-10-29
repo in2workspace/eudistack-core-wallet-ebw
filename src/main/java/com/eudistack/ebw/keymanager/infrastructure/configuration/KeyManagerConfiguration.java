@@ -5,33 +5,32 @@ import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
 import com.eudistack.ebw.keymanager.domain.model.SigningType;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyReadPort;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
-import com.eudistack.ebw.keymanager.domain.port.HybridKeyManagerTelemetryPort;
+import com.eudistack.ebw.keymanager.domain.port.PasskeyPrfKeyManagerTelemetryPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditCloudWatchAdapter;
 import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.cache.CaffeinePreparedSignStore;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerController;
-import com.eudistack.ebw.keymanager.infrastructure.observability.HybridSignTelemetry;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.PasskeyPrfKeyManagerController;
+import com.eudistack.ebw.keymanager.infrastructure.observability.PasskeyPrfSignTelemetry;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.tracing.Tracer;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridKeyManagerExceptionHandler;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.HybridOnboardingController;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.PasskeyPrfKeyManagerExceptionHandler;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.PasskeyPrfOnboardingController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HolderKeyR2dbcAdapter;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HybridWrappedKeyHandleR2dbcAdapter;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.PasskeyPrfWrappedKeyHandleR2dbcAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.PrfSaltRepository;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.SessionPasskeyCredentialR2dbcAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.DbKeyManagerService;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.service.HybridKeyManagerAdapter;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.service.PasskeyPrfKeyManagerAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.health.KeyManagerHealthController;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -74,18 +73,23 @@ public class KeyManagerConfiguration {
         return new HolderKeyR2dbcAdapter(repository, objectMapper, databaseClient);
     }
 
+    /**
+     * The only {@link KeyAuditPort}: CloudWatch when {@code keymanager.audit.enabled=true} (which then
+     * requires {@code keymanager.audit.log-group-name}), a no-op otherwise. One bean instead of two
+     * conditional ones, so every injection point resolves to a single candidate.
+     */
     @Bean
-    @ConditionalOnProperty(name = "keymanager.audit.enabled", havingValue = "true")
-    KeyAuditPort keyAuditCloudWatchAdapter(
-            @Value("${keymanager.audit.log-group-name}") String logGroupName,
+    KeyAuditPort keyAuditPort(
+            @Value("${keymanager.audit.enabled:false}") boolean auditEnabled,
+            @Value("${keymanager.audit.log-group-name:}") String logGroupName,
             ObjectMapper objectMapper) {
+        if (!auditEnabled) {
+            return (KeyAuditEvent event) -> Mono.empty();
+        }
+        if (logGroupName.isBlank()) {
+            throw new IllegalStateException("keymanager.audit.enabled=true requires keymanager.audit.log-group-name");
+        }
         return new KeyAuditCloudWatchAdapter(logGroupName, objectMapper);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(KeyAuditPort.class)
-    KeyAuditPort keyAuditNoOpPort() {
-        return (KeyAuditEvent event) -> Mono.empty();
     }
 
     @Bean
@@ -142,9 +146,9 @@ public class KeyManagerConfiguration {
         return new DbKeyManagerService(generateUseCase, signUseCase);
     }
 
-    // --- EUDISTACK-533 US-01: Hybrid adapter + per-tenant resolver ---
+    // --- EUDISTACK-533 US-01: passkey+prf adapter + per-tenant resolver ---
 
-    // --- EUDISTACK-536 US-04: Hybrid sign handshake beans ---
+    // --- EUDISTACK-536 US-04: passkey+prf sign handshake beans ---
 
     @Bean
     PreparedSignStore preparedSignStore() {
@@ -152,11 +156,18 @@ public class KeyManagerConfiguration {
     }
 
     @Bean
+    SessionPasskeyCredentialPort sessionPasskeyCredentialPort(DatabaseClient databaseClient) {
+        return new SessionPasskeyCredentialR2dbcAdapter(databaseClient);
+    }
+
+    @Bean
     PrepareSignUseCase prepareSignUseCase(PrfSaltUseCase prfSaltUseCase,
                                           WrappedKeyHandleRepository wrappedKeyHandleRepository,
                                           PreparedSignStore preparedSignStore,
-                                          ObjectMapper objectMapper) {
-        return new PrepareSignUseCase(prfSaltUseCase, wrappedKeyHandleRepository, preparedSignStore, objectMapper);
+                                          ObjectMapper objectMapper,
+                                          SessionPasskeyCredentialPort sessionPasskeyCredentialPort) {
+        return new PrepareSignUseCase(prfSaltUseCase, wrappedKeyHandleRepository, preparedSignStore, objectMapper,
+                sessionPasskeyCredentialPort);
     }
 
     @Bean
@@ -165,21 +176,21 @@ public class KeyManagerConfiguration {
     }
 
     @Bean
-    HybridSignTelemetry hybridSignTelemetry(Tracer tracer, MeterRegistry meterRegistry) {
-        return new HybridSignTelemetry(tracer, meterRegistry);
+    PasskeyPrfSignTelemetry passkeyPrfSignTelemetry(Tracer tracer, MeterRegistry meterRegistry) {
+        return new PasskeyPrfSignTelemetry(tracer, meterRegistry);
     }
 
     @Bean
-    HybridKeyManagerAdapter hybridKeyManagerAdapter(PrepareSignUseCase prepareSignUseCase,
+    PasskeyPrfKeyManagerAdapter passkeyPrfKeyManagerAdapter(PrepareSignUseCase prepareSignUseCase,
                                                     SubmitSignedUseCase submitSignedUseCase,
-                                                    HybridSignTelemetry hybridSignTelemetry) {
-        return new HybridKeyManagerAdapter(prepareSignUseCase, submitSignedUseCase, hybridSignTelemetry);
+                                                    PasskeyPrfSignTelemetry passkeyPrfSignTelemetry) {
+        return new PasskeyPrfKeyManagerAdapter(prepareSignUseCase, submitSignedUseCase, passkeyPrfSignTelemetry);
     }
 
     @Bean
     KeyManagerResolver keyManagerResolver(KeyManagerPort keyManagerPort,
-                                          HybridKeyManagerAdapter hybridKeyManagerAdapter) {
-        return new KeyManagerResolver(keyManagerPort, hybridKeyManagerAdapter);
+                                          PasskeyPrfKeyManagerAdapter passkeyPrfKeyManagerAdapter) {
+        return new KeyManagerResolver(keyManagerPort, passkeyPrfKeyManagerAdapter);
     }
 
     @Bean
@@ -189,11 +200,11 @@ public class KeyManagerConfiguration {
     }
 
     @Bean
-    HybridKeyManagerController hybridKeyManagerController(
-            HybridKeyManagerAdapter hybridKeyManagerAdapter,
+    PasskeyPrfKeyManagerController passkeyPrfKeyManagerController(
+            PasskeyPrfKeyManagerAdapter passkeyPrfKeyManagerAdapter,
             WalletProfileQueryPort walletProfileQueryPort,
             EnrollHolderUseCase enrollHolderUseCase) {
-        return new HybridKeyManagerController(hybridKeyManagerAdapter, walletProfileQueryPort, enrollHolderUseCase);
+        return new PasskeyPrfKeyManagerController(passkeyPrfKeyManagerAdapter, walletProfileQueryPort, enrollHolderUseCase);
     }
 
     @Bean
@@ -202,8 +213,8 @@ public class KeyManagerConfiguration {
     }
 
     @Bean
-    HybridKeyManagerExceptionHandler hybridKeyManagerExceptionHandler() {
-        return new HybridKeyManagerExceptionHandler();
+    PasskeyPrfKeyManagerExceptionHandler passkeyPrfKeyManagerExceptionHandler() {
+        return new PasskeyPrfKeyManagerExceptionHandler();
     }
 
     @Bean
@@ -211,30 +222,30 @@ public class KeyManagerConfiguration {
         return new KeyManagerHealthController(connectionFactory);
     }
 
-    // --- EUDISTACK-534 US-02: Hybrid onboarding beans ---
+    // --- EUDISTACK-534 US-02: passkey+prf onboarding beans ---
 
     @Bean
-    HybridWrappedKeyHandleR2dbcAdapter hybridWrappedKeyHandleR2dbcAdapter(
+    PasskeyPrfWrappedKeyHandleR2dbcAdapter passkeyPrfWrappedKeyHandleR2dbcAdapter(
             DatabaseClient databaseClient) {
-        return new HybridWrappedKeyHandleR2dbcAdapter(databaseClient);
+        return new PasskeyPrfWrappedKeyHandleR2dbcAdapter(databaseClient);
     }
 
     @Bean
     EnrollHolderUseCase enrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
                                             WrappedKeyHandleRepository wrappedKeyHandleRepository,
-                                            HybridKeyManagerTelemetryPort hybridKeyManagerTelemetryPort,
+                                            PasskeyPrfKeyManagerTelemetryPort passkeyPrfKeyManagerTelemetryPort,
                                             KeyAuditPort keyAuditPort,
                                             Tracer tracer) {
         return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository,
-                hybridKeyManagerTelemetryPort, keyAuditPort, tracer);
+                passkeyPrfKeyManagerTelemetryPort, keyAuditPort, tracer);
     }
 
     @Bean
-    HybridOnboardingController hybridOnboardingController(
+    PasskeyPrfOnboardingController passkeyPrfOnboardingController(
             EnrollHolderUseCase enrollHolderUseCase,
             WalletProfileQueryPort walletProfileQueryPort,
             ObjectMapper objectMapper) {
-        return new HybridOnboardingController(enrollHolderUseCase, walletProfileQueryPort, objectMapper);
+        return new PasskeyPrfOnboardingController(enrollHolderUseCase, walletProfileQueryPort, objectMapper);
     }
 
     // --- EUDISTACK-537 US-05: PRF salt persistence ---

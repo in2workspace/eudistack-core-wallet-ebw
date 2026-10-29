@@ -2,7 +2,7 @@ package com.eudistack.ebw.keymanager.domain.exception;
 
 /**
  * Thrown when the client's signed assertion fails structural or cryptographic validation
- * during the hybrid (Passkey PRF) submit step.
+ * during the passkey+prf submit step.
  *
  * <p>In US-01 (EUDISTACK-533) only the skeleton is present; the exception is declared here
  * so the exception handler and tests can reference it. Full cryptographic validation is

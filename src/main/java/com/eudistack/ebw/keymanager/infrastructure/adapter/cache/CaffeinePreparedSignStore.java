@@ -20,7 +20,7 @@ import java.util.Optional;
  * will result in a {@code prepareSign} on instance A and a {@code submitSignedAssertion} on
  * instance B missing the prepared session. Before enabling horizontal scaling (EUDISTACK-68),
  * replace this adapter with a Redis-backed implementation.
- * See Tech Debt ticket: [EUDISTACK-TBD] Shared correlation store for hybrid sign handshake.
+ * See Tech Debt ticket: [EUDISTACK-TBD] Shared correlation store for passkey-prf sign handshake.
  * </p>
  *
  * <p>Spec: EUDISTACK-536 EC-03; architecture.md §8.1.</p>

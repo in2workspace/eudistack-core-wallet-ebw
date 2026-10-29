@@ -1,13 +1,17 @@
 package com.eudistack.ebw.application.workflow;
 
-import com.eudistack.ebw.domain.model.AuthTokenPair;
+import com.eudistack.ebw.domain.model.IssuedSession;
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.model.RefreshToken;
-import com.eudistack.ebw.domain.model.WalletUser;
-import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
-import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
+import com.eudistack.ebw.domain.model.SessionSettings;
+import com.eudistack.ebw.domain.model.exception.InvalidSessionException;
+import com.eudistack.ebw.domain.model.exception.SessionExpiredException;
+import com.eudistack.ebw.domain.model.exception.TokenFamilyCompromisedException;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
+import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.AuthTokenService;
-import com.eudistack.ebw.domain.spi.HashProvider;
+import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
+import com.eudistack.ebw.support.TestPasskeys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,78 +21,94 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Unit tests for {@link RefreshTokenWorkflow} — resolves the token owner before delegating the rotation.
- */
+/** Unit tests for {@link RefreshTokenWorkflow}: every failure becomes {@code invalid_session}. */
 @ExtendWith(MockitoExtension.class)
 class RefreshTokenWorkflowTest {
 
-    private static final String RAW_TOKEN = "raw-refresh-token";
-    private static final String TOKEN_HASH = "token-hash";
+    private static final String TENANT = "sandbox";
 
     @Mock private AuthTokenService authTokenService;
-    @Mock private RefreshTokenRepository refreshTokenRepository;
     @Mock private WalletUserRepository userRepository;
-    @Mock private HashProvider hashProvider;
+    @Mock private WalletAuthSettingsService settingsService;
+    @Mock private AuditService auditService;
 
     private RefreshTokenWorkflow workflow;
+    private RefreshToken token;
 
     @BeforeEach
     void setUp() {
-        workflow = new RefreshTokenWorkflow(authTokenService, refreshTokenRepository, userRepository, hashProvider);
-        when(hashProvider.sha256(RAW_TOKEN)).thenReturn(TOKEN_HASH);
+        workflow = new RefreshTokenWorkflow(authTokenService, userRepository, settingsService, auditService);
+        token = RefreshToken.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), Instant.now(), "h",
+                Instant.now().plusSeconds(900));
+    }
+
+    private Mono<IssuedSession> refresh(String raw) {
+        return workflow.refresh(raw).contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TENANT));
+    }
+
+    private void knownToken() {
+        when(authTokenService.findRefreshToken("raw")).thenReturn(Mono.just(token));
+        when(userRepository.findById(token.getUserId())).thenReturn(Mono.just(TestPasskeys.user("a@b.c")));
+        when(settingsService.session()).thenReturn(Mono.just(SessionSettings.defaults()));
     }
 
     @Test
-    void refreshToken_knownTokenAndUser_rotatesTheTokenPair() {
+    void refresh_validCookie_rotatesWithTheTenantLimits() {
         // Arrange
-        var user = WalletUser.create("holder@example.com");
-        var stored = RefreshToken.create(user.getId(), null, TOKEN_HASH, Instant.now().plusSeconds(60));
-        var pair = new AuthTokenPair("access", "new-refresh", 900);
-        when(refreshTokenRepository.findByTokenHash(TOKEN_HASH)).thenReturn(Mono.just(stored));
-        when(userRepository.findById(user.getId())).thenReturn(Mono.just(user));
-        when(authTokenService.rotateRefreshToken(RAW_TOKEN, user)).thenReturn(Mono.just(pair));
+        knownToken();
+        var issued = new IssuedSession("access", 300, "new", token.getSessionId(), token.getPasskeyId(),
+                Instant.now().plusSeconds(3600));
+        when(authTokenService.rotateRefreshToken(eq(token), any(), eq(SessionSettings.defaults()), eq(TENANT)))
+                .thenReturn(Mono.just(issued));
 
-        // Act
-        var result = workflow.refreshToken(RAW_TOKEN);
-
-        // Assert
-        StepVerifier.create(result).expectNext(pair).verifyComplete();
+        // Act + Assert
+        StepVerifier.create(refresh("raw")).expectNext(issued).verifyComplete();
     }
 
     @Test
-    void refreshToken_unknownToken_failsWithInvalidToken() {
+    void refresh_unknownCookie_failsWithInvalidSession() {
         // Arrange
-        when(refreshTokenRepository.findByTokenHash(TOKEN_HASH)).thenReturn(Mono.empty());
+        when(authTokenService.findRefreshToken(any())).thenReturn(Mono.empty());
 
-        // Act
-        var result = workflow.refreshToken(RAW_TOKEN);
-
-        // Assert
-        StepVerifier.create(result).expectError(InvalidTokenException.class).verify();
-        verify(authTokenService, never()).rotateRefreshToken(any(), any());
+        // Act + Assert
+        StepVerifier.create(refresh(null)).expectError(InvalidSessionException.class).verify();
     }
 
     @Test
-    void refreshToken_ownerNoLongerExists_failsWithInvalidToken() {
+    void refresh_sessionExpired_auditsAndFailsWithInvalidSession() {
         // Arrange
-        var userId = UUID.randomUUID();
-        var stored = RefreshToken.create(userId, null, TOKEN_HASH, Instant.now().plusSeconds(60));
-        when(refreshTokenRepository.findByTokenHash(TOKEN_HASH)).thenReturn(Mono.just(stored));
-        when(userRepository.findById(userId)).thenReturn(Mono.empty());
+        knownToken();
+        when(authTokenService.rotateRefreshToken(any(), any(), any(), anyString())).thenReturn(Mono.error(
+                new SessionExpiredException(token.getSessionId(), token.getUserId(),
+                        SessionExpiredException.Reason.IDLE_TIMEOUT)));
+        when(auditService.record(any(), any(), any(), any(), any())).thenReturn(Mono.empty());
 
-        // Act
-        var result = workflow.refreshToken(RAW_TOKEN);
+        // Act + Assert
+        StepVerifier.create(refresh("raw")).expectError(InvalidSessionException.class).verify();
+        verify(auditService).record("session", token.getSessionId(), AuthAuditEvents.SESSION_EXPIRED,
+                token.getUserId(), Map.of("reason", "idle_timeout"));
+    }
 
-        // Assert
-        StepVerifier.create(result).expectError(InvalidTokenException.class).verify();
-        verify(authTokenService, never()).rotateRefreshToken(any(), any());
+    @Test
+    void refresh_reusedToken_auditsSessionEndedAndFailsWithInvalidSession() {
+        // Arrange
+        knownToken();
+        when(authTokenService.rotateRefreshToken(any(), any(), any(), anyString())).thenReturn(Mono.error(
+                new TokenFamilyCompromisedException(token.getSessionId(), token.getUserId())));
+        when(auditService.record(any(), any(), any(), any(), any())).thenReturn(Mono.empty());
+
+        // Act + Assert
+        StepVerifier.create(refresh("raw")).expectError(InvalidSessionException.class).verify();
+        verify(auditService).record("session", token.getSessionId(), AuthAuditEvents.SESSION_ENDED,
+                token.getUserId(), Map.of("reason", "refresh_token_reuse"));
     }
 }

@@ -33,9 +33,11 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class SmtpEmailSender implements EmailSender {
 
-    private static final String TEMPLATE = "verification-code-email";
+    private static final String OTP_TEMPLATE = "verification-code-email";
+    private static final String OTP_SUBJECT_KEY = "email.tx-code.subject";
+    private static final String NEW_PASSKEY_TEMPLATE = "new-passkey-email";
+    private static final String NEW_PASSKEY_SUBJECT_KEY = "email.new-passkey.subject";
     private static final String UNKNOWN_MAIL_PROVIDER = "unknown";
-    private static final String SUBJECT_KEY = "email.tx-code.subject";
     /** The only message bundle is English. */
     private static final Locale LOCALE = Locale.ENGLISH;
     private static final String ICONS_PATH = "email/icons/";
@@ -73,6 +75,18 @@ public class SmtpEmailSender implements EmailSender {
 
     @Override
     public Mono<Void> sendOtp(String email, String code) {
+        return sendBranded(email, OTP_TEMPLATE, OTP_SUBJECT_KEY, Map.of(
+                "txCode", code,
+                "expirationMinutes", expirationMinutes));
+    }
+
+    @Override
+    public Mono<Void> sendNewPasskeyNotice(String email) {
+        return sendBranded(email, NEW_PASSKEY_TEMPLATE, NEW_PASSKEY_SUBJECT_KEY, Map.of());
+    }
+
+    /** Resolves the tenant's sender, display name and branding from the request context, then sends. */
+    private Mono<Void> sendBranded(String email, String template, String subjectKey, Map<String, Object> variables) {
         return Mono.deferContextual(ctx -> {
             String tenant = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
             Mono<String> displayName = tenant.isBlank()
@@ -82,26 +96,26 @@ public class SmtpEmailSender implements EmailSender {
                             .defaultIfEmpty(tenant);
             return Mono.zip(tenantConfigService.getStringOrDefault("ebw.mail_from", defaultMailFrom), displayName)
                     .flatMap(tuple -> Mono.fromCallable(
-                                    () -> buildMessage(email, code, tuple.getT1(), tuple.getT2(), emailBrandingResolver.resolve(tenant)))
+                                    () -> buildMessage(email, template, subjectKey, variables, tuple.getT1(), tuple.getT2(),
+                                            emailBrandingResolver.resolve(tenant)))
                             .subscribeOn(Schedulers.boundedElastic()))
-                    .flatMap(mimeMessage -> externalSystemAccessRecorder.recordAccess(mailProvider(), TEMPLATE,
+                    .flatMap(mimeMessage -> externalSystemAccessRecorder.recordAccess(mailProvider(), template,
                             Mono.<Void>fromRunnable(() -> mailSender.send(mimeMessage))
                                     .subscribeOn(Schedulers.boundedElastic())));
         }).then();
     }
 
-    private MimeMessage buildMessage(String email, String code, String from, String tenantDisplayName,
-                                     EmailBranding branding)
+    private MimeMessage buildMessage(String email, String template, String subjectKey, Map<String, Object> variables,
+                                     String from, String tenantDisplayName, EmailBranding branding)
             throws MessagingException {
         var context = new Context(LOCALE);
-        context.setVariable("txCode", code);
-        context.setVariable("expirationMinutes", expirationMinutes);
+        variables.forEach(context::setVariable);
         context.setVariable("branding", branding);
         context.setVariable("tenantDisplayName", tenantDisplayName);
 
-        var html = templateEngine.process(TEMPLATE, context);
-        // The subject carries an admin-configured value (tenant display name).
-        var subject = messageSource.getMessage(SUBJECT_KEY, new Object[]{tenantDisplayName}, LOCALE)
+        var html = templateEngine.process(template, context);
+        // The subject may carry an admin-configured value (tenant display name).
+        var subject = messageSource.getMessage(subjectKey, new Object[]{tenantDisplayName}, LOCALE)
                 .replaceAll("[\\r\\n]+", " ");
 
         var mimeMessage = mailSender.createMimeMessage();

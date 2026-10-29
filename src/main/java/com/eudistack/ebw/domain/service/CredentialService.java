@@ -51,7 +51,8 @@ public class CredentialService {
             Instant issuanceDate,
             Instant expirationDate,
             String credentialType,
-            String vct
+            String vct,
+            boolean hasCnf
     ) {}
 
     public Mono<ParsedCredential> parseCredential(String raw, CredentialFormat format) {
@@ -377,7 +378,8 @@ public class CredentialService {
 
         var credentialType = extractCredentialType(claimsMap);
 
-        return new ParsedCredential(issuer, subject, issuanceDate, expirationDate, credentialType, null);
+        return new ParsedCredential(issuer, subject, issuanceDate, expirationDate, credentialType, null,
+                hasCnf(claimsMap));
     }
 
     private ParsedCredential parseSdJwt(String raw) throws ParseException {
@@ -397,7 +399,16 @@ public class CredentialService {
         var credentialType = extractCredentialType(claims.getClaims());
         var vct = claims.getStringClaim("vct");
 
-        return new ParsedCredential(issuer, subject, issuanceDate, expirationDate, credentialType, vct);
+        return new ParsedCredential(issuer, subject, issuanceDate, expirationDate, credentialType, vct,
+                hasCnf(claims.getClaims()));
+    }
+
+    /** Holder binding: a {@code cnf} claim, at the top level or inside the W3C {@code vc} object. */
+    private static boolean hasCnf(Map<String, Object> claims) {
+        if (claims.get("cnf") instanceof Map<?, ?>) {
+            return true;
+        }
+        return claims.get("vc") instanceof Map<?, ?> vc && vc.get("cnf") instanceof Map<?, ?>;
     }
 
     @SuppressWarnings("unchecked")

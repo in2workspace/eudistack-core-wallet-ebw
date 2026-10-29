@@ -1,10 +1,15 @@
 package com.eudistack.ebw.infrastructure.security;
 
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.spi.TokenSigner;
+import com.eudistack.ebw.infrastructure.controller.support.RefreshCookies;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.core.GrantedAuthority;
@@ -33,8 +38,12 @@ import static org.mockito.Mockito.when;
 class JwtAuthenticationWebFilterTest {
 
     private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID SESSION_ID = UUID.randomUUID();
+    private static final UUID PASSKEY_ID = UUID.randomUUID();
+    private static final String TENANT = "sandbox";
 
     private TokenSigner tokenSigner;
+    private ActiveSessionChecker activeSessionChecker;
     private JwtAuthenticationWebFilter filter;
     private AtomicReference<JwtAuthenticationToken> seenAuthentication;
     private WebFilterChain chain;
@@ -42,7 +51,11 @@ class JwtAuthenticationWebFilterTest {
     @BeforeEach
     void setUp() {
         tokenSigner = mock(TokenSigner.class);
-        filter = new JwtAuthenticationWebFilter(tokenSigner);
+        activeSessionChecker = mock(ActiveSessionChecker.class);
+        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Mono.just(true));
+        filter = new JwtAuthenticationWebFilter(tokenSigner, activeSessionChecker,
+                new com.fasterxml.jackson.databind.ObjectMapper(), new RefreshCookies());
         seenAuthentication = new AtomicReference<>();
         chain = exchange -> ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
@@ -56,6 +69,9 @@ class JwtAuthenticationWebFilterTest {
         var claims = new HashMap<String, Object>();
         claims.put("sub", USER_ID.toString());
         claims.put("email", "holder@example.com");
+        claims.put("tenant", TENANT);
+        claims.put("sid", SESSION_ID.toString());
+        claims.put("pkid", PASSKEY_ID.toString());
         claims.put("powers", List.of("Onboarding:Execute", 42, "Certification:Upload"));
         when(tokenSigner.verify("good-token")).thenReturn(claims);
 
@@ -63,9 +79,11 @@ class JwtAuthenticationWebFilterTest {
         var result = filter.filter(exchangeWithAuthorization("Bearer good-token"), chain);
 
         // Assert
-        StepVerifier.create(result).verifyComplete();
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
         var authentication = seenAuthentication.get();
         assertThat(authentication.getUserId()).isEqualTo(USER_ID);
+        assertThat(authentication.getSessionId()).isEqualTo(SESSION_ID);
+        assertThat(authentication.getPasskeyId()).isEqualTo(PASSKEY_ID);
         assertThat(authentication.getEmail()).isEqualTo("holder@example.com");
         assertThat(authentication.isAuthenticated()).isTrue();
         assertThat(authentication.getAuthorities()).extracting(GrantedAuthority::getAuthority)
@@ -75,14 +93,67 @@ class JwtAuthenticationWebFilterTest {
     @Test
     void filter_tokenWithoutPowers_authenticatesWithNoAuthorities() {
         // Arrange
-        when(tokenSigner.verify("good-token")).thenReturn(Map.of("sub", USER_ID.toString(), "email", "a@b.c"));
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+
+        // Act
+        var result = filter.filter(exchangeWithAuthorization("Bearer good-token"), chain);
+
+        // Assert
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
+        assertThat(seenAuthentication.get().getAuthorities()).isEmpty();
+    }
+
+    @Test
+    void filter_tokenOfAnotherTenant_continuesUnauthenticated() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims("othertenant"));
+
+        // Act
+        var result = filter.filter(exchangeWithAuthorization("Bearer good-token"), chain);
+
+        // Assert
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
+        assertThat(seenAuthentication.get()).isNull();
+    }
+
+    @Test
+    void filter_requestWithoutTenant_continuesUnauthenticated() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
 
         // Act
         var result = filter.filter(exchangeWithAuthorization("Bearer good-token"), chain);
 
         // Assert
         StepVerifier.create(result).verifyComplete();
-        assertThat(seenAuthentication.get().getAuthorities()).isEmpty();
+        assertThat(seenAuthentication.get()).isNull();
+    }
+
+    @Test
+    void filter_tokenWithoutSessionClaims_continuesUnauthenticated() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(Map.of("sub", USER_ID.toString(), "email", "a@b.c",
+                "tenant", TENANT));
+
+        // Act
+        var result = filter.filter(exchangeWithAuthorization("Bearer good-token"), chain);
+
+        // Assert
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
+        assertThat(seenAuthentication.get()).isNull();
+    }
+
+    @Test
+    void filter_registrationTicketBearer_continuesUnauthenticated() {
+        // Arrange
+        when(tokenSigner.verify("opaqueTicket")).thenThrow(new InvalidTokenException("Malformed JWT"));
+
+        // Act
+        var result = filter.filter(exchangeWithAuthorization("Bearer opaqueTicket"), chain);
+
+        // Assert
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
+        assertThat(seenAuthentication.get()).isNull();
     }
 
     @Test
@@ -131,8 +202,106 @@ class JwtAuthenticationWebFilterTest {
         StepVerifier.create(result).expectError(IllegalStateException.class).verify();
     }
 
+    private static Map<String, Object> sessionClaims(String tenant) {
+        return Map.of("sub", USER_ID.toString(), "email", "a@b.c", "tenant", tenant,
+                "sid", SESSION_ID.toString(), "pkid", PASSKEY_ID.toString());
+    }
+
+    private static Mono<Void> inTenant(Mono<Void> result, String tenant) {
+        return result.contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, tenant));
+    }
+
     private static MockServerWebExchange exchangeWithAuthorization(String value) {
         return MockServerWebExchange.from(MockServerHttpRequest.get("/api/v1/credentials")
                 .header(HttpHeaders.AUTHORIZATION, value));
+    }
+
+    @Test
+    void filter_endedSessionOnProtectedRoute_returnsInvalidSessionProblem() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+        when(activeSessionChecker.isActive(SESSION_ID)).thenReturn(Mono.just(false));
+        var exchange = exchangeWithAuthorization("Bearer good-token");
+
+        // Act
+        var result = filter.filter(exchange, chain);
+
+        // Assert
+        StepVerifier.create(inTenant(result, TENANT)).verifyComplete();
+        assertThat(seenAuthentication.get()).isNull();
+        assertThat(exchange.getResponse().getStatusCode().value()).isEqualTo(401);
+        StepVerifier.create(exchange.getResponse().getBodyAsString())
+                .assertNext(body -> assertThat(body).contains("invalid_session")).verifyComplete();
+        assertThat(exchange.getResponse().getHeaders().get(HttpHeaders.SET_COOKIE)).isNull();
+    }
+
+    @Test
+    void filter_endedSessionSigningOut_returnsInvalidSessionAndClearsTheRefreshCookie() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+        when(activeSessionChecker.isActive(SESSION_ID)).thenReturn(Mono.just(false));
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.delete("/api/v1/auth/sessions/current")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer good-token"));
+
+        // Act
+        StepVerifier.create(inTenant(filter.filter(exchange, chain), TENANT)).verifyComplete();
+
+        // Assert
+        assertThat(seenAuthentication.get()).isNull();
+        assertThat(exchange.getResponse().getStatusCode().value()).isEqualTo(401);
+        assertThat(exchange.getResponse().getHeaders().getFirst(HttpHeaders.SET_COOKIE))
+                .startsWith(RefreshCookies.NAME + "=").contains("Max-Age=0");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"GET, /api/v1/activity", "POST, /api/v1/activity", "GET, /api/v1/credentials",
+            "GET, /api/v1/auth/passkeys", "GET, /api/v1/auth/register"})
+    void filter_endedSessionOnAnyProtectedRoute_isRejected(String method, String path) {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+        when(activeSessionChecker.isActive(SESSION_ID)).thenReturn(Mono.just(false));
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.valueOf(method), path)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer good-token"));
+
+        // Act
+        StepVerifier.create(inTenant(filter.filter(exchange, chain), TENANT)).verifyComplete();
+
+        // Assert
+        assertThat(seenAuthentication.get()).isNull();
+        assertThat(exchange.getResponse().getStatusCode().value()).isEqualTo(401);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"POST, /api/v1/auth/register", "POST, /api/v1/auth/verify-email", "POST, /api/v1/auth/refresh",
+            "POST, /api/v1/auth/passkeys/registration/options", "POST, /api/v1/auth/passkeys/registration",
+            "POST, /api/v1/auth/sessions/options", "POST, /api/v1/auth/sessions", "GET, /health",
+            "GET, /health/liveness", "GET, /.well-known/wallet-config-metadata",
+            "HEAD, /.well-known/wallet-config-metadata"})
+    void filter_endedSessionOnPublicRoute_isNotChecked(String method, String path) {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.valueOf(method), path)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer good-token"));
+
+        // Act
+        StepVerifier.create(inTenant(filter.filter(exchange, chain), TENANT)).verifyComplete();
+
+        // Assert
+        verifyNoInteractions(activeSessionChecker);
+        assertThat(exchange.getResponse().getStatusCode()).isNull();
+    }
+
+    @Test
+    void filter_sessionCheckFailureOnProtectedRoute_propagates() {
+        // Arrange
+        when(tokenSigner.verify("good-token")).thenReturn(sessionClaims(TENANT));
+        when(activeSessionChecker.isActive(SESSION_ID)).thenReturn(Mono.error(new IllegalStateException("db down")));
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/v1/activity")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer good-token"));
+
+        // Act + Assert
+        StepVerifier.create(inTenant(filter.filter(exchange, chain), TENANT))
+                .expectError(IllegalStateException.class).verify();
+        assertThat(exchange.getResponse().getStatusCode()).isNull();
     }
 }

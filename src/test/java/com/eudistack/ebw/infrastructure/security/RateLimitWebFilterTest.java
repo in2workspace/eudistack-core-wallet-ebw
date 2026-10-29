@@ -22,14 +22,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit tests for {@link RateLimitWebFilter} — per-IP budgets on the public auth and hybrid key endpoints, the
+ * Unit tests for {@link RateLimitWebFilter} — per-IP budgets on the public auth and passkey-prf key endpoints, the
  * RFC 7807 429 response written by the filter itself, and client IP resolution.
  */
 class RateLimitWebFilterTest {
 
-    // registerPerIp=2, verifyPerIp=2, refreshPerIp=2, logoutPerIp=2, hybridSignPerIp=2, window=1h
+    // registerPerIp=2, verifyPerIp=2, refreshPerIp=2, passkeyRegistrationPerIp=2, sessionPerIp=2,
+    // passkeyPrfSignPerIp=2, window=1h
     private static final RateLimitProperties PROPERTIES =
-            new RateLimitProperties(10, 2, 10, 2, 2, 2, 2, Duration.ofHours(1));
+            new RateLimitProperties(10, 2, 10, 2, 2, 2, 2, 2, Duration.ofHours(1));
 
     private RateLimitWebFilter filter;
     private AtomicInteger chainCalls;
@@ -44,9 +45,46 @@ class RateLimitWebFilterTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api/v1/auth/register", "/api/v1/auth/verify-email", "/api/v1/auth/refresh", "/api/v1/auth/logout",
-            "/api/v1/keys/hybrid/onboarding/init", "/api/v1/keys/hybrid/sign/submit"})
-    void filter_limitedEndpointOverBudget_returns429ProblemWithRetryAfter(String path) {
+            "/api/v1/auth/register", "/api/v1/auth/verify-email", "/api/v1/auth/refresh",
+            "/api/v1/auth/passkeys/registration/options", "/api/v1/auth/passkeys/registration",
+            "/api/v1/auth/sessions/options", "/api/v1/auth/sessions"})
+    void filter_authEndpointOverBudget_returnsRateLimitedProblemWithRetryAfter(String path) {
+        // Arrange
+        StepVerifier.create(filter.filter(post(path, "10.0.0.1"), chain)).verifyComplete();
+        StepVerifier.create(filter.filter(post(path, "10.0.0.1"), chain)).verifyComplete();
+        var third = post(path, "10.0.0.1");
+
+        // Act
+        StepVerifier.create(filter.filter(third, chain)).verifyComplete();
+
+        // Assert
+        assertThat(chainCalls).hasValue(2);
+        var response = third.getResponse();
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("3600");
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+        StepVerifier.create(response.getBodyAsString())
+                .assertNext(body -> assertThat(body).contains("\"type\":\"rate_limited\""))
+                .verifyComplete();
+    }
+
+    @Test
+    void filter_signInOptionsAndSession_shareOneBudgetPerIp() {
+        // Arrange
+        StepVerifier.create(filter.filter(post("/api/v1/auth/sessions/options", "10.0.0.9"), chain)).verifyComplete();
+        StepVerifier.create(filter.filter(post("/api/v1/auth/sessions", "10.0.0.9"), chain)).verifyComplete();
+        var third = post("/api/v1/auth/sessions/options", "10.0.0.9");
+
+        // Act
+        StepVerifier.create(filter.filter(third, chain)).verifyComplete();
+
+        // Assert
+        assertThat(third.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/v1/keys/passkey-prf/onboarding/init", "/api/v1/keys/passkey-prf/sign/submit"})
+    void filter_keyManagerEndpointOverBudget_keepsItsProblemType(String path) {
         // Arrange
         StepVerifier.create(filter.filter(post(path, "10.0.0.1"), chain)).verifyComplete();
         StepVerifier.create(filter.filter(post(path, "10.0.0.1"), chain)).verifyComplete();
@@ -67,13 +105,13 @@ class RateLimitWebFilterTest {
     }
 
     @Test
-    void filter_hybridEndpoints_shareOneBudgetPerIp() {
+    void filter_passkeyPrfEndpoints_shareOneBudgetPerIp() {
         // Arrange
-        StepVerifier.create(filter.filter(post("/api/v1/keys/hybrid/onboarding/commit", "10.0.0.2"), chain))
+        StepVerifier.create(filter.filter(post("/api/v1/keys/passkey-prf/onboarding/commit", "10.0.0.2"), chain))
                 .verifyComplete();
-        StepVerifier.create(filter.filter(post("/api/v1/keys/hybrid/sign/prepare", "10.0.0.2"), chain))
+        StepVerifier.create(filter.filter(post("/api/v1/keys/passkey-prf/sign/prepare", "10.0.0.2"), chain))
                 .verifyComplete();
-        var third = post("/api/v1/keys/hybrid/onboarding/init", "10.0.0.2");
+        var third = post("/api/v1/keys/passkey-prf/onboarding/init", "10.0.0.2");
 
         // Act
         StepVerifier.create(filter.filter(third, chain)).verifyComplete();
@@ -100,12 +138,12 @@ class RateLimitWebFilterTest {
     @Test
     void filter_forwardedForHeader_usesTheFirstAddress() {
         // Arrange
-        var request = MockServerHttpRequest.post("/api/v1/auth/logout")
+        var request = MockServerHttpRequest.post("/api/v1/auth/register")
                 .header("X-Forwarded-For", " 203.0.113.7 , 10.0.0.1")
                 .remoteAddress(new InetSocketAddress("10.0.0.1", 443));
         StepVerifier.create(filter.filter(MockServerWebExchange.from(request), chain)).verifyComplete();
-        StepVerifier.create(filter.filter(post("/api/v1/auth/logout", "203.0.113.7"), chain)).verifyComplete();
-        var third = MockServerWebExchange.from(MockServerHttpRequest.post("/api/v1/auth/logout")
+        StepVerifier.create(filter.filter(post("/api/v1/auth/register", "203.0.113.7"), chain)).verifyComplete();
+        var third = MockServerWebExchange.from(MockServerHttpRequest.post("/api/v1/auth/register")
                 .header("X-Forwarded-For", "203.0.113.7"));
 
         // Act

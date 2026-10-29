@@ -3,7 +3,7 @@ package com.eudistack.ebw.keymanager.application;
 import reactor.core.publisher.Mono;
 
 /**
- * Application port for PRF salt lifecycle management during hybrid onboarding.
+ * Application port for PRF salt lifecycle management during passkey-prf onboarding.
  *
  * <p>Returns the stable 32-byte PRF salt for a given {@code (tenantId, holderId,
  * credentialId)} triple. The salt is generated once per credential on the first call and
@@ -13,7 +13,7 @@ import reactor.core.publisher.Mono;
  *
  * <p>The returned bytes MUST NOT be logged, included in API responses outside of the
  * {@code /onboarding/init} endpoint, or persisted in any location other than
- * {@code hybrid_prf_salt} (NFR-06).</p>
+ * {@code passkey_prf_salt} (NFR-06).</p>
  *
  * <p>Spec: EUDISTACK-534 EC-04; EUDISTACK-537 FR-12; architecture.md §5.1.</p>
  */

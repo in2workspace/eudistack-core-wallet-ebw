@@ -17,14 +17,14 @@ import static org.mockito.Mockito.mock;
 class KeyManagerResolverTest {
 
     private KeyManagerPort dbAdapter;
-    private KeyManagerPort hybridAdapter;
+    private KeyManagerPort passkeyPrfAdapter;
     private KeyManagerResolver resolver;
 
     @BeforeEach
     void setUp() {
         dbAdapter = mock(KeyManagerPort.class);
-        hybridAdapter = mock(KeyManagerPort.class);
-        resolver = new KeyManagerResolver(dbAdapter, hybridAdapter);
+        passkeyPrfAdapter = mock(KeyManagerPort.class);
+        resolver = new KeyManagerResolver(dbAdapter, passkeyPrfAdapter);
     }
 
     // --- AC-01: DB tenant resolves to the DB adapter ---
@@ -35,12 +35,12 @@ class KeyManagerResolverTest {
         assertThat(result).isSameAs(dbAdapter);
     }
 
-    // --- AC-02: HYBRID tenant resolves to the hybrid adapter ---
+    // --- AC-02: PASSKEY_PRF tenant resolves to the passkey-prf adapter ---
 
     @Test
-    void resolve_givenKeyManagerHYBRID_returnsHybridAdapter() {
-        KeyManagerPort result = resolver.resolve(KeyManager.HYBRID);
-        assertThat(result).isSameAs(hybridAdapter);
+    void resolve_givenKeyManagerPASSKEY_PRF_returnsPasskeyPrfAdapter() {
+        KeyManagerPort result = resolver.resolve(KeyManager.PASSKEY_PRF);
+        assertThat(result).isSameAs(passkeyPrfAdapter);
     }
 
     // --- EC-01: null key manager (BROWSER mode) defaults to DB adapter ---
@@ -74,10 +74,10 @@ class KeyManagerResolverTest {
     @Test
     void resolve_repeatedCalls_returnSameInstanceWithoutCrossContamination() {
         KeyManagerPort first = resolver.resolve(KeyManager.DB);
-        KeyManagerPort second = resolver.resolve(KeyManager.HYBRID);
+        KeyManagerPort second = resolver.resolve(KeyManager.PASSKEY_PRF);
         KeyManagerPort third = resolver.resolve(KeyManager.DB);
 
         assertThat(first).isSameAs(third).isSameAs(dbAdapter);
-        assertThat(second).isSameAs(hybridAdapter);
+        assertThat(second).isSameAs(passkeyPrfAdapter);
     }
 }

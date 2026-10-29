@@ -1,8 +1,6 @@
 package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.domain.model.exception.RateLimitExceededException;
-import com.eudistack.ebw.domain.model.WalletUser;
-import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.OtpService;
 import com.eudistack.ebw.domain.spi.EmailRateLimiter;
@@ -13,6 +11,11 @@ import reactor.core.publisher.Mono;
 
 import java.util.Map;
 
+/**
+ * Sends a one-time code to an email (FR-03). Creates nothing: the account is created when the
+ * code is verified (FR-04). Same outcome whether the email has an account or not (FR-05): the
+ * account is not even looked up. Only the per-email rate limit is reported to the caller.
+ */
 @Service
 public class RegisterWorkflow {
 
@@ -20,34 +23,23 @@ public class RegisterWorkflow {
 
     private final OtpService otpService;
     private final EmailRateLimiter emailRateLimiter;
-    private final WalletUserRepository userRepository;
     private final AuditService auditService;
 
-    public RegisterWorkflow(OtpService otpService, EmailRateLimiter emailRateLimiter,
-                            WalletUserRepository userRepository, AuditService auditService) {
+    public RegisterWorkflow(OtpService otpService, EmailRateLimiter emailRateLimiter, AuditService auditService) {
         this.otpService = otpService;
         this.emailRateLimiter = emailRateLimiter;
-        this.userRepository = userRepository;
         this.auditService = auditService;
     }
 
-    public Mono<Void> registerUser(String email, String mode) {
-        // Unified flow: find-or-create. No distinction between login and register.
-        // If the email exists the user continues; if not, a new account is created.
-        // The `mode` parameter is accepted for API compatibility but ignored.
+    public Mono<Void> registerUser(String email) {
         return emailRateLimiter.checkRegisterRate(email)
-                .then(findOrCreateUser(email)
-                        .flatMap(user -> auditService.record("user", user.getId(),
-                                "REGISTRATION_INITIATED", user.getId(), Map.of())))
                 .then(Mono.defer(() -> otpService.generateAndSend(email)))
+                .flatMap(verificationId -> auditService.record(AuthAuditEvents.ENTITY_EMAIL_VERIFICATION,
+                        verificationId, AuthAuditEvents.EMAIL_CODE_REQUESTED, null, Map.of()))
                 .onErrorResume(e -> !(e instanceof RateLimitExceededException), e -> {
-                    log.warn("Failed to send OTP to {}", email, e);
+                    // Never log the email: the exception class is enough to diagnose.
+                    log.warn("Failed to send a verification code: {}", e.getClass().getName());
                     return Mono.empty();
                 });
-    }
-
-    private Mono<WalletUser> findOrCreateUser(String email) {
-        return userRepository.findByEmail(email)
-                .switchIfEmpty(userRepository.save(WalletUser.create(email)));
     }
 }

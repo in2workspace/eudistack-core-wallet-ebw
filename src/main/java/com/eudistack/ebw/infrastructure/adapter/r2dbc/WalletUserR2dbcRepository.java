@@ -4,6 +4,8 @@ import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.mapper.UserMapper;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.spring.SpringWalletUserRepository;
+import com.eudistack.ebw.domain.model.exception.DuplicateAccountException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Mono;
 
@@ -36,6 +38,8 @@ public class WalletUserR2dbcRepository implements WalletUserRepository {
                     if (!exists) entity.markNew();
                     return springRepository.save(entity);
                 })
-                .map(UserMapper::toDomain);
+                .map(UserMapper::toDomain)
+                // Unique email: a concurrent verification of the same email created it first.
+                .onErrorMap(DataIntegrityViolationException.class, e -> new DuplicateAccountException());
     }
 }

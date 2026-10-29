@@ -19,15 +19,20 @@ public class GetCredentialWorkflow {
 
     private final WalletCredentialRepository credentialRepository;
     private final CredentialService credentialService;
+    private final PasskeyCustodyPolicy custodyPolicy;
 
     public GetCredentialWorkflow(WalletCredentialRepository credentialRepository,
-                                  CredentialService credentialService) {
+                                  CredentialService credentialService,
+                                  PasskeyCustodyPolicy custodyPolicy) {
         this.credentialRepository = credentialRepository;
         this.credentialService = credentialService;
+        this.custodyPolicy = custodyPolicy;
     }
 
-    public Mono<VerifiableCredentialResponse> getCredential(UUID userId, UUID credentialId) {
+    /** With passkey custody, an attestation of another passkey is answered as not found (EUD-11 FR-14). */
+    public Mono<VerifiableCredentialResponse> getCredential(UUID userId, UUID sessionPasskeyId, UUID credentialId) {
         return credentialRepository.findByIdAndUserId(credentialId, userId)
+                .flatMap(credential -> custodyPolicy.visibleToSession(credential, sessionPasskeyId))
                 .switchIfEmpty(Mono.error(new CredentialNotFoundException()))
                 .flatMap(credential -> Mono
                         .fromCallable(() -> credentialService.toVerifiableCredential(credential))

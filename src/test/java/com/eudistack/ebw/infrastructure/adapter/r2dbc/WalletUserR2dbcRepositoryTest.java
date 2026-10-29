@@ -1,6 +1,6 @@
 package com.eudistack.ebw.infrastructure.adapter.r2dbc;
 
-import com.eudistack.ebw.domain.model.WalletUser;
+import com.eudistack.ebw.support.TestPasskeys;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.entity.WalletUserEntity;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.mapper.UserMapper;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.spring.SpringWalletUserRepository;
@@ -33,7 +33,7 @@ class WalletUserR2dbcRepositoryTest {
     @Test
     void findByIdAndFindByEmail_existingUser_mapItToTheDomain() {
         // Arrange
-        var user = WalletUser.create("holder@example.com");
+        var user = TestPasskeys.user("holder@example.com");
         var entity = UserMapper.toEntity(user);
         when(springRepository.findById(user.getId())).thenReturn(Mono.just(entity));
         when(springRepository.findByEmail("holder@example.com")).thenReturn(Mono.just(entity));
@@ -51,7 +51,7 @@ class WalletUserR2dbcRepositoryTest {
     @Test
     void save_newUser_insertsAnEntityMarkedNew() {
         // Arrange
-        var user = WalletUser.create("holder@example.com");
+        var user = TestPasskeys.user("holder@example.com");
         when(springRepository.existsById(user.getId())).thenReturn(Mono.just(false));
         when(springRepository.save(any(WalletUserEntity.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
@@ -69,7 +69,7 @@ class WalletUserR2dbcRepositoryTest {
     @Test
     void save_existingUser_updatesWithoutMarkingNew() {
         // Arrange
-        var user = WalletUser.create("holder@example.com");
+        var user = TestPasskeys.user("holder@example.com");
         when(springRepository.existsById(user.getId())).thenReturn(Mono.just(true));
         when(springRepository.save(any(WalletUserEntity.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
