@@ -66,7 +66,7 @@ public class ClientIpResolver {
             try {
                 // A text with ':' is parsed as an IPv6 literal and never looked up in the DNS.
                 return keyOf(InetAddress.getByName(literal));
-            } catch (UnknownHostException e) {
+            } catch (UnknownHostException _) {
                 return null;
             }
         }

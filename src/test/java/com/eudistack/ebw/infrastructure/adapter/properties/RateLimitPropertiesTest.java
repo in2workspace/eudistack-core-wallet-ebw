@@ -14,8 +14,11 @@ class RateLimitPropertiesTest {
     @ParameterizedTest
     @ValueSource(ints = {0, -1})
     void constructor_trustedProxiesBelowOne_isRejected(int proxies) {
+        // Arrange
+        var window = Duration.ofHours(1);
+
         // Act + Assert
-        assertThatThrownBy(() -> new RateLimitProperties(3, 10, 10, 20, 60, 20, 60, 30, proxies, Duration.ofHours(1)))
+        assertThatThrownBy(() -> new RateLimitProperties(3, 10, 10, 20, 60, 20, 60, 30, proxies, window))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("trusted-proxies");
     }

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.r2dbc.core.DatabaseClient;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Signal;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
@@ -79,8 +80,8 @@ class R2dbcIpRateLimiterIT extends IntegrationTestBase {
 
             // Assert
             assertThat(outcomes).hasSize(20);
-            assertThat(outcomes.stream().filter(signal -> signal.isOnComplete()).count()).isEqualTo(10);
-            assertThat(outcomes.stream().filter(signal -> signal.isOnError()).count()).isEqualTo(10);
+            assertThat(outcomes.stream().filter(Signal::isOnComplete).count()).isEqualTo(10);
+            assertThat(outcomes.stream().filter(Signal::isOnError).count()).isEqualTo(10);
             assertThat(query("SELECT hits FROM public.ip_rate_limit WHERE rate_key = '" + key + "'"))
                     .singleElement()
                     .satisfies(row -> assertThat((Integer) row.get("hits")).isBetween(11, 20));
@@ -100,7 +101,7 @@ class R2dbcIpRateLimiterIT extends IntegrationTestBase {
 
             // Assert
             assertThat(outcomes).hasSize(11);
-            assertThat(outcomes.stream().filter(signal -> signal.isOnComplete()).count()).isEqualTo(10);
+            assertThat(outcomes.stream().filter(Signal::isOnComplete).count()).isEqualTo(10);
             assertThat(outcomes.get(10).isOnError()).isTrue();
             StepVerifier.create(otherInstance.check(key, 10)).expectError(RateLimitExceededException.class).verify();
         }
@@ -119,7 +120,7 @@ class R2dbcIpRateLimiterIT extends IntegrationTestBase {
             // Assert
             assertThat(query("SELECT hits FROM public.ip_rate_limit WHERE rate_key = '" + key + "'"))
                     .singleElement()
-                    .satisfies(row -> assertThat(row.get("hits")).isEqualTo(2));
+                    .satisfies(row -> assertThat(row).containsEntry("hits", 2));
         }
 
         @Test

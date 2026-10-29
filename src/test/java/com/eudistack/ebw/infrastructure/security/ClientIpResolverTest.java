@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
@@ -38,17 +39,24 @@ class ClientIpResolverTest {
 
         private final ClientIpResolver resolver = resolverWithProxies(2);
 
-        @Test
-        void resolve_threeEntries_returnsTheSecondFromTheEnd() {
+        @ParameterizedTest
+        @CsvSource(delimiter = '|', value = {
+                "198.51.100.1, 203.0.113.7, 10.0.0.9 | 203.0.113.7",
+                "1.1.1.1, 2.2.2.2, 3.3.3.3, 203.0.113.7, 10.0.0.9 | 203.0.113.7",
+                " , 203.0.113.7 ,, 10.0.0.9 , | 203.0.113.7",
+                "198.51.100.1, 2001:db8:1:2:aaaa:bbbb:cccc:dddd, 10.0.0.9 | 2001:0db8:0001:0002::/64",
+                "198.51.100.1, ::ffff:203.0.113.7, 10.0.0.9 | 203.0.113.7",
+                "198.51.100.1, 203.000.113.007, 10.0.0.9 | 203.0.113.7"})
+        void resolve_forwardedForHeader_returnsTheKeyOfTheEntryOurProxiesAppended(String forwardedFor,
+                                                                                  String expected) {
             // Arrange
-            ServerHttpRequest request = request()
-                    .header("X-Forwarded-For", "198.51.100.1, 203.0.113.7, 10.0.0.9").build();
+            ServerHttpRequest request = request().header("X-Forwarded-For", forwardedFor).build();
 
             // Act
             var ip = resolver.resolve(request);
 
             // Assert
-            assertThat(ip).isEqualTo("203.0.113.7");
+            assertThat(ip).isEqualTo(expected);
         }
 
         @Test
@@ -65,19 +73,6 @@ class ClientIpResolverTest {
 
             // Assert
             assertThat(firstIp).isEqualTo(secondIp).isEqualTo("203.0.113.7");
-        }
-
-        @Test
-        void resolve_clientSendsMoreEntries_stillReturnsTheSecondFromTheEnd() {
-            // Arrange
-            ServerHttpRequest request = request()
-                    .header("X-Forwarded-For", "1.1.1.1, 2.2.2.2, 3.3.3.3, 203.0.113.7, 10.0.0.9").build();
-
-            // Act
-            var ip = resolver.resolve(request);
-
-            // Assert
-            assertThat(ip).isEqualTo("203.0.113.7");
         }
 
         @Test
@@ -104,32 +99,6 @@ class ClientIpResolverTest {
 
             // Assert
             assertThat(ip).isEqualTo("203.0.113.7");
-        }
-
-        @Test
-        void resolve_emptyEntries_areIgnored() {
-            // Arrange
-            ServerHttpRequest request = request()
-                    .header("X-Forwarded-For", " , 203.0.113.7 ,, 10.0.0.9 , ").build();
-
-            // Act
-            var ip = resolver.resolve(request);
-
-            // Assert
-            assertThat(ip).isEqualTo("203.0.113.7");
-        }
-
-        @Test
-        void resolve_ipv6Entry_isKeyedByItsSixtyFourBitPrefix() {
-            // Arrange
-            ServerHttpRequest request = request()
-                    .header("X-Forwarded-For", "198.51.100.1, 2001:db8:1:2:aaaa:bbbb:cccc:dddd, 10.0.0.9").build();
-
-            // Act
-            var ip = resolver.resolve(request);
-
-            // Assert
-            assertThat(ip).isEqualTo("2001:0db8:0001:0002::/64");
         }
 
         @Test
@@ -162,32 +131,6 @@ class ClientIpResolverTest {
 
             // Assert
             assertThat(firstIp).isNotEqualTo(secondIp);
-        }
-
-        @Test
-        void resolve_ipv4MappedIpv6Entry_returnsTheIpv4Address() {
-            // Arrange
-            ServerHttpRequest request = request()
-                    .header("X-Forwarded-For", "198.51.100.1, ::ffff:203.0.113.7, 10.0.0.9").build();
-
-            // Act
-            var ip = resolver.resolve(request);
-
-            // Assert
-            assertThat(ip).isEqualTo("203.0.113.7");
-        }
-
-        @Test
-        void resolve_ipv4WithLeadingZeros_returnsTheCanonicalAddress() {
-            // Arrange
-            ServerHttpRequest request = request()
-                    .header("X-Forwarded-For", "198.51.100.1, 203.000.113.007, 10.0.0.9").build();
-
-            // Act
-            var ip = resolver.resolve(request);
-
-            // Assert
-            assertThat(ip).isEqualTo("203.0.113.7");
         }
 
         @ParameterizedTest
