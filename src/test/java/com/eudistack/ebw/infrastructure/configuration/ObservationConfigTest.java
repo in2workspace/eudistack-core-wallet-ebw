@@ -34,10 +34,10 @@ class ObservationConfigTest {
     }
 
     @Test
-    void registerCustomObservationHandler_DebugEnabled_HandlerSeesTheObservation() {
+    void customObservationHandler_DebugEnabled_HandlesTheObservationLifecycle() {
         handlerLogger.setLevel(Level.DEBUG);
         ObservationRegistry registry = ObservationRegistry.create();
-        config.registerCustomObservationHandler(new CustomObservationHandler()).customize(registry);
+        registry.observationConfig().observationHandler(new CustomObservationHandler());
 
         Observation observation = Observation.start("wallet.test", registry);
         observation.error(new IllegalStateException("boom"));

@@ -92,6 +92,13 @@ class MaskingPatternLayoutTest {
     }
 
     @Test
+    void mask_CodeAsKeyValue_MasksCode() {
+        String result = MaskingPatternLayout.mask("Verifying code=482913 for tenant sandbox");
+
+        assertThat(result).isEqualTo("Verifying code=" + REPLACEMENT + " for tenant sandbox");
+    }
+
+    @Test
     void mask_OtpAsKeyValue_MasksOtp() {
         String result = MaskingPatternLayout.mask("Verifying otp=482913 for tenant sandbox");
 
@@ -152,6 +159,7 @@ class MaskingPatternLayoutTest {
             "[wallet-ebw,4bf92f3577b34da6a3ce929d0e0e4736,00f067aa0ba902b7]",
             "error_code=expired_code notsecret=value",
             "Email verification rejected: invalid_code",
+            "Failed to send a verification code: org.springframework.mail.MailSendException",
             "Calling external service at https://api.example.com/v1/resources",
             "eyJ.onlyone"
     })

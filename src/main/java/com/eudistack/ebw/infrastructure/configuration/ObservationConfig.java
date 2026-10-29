@@ -1,14 +1,16 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
-import com.eudistack.ebw.infrastructure.observability.CustomObservationHandler;
 import io.micrometer.common.KeyValue;
 import io.micrometer.observation.ObservationFilter;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.aop.ObservedAspect;
-import org.springframework.boot.actuate.autoconfigure.observation.ObservationRegistryCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Observation setup. CustomObservationHandler is not registered here: Spring Boot already adds
+ * every ObservationHandler bean to the registry, and registering it again runs it twice.
+ */
 @Configuration
 public class ObservationConfig {
 
@@ -26,12 +28,5 @@ public class ObservationConfig {
     public ObservationFilter globalObservationFilter() {
         return context -> context.addLowCardinalityKeyValue(
                 KeyValue.of("component", MicrometerMetricsConfig.COMPONENT));
-    }
-
-    @Bean
-    ObservationRegistryCustomizer<ObservationRegistry> registerCustomObservationHandler(
-            CustomObservationHandler customObservationHandler) {
-        return registry -> registry.observationConfig()
-                .observationHandler(customObservationHandler);
     }
 }
