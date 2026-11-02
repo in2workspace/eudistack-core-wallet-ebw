@@ -70,10 +70,23 @@ dependencies {
     implementation 'org.bouncycastle:bcpkix-jdk18on:1.85'
 
     // --- Monitoring & Telemetry ---
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    // Bridges the Reactor Context and ThreadLocals (MDC traceId/spanId inside reactive operators)
+    implementation 'io.micrometer:context-propagation'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
-    runtimeOnly 'io.micrometer:micrometer-registry-otlp'
     implementation 'io.micrometer:micrometer-tracing-bridge-otel'
     implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+    // OTLP/gRPC export to the OTel Collector → OpenObserve (metrics through OtlpGrpcMetricsSender)
+    implementation 'io.micrometer:micrometer-registry-otlp'
+    implementation 'io.opentelemetry.proto:opentelemetry-proto:1.5.0-alpha'
+    // Boot has no Logback→OTel bridge; version pinned (not via the instrumentation BOM,
+    // which would override opentelemetry-api to a version Boot doesn't manage) to the
+    // release pairing with opentelemetry-api 1.49.0, the version Boot 3.5.11 manages.
+    implementation 'io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0:2.15.0-alpha'
+    implementation platform('io.grpc:grpc-bom:1.69.0')
+    implementation 'io.grpc:grpc-netty-shaded'
+    implementation 'io.grpc:grpc-stub'
+    implementation 'io.grpc:grpc-protobuf'
 
     // --- DevTools ---
     compileOnly 'org.projectlombok:lombok'

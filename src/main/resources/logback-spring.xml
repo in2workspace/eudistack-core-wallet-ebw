@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- Logback does not read the Spring Environment: exposes the service name to the pattern -->
+    <springProperty scope="context" name="spring.application.name" source="spring.application.name"/>
+
+    <property name="CONSOLE_LOG_PATTERN"
+              value="%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr([${spring.application.name:-},%X{traceId:-},%X{spanId:-}]){yellow} %clr(${PID:- }){faint} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}"/>
+
+    <!-- MaskingPatternLayout redacts PII and secrets from every console line -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="com.eudistack.ebw.infrastructure.configuration.logging.MaskingPatternLayout">
+                <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+            </layout>
+            <charset>utf8</charset>
+        </encoder>
+    </appender>
+
+    <!-- OTLP export to the OTel Collector → OpenObserve (management.otlp.logging.*, off by default).
+         MaskingOpenTelemetryAppender redacts PII and secrets, since the OTel appender reads the raw
+         event and bypasses MaskingPatternLayout. Kept at INFO regardless of the console level:
+         shipping DEBUG volume to OpenObserve is pure storage cost. -->
+    <appender name="OTLP" class="com.eudistack.ebw.infrastructure.configuration.logging.MaskingOpenTelemetryAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
+        <captureMdcAttributes>*</captureMdcAttributes>
+        <captureKeyValuePairAttributes>true</captureKeyValuePairAttributes>
+        <captureLoggerContext>true</captureLoggerContext>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="OTLP"/>
+    </root>
+
+    <logger name="io.micrometer" level="INFO"/>
+</configuration>
