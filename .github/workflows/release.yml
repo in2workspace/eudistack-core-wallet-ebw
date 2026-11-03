@@ -7,13 +7,14 @@ on:
 
 permissions:
   contents: write
+  packages: read
   pull-requests: write
   id-token: write
   attestations: write
 
 jobs:
   release:
-    uses: in2workspace/eudistack-devops-workflows/.github/workflows/ecs-api-release.yml@c2061f16b4fcacb12d8a4439899ed73c6d3a17cd
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/ecs-api-release.yml@1335d59e67ca288d91b407996a2e4bf5bb4b092b
     with:
       project_name: 'eudistack'
       app_name: 'wallet-ebw'
@@ -24,6 +25,7 @@ jobs:
       production_concurrency_group: ${{ vars.PRODUCTION_CONCURRENCY_GROUP || format('{0}-production', github.repository) }}
       production_monitor_minutes: ${{ vars.PRO_MONITOR_MINUTES || '30' }}
     secrets:
+      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       AWS_ACCESS_KEY_ID_STG: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
       AWS_SECRET_ACCESS_KEY_STG: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
