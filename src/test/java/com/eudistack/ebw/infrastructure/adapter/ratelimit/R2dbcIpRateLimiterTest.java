@@ -54,7 +54,7 @@ class R2dbcIpRateLimiterTest {
         }
 
         @Test
-        void check_counterOverTheLimit_failsWithTheWindowAsRetryAfter() {
+        void check_counterOverTheLimitWithUnknownTimeLeft_failsWithTheWindowAsRetryAfter() {
             // Arrange
             when(db.row.get("hits", Integer.class)).thenReturn(11);
 
@@ -67,6 +67,24 @@ class R2dbcIpRateLimiterTest {
                             .isInstanceOf(RateLimitExceededException.class)
                             .extracting(e -> ((RateLimitExceededException) e).getRetryAfterSeconds())
                             .isEqualTo(3600L))
+                    .verify();
+        }
+
+        @Test
+        void check_counterOverTheLimit_failsWithTheTimeLeftInTheWindowAsRetryAfter() {
+            // Arrange
+            when(db.row.get("hits", Integer.class)).thenReturn(11);
+            when(db.row.get("remaining_seconds", Double.class)).thenReturn(1800.4);
+
+            // Act
+            var result = rateLimiter.check("register:ip:203.0.113.7", 10);
+
+            // Assert
+            StepVerifier.create(result)
+                    .expectErrorSatisfies(error -> assertThat(error)
+                            .isInstanceOf(RateLimitExceededException.class)
+                            .extracting(e -> ((RateLimitExceededException) e).getRetryAfterSeconds())
+                            .isEqualTo(1801L))
                     .verify();
         }
 
@@ -145,6 +163,25 @@ class R2dbcIpRateLimiterTest {
             // Assert
             StepVerifier.create(second).expectError(RateLimitExceededException.class).verify();
             assertThat(db.executedSql).hasSize(1);
+        }
+
+        @Test
+        void check_keyAlreadyFoundOverTheLimit_failsWithTheTimeLeftInTheWindowAsRetryAfter() {
+            // Arrange
+            when(db.row.get("hits", Integer.class)).thenReturn(11);
+            when(db.row.get("remaining_seconds", Double.class)).thenReturn(1800.0);
+            StepVerifier.create(rateLimiter.check("register:ip:203.0.113.7", 10))
+                    .expectError(RateLimitExceededException.class)
+                    .verify();
+
+            // Act
+            var second = rateLimiter.check("register:ip:203.0.113.7", 10);
+
+            // Assert
+            StepVerifier.create(second)
+                    .expectErrorSatisfies(error -> assertThat(((RateLimitExceededException) error)
+                            .getRetryAfterSeconds()).isBetween(1700L, 1800L))
+                    .verify();
         }
 
         @Test

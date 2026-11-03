@@ -19,8 +19,10 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * {@code public.ip_rate_limit} with {@link DatabaseClient}. The increment is a single atomic upsert, so
  * concurrent instances never lose a hit, and the window is measured with the database clock, not the
- * instance's. A key found over its limit is remembered in memory for the rest of its window, so a client that
- * keeps sending after being blocked costs no more database writes. A database failure lets the request
+ * instance's. A key found over its limit is remembered in memory for the rest of its window, up to one minute,
+ * so a client that keeps sending after being blocked costs one database write a minute instead of one per
+ * request, and deleting its row lifts the block within that minute. The {@code Retry-After} of a blocked request is
+ * the time left in the window, not the whole window. A database failure lets the request
  * through, logged and counted in {@value #STORE_ERRORS_METRIC}: the limit must not take sign-up down with it.
  */
 @Slf4j
@@ -31,6 +33,7 @@ public class R2dbcIpRateLimiter implements IpRateLimiter {
     public static final String STORE_ERRORS_METRIC = "ip_rate_limit_store_errors_total";
 
     private static final int MAX_BLOCKED_KEYS = 100_000;
+    private static final Duration MAX_BLOCK_MEMORY = Duration.ofMinutes(1);
     private static final long ERROR_LOG_INTERVAL_NANOS = Duration.ofMinutes(1).toNanos();
 
     private static final String HIT_SQL = """
@@ -53,18 +56,22 @@ public class R2dbcIpRateLimiter implements IpRateLimiter {
     private final RateLimitProperties properties;
     private final MeterRegistry meterRegistry;
 
-    // Value = time left in the window when the key was found over its limit; the entry expires with it.
-    private final Cache<String, Duration> blockedKeys = Caffeine.newBuilder()
+    // Value = System.nanoTime() at which the key's window ends; the entry is kept until then, at most MAX_BLOCK_MEMORY.
+    private final Cache<String, Long> blockedKeys = Caffeine.newBuilder()
             .maximumSize(MAX_BLOCKED_KEYS)
-            .expireAfter(Expiry.<String, Duration>creating((key, remaining) -> remaining))
+            .expireAfter(Expiry.<String, Long>creating((key, windowEnd) -> {
+                var remaining = Duration.ofNanos(windowEnd - System.nanoTime());
+                return remaining.compareTo(MAX_BLOCK_MEMORY) > 0 ? MAX_BLOCK_MEMORY : remaining;
+            }))
             .build();
     private final AtomicLong lastErrorLogNanos = new AtomicLong(System.nanoTime() - ERROR_LOG_INTERVAL_NANOS);
 
     @Override
     public Mono<Void> check(String key, int limit) {
         var windowSeconds = properties.window().toSeconds();
-        if (blockedKeys.getIfPresent(key) != null) {
-            return Mono.error(new RateLimitExceededException(windowSeconds));
+        var windowEnd = blockedKeys.getIfPresent(key);
+        if (windowEnd != null) {
+            return Mono.error(new RateLimitExceededException(secondsUntil(windowEnd)));
         }
         return databaseClient.sql(HIT_SQL)
                 .bind("rateKey", key)
@@ -85,10 +92,16 @@ public class R2dbcIpRateLimiter implements IpRateLimiter {
 
     private Mono<Void> block(String key, Counter counter, long windowSeconds) {
         var remaining = counter.remainingSeconds();
-        if (remaining != null && remaining > 0) {
-            blockedKeys.put(key, Duration.ofMillis((long) (remaining * 1000)));
+        if (remaining == null || remaining <= 0) {
+            return Mono.error(new RateLimitExceededException(windowSeconds));
         }
-        return Mono.error(new RateLimitExceededException(windowSeconds));
+        var windowEnd = System.nanoTime() + (long) (remaining * 1_000_000_000L);
+        blockedKeys.put(key, windowEnd);
+        return Mono.error(new RateLimitExceededException(secondsUntil(windowEnd)));
+    }
+
+    private static long secondsUntil(long windowEndNanos) {
+        return Math.max(1, (long) Math.ceil((windowEndNanos - System.nanoTime()) / 1e9));
     }
 
     private Mono<Void> letThrough(Throwable error) {
