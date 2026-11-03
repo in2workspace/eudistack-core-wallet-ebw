@@ -6,8 +6,11 @@ on:
 
 permissions:
   contents: read
+  packages: read
   security-events: write
 
 jobs:
   analyze:
-    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-codeql-java.yml@12ed6fa9090ebd4564c6541b67111ed4466a61b1
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-codeql-java.yml@1335d59e67ca288d91b407996a2e4bf5bb4b092b
+    secrets:
+      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
