@@ -1,7 +1,7 @@
 spring:
   application:
-    # Also the OTLP service.name; each environment can rename it (DEV: wallet-ebw).
-    name: ${OTEL_SERVICE_NAME:eudistack-core-wallet-ebw}
+    # Also the OTLP service.name; each environment can rename it.
+    name: ${OTEL_SERVICE_NAME:wallet-ebw}
   config:
     import:
       # Email branding per tenant (image flags, social links). Each environment can replace the whole file:
