@@ -26,19 +26,19 @@ import static org.mockito.Mockito.when;
  * mapping code is exercised without a database.
  */
 @SuppressWarnings("unchecked")
-final class DatabaseClientStub {
+public final class DatabaseClientStub {
 
-    final DatabaseClient client = mock(DatabaseClient.class);
-    final Row row = mock(Row.class);
-    final List<String> executedSql = new ArrayList<>();
-    final Map<String, Object> bindings = new LinkedHashMap<>();
+    public final DatabaseClient client = mock(DatabaseClient.class);
+    public final Row row = mock(Row.class);
+    public final List<String> executedSql = new ArrayList<>();
+    public final Map<String, Object> bindings = new LinkedHashMap<>();
 
     /** When {@code false}, {@code .one()} completes empty (no row returned). */
     boolean rowPresent = true;
     /** Result of {@code .fetch().rowsUpdated()}; replace with {@code Mono.error(...)} to simulate a failure. */
-    Mono<Long> rowsUpdated = Mono.just(1L);
+    public Mono<Long> rowsUpdated = Mono.just(1L);
 
-    DatabaseClientStub() {
+    public DatabaseClientStub() {
         var spec = mock(GenericExecuteSpec.class);
         var metadata = mock(RowMetadata.class);
         FetchSpec<Map<String, Object>> fetchSpec = mock(FetchSpec.class);

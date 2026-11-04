@@ -109,7 +109,8 @@ class RegisterRateLimitIT extends IntegrationTestBase {
 
     @Test
     void register_exceedsPerOriginLimit_returns429_regardlessOfEmail() {
-        var origin = "203.0.113.7";
+        // As the infrastructure builds it: whatever the client wrote, its address, the CloudFront edge
+        var origin = "198.51.100.77, 203.0.113.7, 10.0.0.1";
 
         for (int i = 0; i < 5; i++) {
             webClient.post().uri("/api/v1/auth/register")
