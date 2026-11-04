@@ -76,7 +76,7 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
         public List<KeyValuePair> getKeyValuePairs() {
             List<KeyValuePair> source = super.getKeyValuePairs();
             if (source == null) {
-                return null;
+                return List.of();
             }
             return source.stream().map(MaskedLoggingEvent::maskPair).toList();
         }
@@ -129,7 +129,7 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
             if (exception == null) {
                 return pairs;
             }
-            List<KeyValuePair> exported = pairs == null ? new ArrayList<>() : new ArrayList<>(pairs);
+            List<KeyValuePair> exported = new ArrayList<>(pairs);
             exported.add(new KeyValuePair("exception.type", exception.getClassName()));
             if (exception.getMessage() != null) {
                 exported.add(new KeyValuePair("exception.message", exception.getMessage()));

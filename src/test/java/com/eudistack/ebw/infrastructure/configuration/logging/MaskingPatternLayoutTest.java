@@ -260,6 +260,13 @@ class MaskingPatternLayoutTest {
     }
 
     @Test
+    void mask_SdJwtWithManyDisclosures_MasksWithoutOverflowingTheStack() {
+        String sdJwt = "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln" + "~WyJzYWx0Il0".repeat(50_000);
+
+        assertThat(MaskingPatternLayout.mask(sdJwt)).isEqualTo(MaskingPatternLayout.REPLACEMENT);
+    }
+
+    @Test
     void mask_JwtWithEmptySignatureSegment_MasksToken() {
         assertThat(MaskingPatternLayout.mask("eyJhbGciOiJub25lIn0.eyJzdWIiOiJ4In0."))
                 .isEqualTo(MaskingPatternLayout.REPLACEMENT);

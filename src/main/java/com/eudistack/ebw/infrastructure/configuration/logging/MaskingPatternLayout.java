@@ -28,7 +28,7 @@ public class MaskingPatternLayout extends PatternLayout {
             // The signature may be empty: an unsigned token (alg=none) is still a token. What
             // follows ~ in an SD-JWT is the disclosed claims in Base64 and the key binding JWT
             new AbstractMap.SimpleImmutableEntry<>(
-                    Pattern.compile("eyJ[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]*(?:~[a-zA-Z0-9_\\-.]*)*"),
+                    Pattern.compile("eyJ[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]*(?:~[a-zA-Z0-9_\\-.~]*)?"),
                     REPLACEMENT),
             new AbstractMap.SimpleImmutableEntry<>(
                     Pattern.compile("(?i)((?:Bearer|Basic)\\s+)\\S+"),
