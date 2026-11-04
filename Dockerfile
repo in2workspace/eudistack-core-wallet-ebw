@@ -1,6 +1,9 @@
 # Stage 1
 FROM docker.io/gradle:9.7.0-jdk25 AS temp_build
 ARG SKIP_TESTS=false
+# Credentials to download the audit starter from GitHub Packages (read by build.gradle). Build stage only.
+ARG GITHUB_ACTOR
+ARG GITHUB_TOKEN
 WORKDIR /home/gradle/src
 # Copy the project files
 COPY build.gradle settings.gradle /home/gradle/src/
