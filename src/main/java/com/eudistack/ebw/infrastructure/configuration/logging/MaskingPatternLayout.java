@@ -20,7 +20,8 @@ public class MaskingPatternLayout extends PatternLayout {
 
     private static final List<Map.Entry<Pattern, String>> MASKS = List.of(
             new AbstractMap.SimpleImmutableEntry<>(
-                    Pattern.compile("[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}"),
+                    // %40 is the URL-encoded @: query strings reach the DEBUG logs encoded
+                    Pattern.compile("[a-zA-Z0-9._%+\\-]+(?:@|%40)[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}"),
                     REPLACEMENT),
             new AbstractMap.SimpleImmutableEntry<>(
                     Pattern.compile("eyJ[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]+"),

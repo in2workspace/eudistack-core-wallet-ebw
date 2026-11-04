@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed (observability)
 
+- **URL-encoded emails (`%40`) are masked in the logs**, as they reach the DEBUG logs in query strings.
 - **The service reports as `wallet-ebw`** (was `eudistack-core-wallet-ebw`) in traces, metrics and logs, the name set by the observability convention. OpenObserve filters or dashboards on the previous name must use the new one.
 
 ### Added (EUD-208)
