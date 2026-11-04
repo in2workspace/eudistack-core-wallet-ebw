@@ -7,6 +7,17 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.IThrowableProxy;
+import ch.qos.logback.classic.spi.LoggingEvent;
+import ch.qos.logback.classic.spi.ThrowableProxyUtil;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.logs.SdkLoggerProvider;
+import io.opentelemetry.sdk.logs.data.LogRecordData;
+import java.util.ArrayList;
+import org.slf4j.event.KeyValuePair;
 
 import static com.eudistack.ebw.infrastructure.configuration.logging.MaskingPatternLayout.REPLACEMENT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -134,5 +145,119 @@ class MaskingOpenTelemetryAppenderTest {
         assertThat(masked.getThrowableProxy()).isNull();
         assertThat(masked.getCallerData()).isNull();
         verify(source).prepareForDeferredProcessing();
+    }
+
+    // ─── Exceptions and key-value pairs ───────────────────────────────────────
+
+    private static LoggingEvent failureEvent(Throwable failure) {
+        LoggingEvent event = new LoggingEvent(MaskingOpenTelemetryAppenderTest.class.getName(),
+                new LoggerContext().getLogger("test-logger"), Level.ERROR, "Send failed", failure, null);
+        event.setMDCPropertyMap(Map.of());
+        return event;
+    }
+
+    private static IllegalArgumentException failureChain() {
+        IllegalArgumentException failure = new IllegalArgumentException(
+                "Recipient holder@empresa.com rejected", new IllegalStateException("access_token=s3cr3tValue"));
+        failure.addSuppressed(new IllegalStateException("Login other@empresa.com"));
+        return failure;
+    }
+
+    private static Attributes export(LoggingEvent event) {
+        List<LogRecordData> exported = new ArrayList<>();
+        SdkLoggerProvider provider = SdkLoggerProvider.builder()
+                .addLogRecordProcessor((context, logRecord) -> exported.add(logRecord.toLogRecordData()))
+                .build();
+        MaskingOpenTelemetryAppender appender = new MaskingOpenTelemetryAppender();
+        appender.setCaptureKeyValuePairAttributes(true);
+        appender.setOpenTelemetry(OpenTelemetrySdk.builder().setLoggerProvider(provider).build());
+        appender.start();
+        appender.append(event);
+        return exported.get(0).getAttributes();
+    }
+
+    @Test
+    void mask_ExceptionChain_MasksMessageCauseAndSuppressedKeepingTheFrames() {
+        IThrowableProxy proxy = MaskingOpenTelemetryAppender.mask(failureEvent(failureChain())).getThrowableProxy();
+
+        assertThat(proxy.getClassName()).isEqualTo(IllegalArgumentException.class.getName());
+        assertThat(proxy.getMessage()).isEqualTo("Recipient " + MaskingPatternLayout.REPLACEMENT + " rejected");
+        assertThat(proxy.getCause().getMessage()).isEqualTo("access_token=" + MaskingPatternLayout.REPLACEMENT);
+        assertThat(proxy.getSuppressed()[0].getMessage()).isEqualTo("Login " + MaskingPatternLayout.REPLACEMENT);
+        assertThat(proxy.getStackTraceElementProxyArray()).isNotEmpty();
+        assertThat(ThrowableProxyUtil.asString(proxy))
+                .contains("failureChain")
+                .doesNotContain("holder@empresa.com", "s3cr3tValue", "other@empresa.com");
+    }
+
+    @Test
+    void mask_ExceptionWithACircularCause_Terminates() {
+        IllegalStateException first = new IllegalStateException("Login holder@empresa.com");
+        IllegalStateException second = new IllegalStateException("Retry", first);
+        first.initCause(second);
+
+        IThrowableProxy proxy = MaskingOpenTelemetryAppender.mask(failureEvent(first)).getThrowableProxy();
+
+        assertThat(ThrowableProxyUtil.asString(proxy)).doesNotContain("holder@empresa.com");
+    }
+
+    @Test
+    void mask_EventWithoutException_HasNoThrowableProxy() {
+        assertThat(MaskingOpenTelemetryAppender.mask(failureEvent(null)).getThrowableProxy()).isNull();
+    }
+
+    @Test
+    void mask_KeyValuePairs_MasksSensitiveValuesAndKeepsNumbers() {
+        LoggingEvent event = failureEvent(null);
+        event.addKeyValuePair(new KeyValuePair("secret", "s3cr3tValue"));
+        event.addKeyValuePair(new KeyValuePair("contact", "holder@empresa.com"));
+        event.addKeyValuePair(new KeyValuePair("attempts", 3));
+        event.addKeyValuePair(new KeyValuePair("missing", null));
+
+        List<KeyValuePair> masked = MaskingOpenTelemetryAppender.mask(event).getKeyValuePairs();
+
+        assertThat(masked).extracting(pair -> pair.key).containsExactly("secret", "contact", "attempts", "missing");
+        assertThat(masked).extracting(pair -> pair.value)
+                .containsExactly(MaskingPatternLayout.REPLACEMENT, MaskingPatternLayout.REPLACEMENT, 3, null);
+    }
+
+    @Test
+    void mask_EventWithoutKeyValuePairs_HasNoPairs() {
+        assertThat(MaskingOpenTelemetryAppender.mask(failureEvent(null)).getKeyValuePairs()).isNullOrEmpty();
+    }
+
+    @Test
+    void append_ExceptionChain_ExportsTheExceptionAttributesMasked() {
+        Attributes attributes = export(failureEvent(failureChain()));
+
+        assertThat(attributes.get(AttributeKey.stringKey("exception.type")))
+                .isEqualTo(IllegalArgumentException.class.getName());
+        assertThat(attributes.get(AttributeKey.stringKey("exception.message")))
+                .isEqualTo("Recipient " + MaskingPatternLayout.REPLACEMENT + " rejected");
+        assertThat(attributes.get(AttributeKey.stringKey("exception.stacktrace")))
+                .contains("failureChain")
+                .doesNotContain("holder@empresa.com", "s3cr3tValue", "other@empresa.com");
+    }
+
+    @Test
+    void append_ExceptionWithoutMessage_ExportsTypeAndStacktraceOnly() {
+        Attributes attributes = export(failureEvent(new IllegalStateException()));
+
+        assertThat(attributes.get(AttributeKey.stringKey("exception.type")))
+                .isEqualTo(IllegalStateException.class.getName());
+        assertThat(attributes.get(AttributeKey.stringKey("exception.message"))).isNull();
+        assertThat(attributes.get(AttributeKey.stringKey("exception.stacktrace"))).isNotBlank();
+    }
+
+    @Test
+    void append_EventWithoutException_ExportsNoExceptionAttributes() {
+        LoggingEvent event = failureEvent(null);
+        event.addKeyValuePair(new KeyValuePair("contact", "holder@empresa.com"));
+
+        Attributes attributes = export(event);
+
+        assertThat(attributes.get(AttributeKey.stringKey("contact"))).isEqualTo(MaskingPatternLayout.REPLACEMENT);
+        assertThat(attributes.get(AttributeKey.stringKey("exception.type"))).isNull();
+        assertThat(attributes.get(AttributeKey.stringKey("exception.stacktrace"))).isNull();
     }
 }

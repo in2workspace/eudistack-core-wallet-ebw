@@ -20,16 +20,24 @@ public class MaskingPatternLayout extends PatternLayout {
 
     private static final List<Map.Entry<Pattern, String>> MASKS = List.of(
             new AbstractMap.SimpleImmutableEntry<>(
-                    // %40 is the URL-encoded @: query strings reach the DEBUG logs encoded
-                    Pattern.compile("[a-zA-Z0-9._%+\\-]+(?:@|%40)[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}"),
+                    // %40 is the URL-encoded @: query strings reach the DEBUG logs encoded. The
+                    // lengths are the RFC 5321 limits, and keep a long run without @ linear: any
+                    // caller can write one through a logged header
+                    Pattern.compile("[a-zA-Z0-9._%+\\-]{1,64}(?:@|%40)[a-zA-Z0-9.\\-]{1,253}\\.[a-zA-Z]{2,63}"),
+                    REPLACEMENT),
+            // The signature may be empty: an unsigned token (alg=none) is still a token. What
+            // follows ~ in an SD-JWT is the disclosed claims in Base64 and the key binding JWT
+            new AbstractMap.SimpleImmutableEntry<>(
+                    Pattern.compile("eyJ[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]*(?:~[a-zA-Z0-9_\\-.]*)*"),
                     REPLACEMENT),
             new AbstractMap.SimpleImmutableEntry<>(
-                    Pattern.compile("eyJ[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]+\\.[a-zA-Z0-9_\\-=]+"),
-                    REPLACEMENT),
-            new AbstractMap.SimpleImmutableEntry<>(
-                    Pattern.compile("(?i)(Bearer\\s+)\\S+"),
+                    Pattern.compile("(?i)((?:Bearer|Basic)\\s+)\\S+"),
                     "$1" + REPLACEMENT),
-            keyValueMask("tx_code|otp"),
+            // No lookbehind: with a prefix or in camelCase (db_password, jwtSecret, vp_token,
+            // txCode) the key still names a secret
+            keyValueMask("tx[_-]?code|pre[_-]?authorized[_-]?code|token|password|secret"),
+            // Too short to match inside another word: spin= is not pin=
+            keyValueMask("(?<![a-zA-Z])(?:otp|pin)"),
             // The OTP travels as "code": only as a JSON field or code=, since prose such as
             // "Failed to send a verification code: <exception>" is not a secret, and only when the
             // value has a digit, since status names such as gRPC's code=UNAVAILABLE are not either
@@ -37,19 +45,17 @@ public class MaskingPatternLayout extends PatternLayout {
                     Pattern.compile(
                             "(?i)(?<!\\w)(\"code\"\\s*:\\s*\"?|code\\s*=\\s*)(?=[^\"&\\s,}]*\\d)[^\"&\\s,}]+"),
                     "$1" + REPLACEMENT),
-            keyValueMask("token|access_?token|refresh_?token|id_?token"),
-            keyValueMask("password|client_?secret|secret"),
             new AbstractMap.SimpleImmutableEntry<>(
                     Pattern.compile(
                             "(?i)\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b"),
                     REPLACEMENT)
     );
 
-    // Masks the value of the given keys written as key=value or as a JSON field ("key":"value").
-    // The keys must not be the suffix of a longer word: error_code is not code.
+    // Masks the value of the given keys written as key=value or as a JSON field ("key":"value"),
+    // up to the closing quote when the value is quoted, since it may hold spaces.
     private static Map.Entry<Pattern, String> keyValueMask(String keys) {
         return new AbstractMap.SimpleImmutableEntry<>(
-                Pattern.compile("(?i)(?<!\\w)(\"?(?:" + keys + ")\"?\\s*[:=]\\s*\"?)[^\"&\\s,}]+"),
+                Pattern.compile("(?i)(\"?(?:" + keys + ")\"?\\s*[:=]\\s*\"?)(?:(?<=\")[^\"]*(?=\")|[^\"&\\s,}]+)"),
                 "$1" + REPLACEMENT);
     }
 
