@@ -7,6 +7,7 @@ import com.eudistack.ebw.domain.model.audit.AuditEntry;
 import com.eudistack.ebw.domain.spi.AuditTrailPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.ReactiveTransactionManager;
 import org.springframework.transaction.reactive.TransactionalOperator;
@@ -18,9 +19,13 @@ import static org.springframework.transaction.TransactionDefinition.PROPAGATION_
 /**
  * Hands the entries of the use cases to the audit outbox starter. It opens a transaction of its own, since
  * the starter never does (EC-09).
+ *
+ * <p>The no-op adapter only exists when this one does not; {@code @Primary} states that precedence for
+ * static analysis, which does not evaluate the conditions.
  */
 @Slf4j
 @Component
+@Primary
 @ConditionalOnBooleanProperty("auditoria.publisher.enabled")
 public class StarterAuditTrailAdapter implements AuditTrailPort {
 
