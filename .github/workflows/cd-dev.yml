@@ -12,22 +12,26 @@ on:
 
 permissions:
   contents: read
+  packages: read
   id-token: write
   attestations: write
   security-events: write
 
 jobs:
   analyze:
-    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-codeql-java.yml@12ed6fa9090ebd4564c6541b67111ed4466a61b1
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/common-codeql-java.yml@1335d59e67ca288d91b407996a2e4bf5bb4b092b
+    secrets:
+      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
 
   deploy:
-    uses: in2workspace/eudistack-devops-workflows/.github/workflows/ecs-api-cd-dev.yml@12ed6fa9090ebd4564c6541b67111ed4466a61b1
+    uses: in2workspace/eudistack-devops-workflows/.github/workflows/ecs-api-cd-dev.yml@1335d59e67ca288d91b407996a2e4bf5bb4b092b
     with:
       project_name: 'eudistack'
       app_name: 'wallet-ebw'
       region_code: 'ew1'
       smoke_url: 'https://sandbox.dev.eudistack.net/business-wallet/health'
     secrets:
+      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       AWS_ACCESS_KEY_ID_DEV: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
       AWS_SECRET_ACCESS_KEY_DEV: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
