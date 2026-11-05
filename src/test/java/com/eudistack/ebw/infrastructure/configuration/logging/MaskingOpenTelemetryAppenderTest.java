@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -222,6 +223,19 @@ class MaskingOpenTelemetryAppenderTest {
     }
 
     @Test
+    void mask_KeyValuePairsWithSensitiveNumbers_MasksThem() {
+        LoggingEvent event = failureEvent(null);
+        event.addKeyValuePair(new KeyValuePair("tx_code", 123456));
+        event.addKeyValuePair(new KeyValuePair("otp", 654321L));
+        event.addKeyValuePair(new KeyValuePair("pin", BigInteger.valueOf(1234)));
+
+        List<KeyValuePair> masked = MaskingOpenTelemetryAppender.mask(event).getKeyValuePairs();
+
+        assertThat(masked).extracting(pair -> pair.value)
+                .containsOnly(MaskingPatternLayout.REPLACEMENT);
+    }
+
+    @Test
     void mask_EventWithoutKeyValuePairs_HasNoPairs() {
         assertThat(MaskingOpenTelemetryAppender.mask(failureEvent(null)).getKeyValuePairs()).isEmpty();
     }
@@ -259,5 +273,16 @@ class MaskingOpenTelemetryAppenderTest {
         assertThat(attributes.get(AttributeKey.stringKey("contact"))).isEqualTo(MaskingPatternLayout.REPLACEMENT);
         assertThat(attributes.get(AttributeKey.stringKey("exception.type"))).isNull();
         assertThat(attributes.get(AttributeKey.stringKey("exception.stacktrace"))).isNull();
+    }
+
+    @Test
+    void mask_LongMessage_TruncatesIt() {
+        LoggingEvent event = new LoggingEvent(MaskingOpenTelemetryAppenderTest.class.getName(),
+                new LoggerContext().getLogger("test-logger"), Level.INFO, "word ".repeat(5_000), null, null);
+
+        ILoggingEvent masked = MaskingOpenTelemetryAppender.mask(event);
+
+        assertThat(masked.getFormattedMessage()).endsWith(MaskingPatternLayout.TRUNCATED);
+        assertThat(masked.getMessage()).endsWith(MaskingPatternLayout.TRUNCATED);
     }
 }

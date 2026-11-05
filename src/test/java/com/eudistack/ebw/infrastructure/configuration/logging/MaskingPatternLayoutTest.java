@@ -1,5 +1,7 @@
 package com.eudistack.ebw.infrastructure.configuration.logging;
 
+import ch.qos.logback.classic.spi.LoggingEvent;
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import org.junit.jupiter.api.AfterEach;
@@ -272,12 +274,78 @@ class MaskingPatternLayoutTest {
                 .isEqualTo(MaskingPatternLayout.REPLACEMENT);
     }
 
-    @Test
-    void mask_LongRunOfEmailCharactersWithoutAtSign_StaysLinear() {
-        String input = "a".repeat(100_000);
+    @ParameterizedTest
+    @ValueSource(strings = {"a", "eyJ", "=eyJ", "code="})
+    void mask_LongRepetitionThatIsNotASecret_StaysLinear(String unit) {
+        String input = unit.repeat(200_000 / unit.length());
 
-        String result = assertTimeout(Duration.ofSeconds(2), () -> MaskingPatternLayout.mask(input));
+        String result = assertTimeout(Duration.ofSeconds(15), () -> MaskingPatternLayout.mask(input));
 
         assertThat(result).isEqualTo(input);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "id_token_hint=%s",
+            "client_assertion=%s",
+            "request=%s",
+            "id_token_hint%%3D%s",
+            "\"assertion\":\"%s\""
+    })
+    void mask_JwtAfterAnAssignmentOrQuote_MasksToken(String format) {
+        String jwt = "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln";
+
+        assertThat(MaskingPatternLayout.mask(format.formatted(jwt)))
+                .contains(MaskingPatternLayout.REPLACEMENT)
+                .doesNotContain(jwt);
+    }
+
+    // ─── truncate() ───────────────────────────────────────────────────────────
+
+    @Test
+    void truncate_MessageWithinTheLimit_ReturnsItUnchanged() {
+        String message = "a".repeat(MaskingPatternLayout.MAX_MESSAGE_LENGTH);
+
+        assertThat(MaskingPatternLayout.truncate(message)).isEqualTo(message);
+        assertThat(MaskingPatternLayout.truncate(null)).isNull();
+    }
+
+    @Test
+    void truncate_LongMessage_CutsAtASeparatorAndMarksIt() {
+        String result = MaskingPatternLayout.truncate("word ".repeat(5_000));
+
+        assertThat(result).endsWith(" " + MaskingPatternLayout.TRUNCATED);
+        assertThat(result.length())
+                .isLessThanOrEqualTo(MaskingPatternLayout.MAX_MESSAGE_LENGTH + MaskingPatternLayout.TRUNCATED.length());
+    }
+
+    @Test
+    void truncate_SecretAcrossTheLimit_DropsItWhole() {
+        String padding = "a ".repeat((MaskingPatternLayout.MAX_MESSAGE_LENGTH - 50) / 2);
+        String jwt = "eyJhbGciOiJFUzI1NiJ9." + "x".repeat(100) + ".c2ln";
+
+        String result = MaskingPatternLayout.truncate(padding + jwt);
+
+        assertThat(result).isEqualTo(padding + MaskingPatternLayout.TRUNCATED);
+    }
+
+    @Test
+    void truncate_LongMessageWithoutSeparators_KeepsOnlyTheMark() {
+        assertThat(MaskingPatternLayout.truncate("a".repeat(20_000))).isEqualTo(MaskingPatternLayout.TRUNCATED);
+    }
+
+    @Test
+    void doLayout_LongMessageWithException_TruncatesTheMessageAndKeepsTheStackTrace() {
+        LoggerContext context = new LoggerContext();
+        MaskingPatternLayout patternLayout = new MaskingPatternLayout();
+        patternLayout.setContext(context);
+        patternLayout.setPattern("%m%n%ex");
+        patternLayout.start();
+        LoggingEvent event = new LoggingEvent(MaskingPatternLayoutTest.class.getName(), context.getLogger("test-logger"),
+                Level.ERROR, "word ".repeat(5_000), new IllegalStateException("failure"), null);
+
+        String line = patternLayout.doLayout(event);
+
+        assertThat(line).contains(MaskingPatternLayout.TRUNCATED, "java.lang.IllegalStateException: failure", "\tat ");
     }
 }

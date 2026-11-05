@@ -7,11 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed (observability)
+### Changed (EUD-26)
 
 - **URL-encoded emails (`%40`) are masked in the logs**, as they reach the DEBUG logs in query strings.
 - **Exceptions and key-value pairs are masked on their way to OpenObserve.** The message, causes and suppressed exceptions now travel masked in `exception.type`, `exception.message` and `exception.stacktrace`, which depend on `captureKeyValuePairAttributes`.
-- **More values are masked**: keys with a prefix or in camelCase (`db_password`, `jwtSecret`, `vp_token`), `pre-authorized_code`, `txCode`, `pin`, `Authorization: Basic`, the disclosures and key binding JWT of an SD-JWT, unsigned JWTs and the whole of a quoted value with spaces. The email rule has bounded lengths, so a long input stays linear.
+- **More values are masked**: keys with a prefix or in camelCase (`db_password`, `jwtSecret`, `vp_token`), `pre-authorized_code`, `txCode`, `pin`, `Authorization: Basic`, the disclosures and key binding JWT of an SD-JWT, unsigned JWTs and the whole of a quoted value with spaces. Numeric key-value pairs are masked by their key. Messages over 16 KB are truncated before masking. The email, JWT and `code` rules stay linear on long inputs.
 - **The service reports as `wallet-ebw`** (was `eudistack-core-wallet-ebw`) in traces, metrics and logs, the name set by the observability convention. OpenObserve filters or dashboards on the previous name must use the new one.
 
 ### Added (EUD-208)

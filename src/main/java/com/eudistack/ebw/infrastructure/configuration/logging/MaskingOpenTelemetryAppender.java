@@ -41,12 +41,12 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
 
         @Override
         public String getFormattedMessage() {
-            return MaskingPatternLayout.mask(super.getFormattedMessage());
+            return MaskingPatternLayout.mask(MaskingPatternLayout.truncate(super.getFormattedMessage()));
         }
 
         @Override
         public String getMessage() {
-            return MaskingPatternLayout.mask(super.getMessage());
+            return MaskingPatternLayout.mask(MaskingPatternLayout.truncate(super.getMessage()));
         }
 
         // Emptied so no downstream consumer re-renders the unmasked original from
@@ -71,7 +71,7 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
             return throwableProxy;
         }
 
-        // Numbers and booleans cannot carry a secret and keep their type in the exported attribute
+        // A number can be an OTP: it is masked by its key, and keeps its type only if nothing changed
         @Override
         public List<KeyValuePair> getKeyValuePairs() {
             List<KeyValuePair> source = super.getKeyValuePairs();
@@ -82,10 +82,13 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
         }
 
         private static KeyValuePair maskPair(KeyValuePair pair) {
-            if (pair.value == null || pair.value instanceof Number || pair.value instanceof Boolean) {
+            if (pair.value == null) {
                 return pair;
             }
-            return new KeyValuePair(pair.key, maskMdcValue(pair.key, pair.value.toString()));
+            String text = pair.value.toString();
+            String masked = maskMdcValue(pair.key, text);
+            boolean keepsType = (pair.value instanceof Number || pair.value instanceof Boolean) && masked.equals(text);
+            return new KeyValuePair(pair.key, keepsType ? pair.value : masked);
         }
 
         private static Map<String, String> maskValues(Map<String, String> source) {
