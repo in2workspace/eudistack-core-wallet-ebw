@@ -6,52 +6,32 @@ import com.eudistack.ebw.keymanager.domain.model.KeyAlgorithm;
 import java.util.List;
 
 /**
- * Selects the best JWS algorithm supported by both parties.
+ * Checks that the issuer accepts the only algorithm holder keys use.
  *
- * <p>The preference order is hardcoded per ADR-024: EdDSA &gt; ES384 &gt; ES256.
- * The negotiation iterates over the preference list in order and returns the first
- * algorithm whose {@link KeyAlgorithm#getJwsAlgorithmName()} is present in the
- * issuer-advertised list. Matching is case-sensitive and exact per OID4VCI 1.0 §7.2.1.</p>
+ * <p>Holder keys are always ES256 (EUD-11 FR-02). Matching is case-sensitive and exact per
+ * OID4VCI 1.0 §7.2.1.</p>
  *
  * <p>This class is a pure function — stateless, no I/O, no side-effects. It is
  * instantiated as a Spring bean in {@code KeyManagerConfiguration}.</p>
  *
- * <p>Spec: ADR-024, OID4VCI 1.0 §7.2.1 (proof JWT header {@code alg}), EUDISTACK-119 AC-05.</p>
+ * <p>Spec: OID4VCI 1.0 §7.2.1 (proof JWT header {@code alg}), EUD-11 design 1.1.0 §2.1.</p>
  */
 public class AlgorithmNegotiator {
 
-    /**
-     * Preference list per ADR-024: EdDSA &gt; ES384 &gt; ES256.
-     */
-    private static final List<KeyAlgorithm> PREFERENCE_ORDER =
-            List.of(KeyAlgorithm.EdDSA, KeyAlgorithm.ES384, KeyAlgorithm.ES256);
+    private static final List<String> SUPPORTED = List.of(KeyAlgorithm.ES256.getJwsAlgorithmName());
 
     /**
-     * Selects the highest-preference algorithm that appears in {@code supportedByIssuer}.
-     *
      * @param supportedByIssuer the list of JWS algorithm names advertised by the issuer;
      *                          must not be null or empty
-     * @return the selected {@link KeyAlgorithm}
-     * @throws UnsupportedJwsAlgorithmException if the intersection is empty or the input
-     *                                          is null/empty
+     * @return {@link KeyAlgorithm#ES256}
+     * @throws UnsupportedJwsAlgorithmException if {@code ES256} is not in the list or the
+     *                                          input is null/empty
      */
     public KeyAlgorithm negotiate(List<String> supportedByIssuer) {
-        if (supportedByIssuer == null || supportedByIssuer.isEmpty()) {
+        if (supportedByIssuer == null || !supportedByIssuer.contains(KeyAlgorithm.ES256.getJwsAlgorithmName())) {
             throw new UnsupportedJwsAlgorithmException(
-                    List.of(),
-                    List.of("EdDSA", "ES384", "ES256")
-            );
+                    supportedByIssuer == null ? List.of() : supportedByIssuer, SUPPORTED);
         }
-
-        for (KeyAlgorithm candidate : PREFERENCE_ORDER) {
-            if (supportedByIssuer.contains(candidate.getJwsAlgorithmName())) {
-                return candidate;
-            }
-        }
-
-        throw new UnsupportedJwsAlgorithmException(
-                supportedByIssuer,
-                List.of("EdDSA", "ES384", "ES256")
-        );
+        return KeyAlgorithm.ES256;
     }
 }

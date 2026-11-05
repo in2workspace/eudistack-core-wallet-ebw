@@ -30,17 +30,14 @@ public class KeyManagerResolver {
      *
      * @param keyManager the tenant's configured key manager, or {@code null} for BROWSER mode
      * @return the matching {@link KeyManagerPort} implementation
-     * @throws IllegalArgumentException if {@code keyManager} is {@code HSM} or {@code QTSP} (not yet implemented)
      */
     public KeyManagerPort resolve(KeyManager keyManager) {
-        if (keyManager == null || keyManager == KeyManager.DB) {
+        if (keyManager == null) {
             return dbAdapter;
         }
-        if (keyManager == KeyManager.PASSKEY_PRF) {
-            return passkeyPrfAdapter;
-        }
-        throw new IllegalArgumentException(
-                "Unsupported key_manager value: " + keyManager.getDbValue()
-                        + " — HSM and QTSP adapters are not yet implemented.");
+        return switch (keyManager) {
+            case DB -> dbAdapter;
+            case PASSKEY_PRF -> passkeyPrfAdapter;
+        };
     }
 }

@@ -1,114 +1,100 @@
 package com.eudistack.ebw.keymanager.application;
 
-import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException;
 import com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent.KeyAuditEventType;
+import com.eudistack.ebw.keymanager.domain.model.PrfSalt;
+import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import reactor.core.publisher.Mono;
 
 import java.security.SecureRandom;
+import java.time.Instant;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Application service implementing {@link PrfSaltUseCase}.
  *
- * <p>Provides two operations:
- * <ul>
- *   <li>{@link #getOrCreatePrfSalt} — get-or-create: returns the existing salt for
- *       {@code (tenantId, holderId, credentialId)}, generating and persisting a 32-byte
- *       CSPRNG salt on the first call. Concurrent races are resolved by the composite PK
- *       in the database: the losing INSERT is silently swallowed by {@link PrfSaltPort}
- *       and the winner's value is retrieved via a re-SELECT (EC-03).</li>
- *   <li>{@link #getForHolder} — read-only with holder isolation: returns the salt only
- *       for the requesting holder, distinguishing 404 (credential absent) from 403
- *       (credential exists but belongs to a different holder) via
- *       {@link PrfSaltPort#countByCredential} (AC-04, ES-04).</li>
- * </ul>
+ * <p>Concurrent creations of the salt of the same attestation are resolved by the composite primary
+ * key: the losing insert is ignored and the winner's row is read. A salt that belongs to another
+ * passkey is answered as if it did not exist, so a session cannot tell whether it exists.</p>
  *
- * <p>The {@link #getOrCreatePrfSalt} method is declared by {@link PrfSaltUseCase} (defined in
- * US-02/EUDISTACK-534). {@link #getForHolder} is an additional public method consumed by
- * {@code prepareSign} in US-04.</p>
- *
- * <p>Tenant isolation is enforced at the database level via PostgreSQL {@code search_path}
- * set by {@code TenantAwareConnectionFactoryDecorator}; {@code tenantId} is accepted for
- * traceability but is not forwarded to {@link PrfSaltPort} (architecture.md §5.3).</p>
- *
- * <p>The {@code prf_salt} bytes MUST NOT appear in any log message, error body, metric
- * label, or audit event (NFR-S-537-01, AC-06).</p>
- *
- * <p>Spec: EUDISTACK-537 AC-01, AC-02, AC-04, AC-05, EC-01, EC-03, ES-01, ES-02, ES-04,
- * ES-05, NFR-S-537-01, NFR-S-537-05; architecture.md §5.1, §6.1.</p>
+ * <p>The salt bytes MUST NOT appear in any log message, error body, metric label or audit event.</p>
  */
 public class PrfSaltService implements PrfSaltUseCase {
 
-    private static final Logger log = LoggerFactory.getLogger(PrfSaltService.class);
+    static final String REASON_NOT_FOUND = "NOT_FOUND";
+    static final String REASON_OTHER_PASSKEY = "OTHER_PASSKEY";
+    static final String REASON_NO_PUBLIC_KEY = "NO_PUBLIC_KEY";
+
     private static final int SALT_BYTES = 32;
 
     private final PrfSaltPort prfSaltPort;
-    private final SecureRandom secureRandom;
+    private final KeyAuditPort auditPort;
+    private final SecureRandom secureRandom = new SecureRandom();
 
-    public PrfSaltService(PrfSaltPort prfSaltPort) {
+    public PrfSaltService(PrfSaltPort prfSaltPort, KeyAuditPort auditPort) {
         this.prfSaltPort = prfSaltPort;
-        this.secureRandom = new SecureRandom();
+        this.auditPort = auditPort;
     }
 
-    /**
-     * {@inheritDoc}
-     *
-     * <p>Flow: SELECT → hit → return bytes; miss → generate 32-byte CSPRNG salt →
-     * INSERT (duplicate swallowed) → re-SELECT to obtain the persisted value.
-     * The re-SELECT guarantees idempotency under concurrent init requests (EC-01, EC-03).</p>
-     */
     @Override
-    public Mono<byte[]> getOrCreatePrfSalt(String tenantId, String holderId, String credentialId) {
+    public Mono<PrfSalt> createForPasskey(String tenantId, String holderId, String passkeyId, String credentialId) {
         return prfSaltPort.findBy(holderId, credentialId)
-                .switchIfEmpty(Mono.defer(() -> generateAndInsert(holderId, credentialId)));
+                .map(existing -> new Outcome(existing, false))
+                .switchIfEmpty(Mono.defer(() -> insert(holderId, passkeyId, credentialId)))
+                .flatMap(outcome -> outcome.salt().isOwnedBy(passkeyId)
+                        ? emit(outcome.created() ? KeyAuditEventType.SALT_CREATED : KeyAuditEventType.SALT_DELIVERED,
+                                tenantId, holderId, credentialId, null).thenReturn(outcome.salt())
+                        : deny(tenantId, holderId, credentialId, REASON_OTHER_PASSKEY));
     }
 
-    /**
-     * Returns the PRF salt for the requesting holder, enforcing holder isolation.
-     *
-     * <p>If the composite key {@code (holderId, credentialId)} is absent:
-     * <ul>
-     *   <li>If {@code countByCredential} == 0 → credential does not exist → 404
-     *       {@link PrfSaltNotFoundException}.</li>
-     *   <li>If {@code countByCredential} > 0 → credential exists for another holder →
-     *       403 {@link HolderIsolationViolationException} (AC-04, NFR-S-537-02).</li>
-     * </ul>
-     *
-     * <p>{@code tenantId} is accepted for traceability; tenant isolation is enforced by
-     * the database {@code search_path} (architecture.md §5.3).</p>
-     *
-     * @param tenantId     the tenant (from Reactor context — for traceability only)
-     * @param holderId     the holder UUID (DPoP-bound, from controller — never from body)
-     * @param credentialId the credential identifier
-     * @return 32-byte raw PRF salt; never empty
-     */
-    public Mono<byte[]> getForHolder(String tenantId, String holderId, String credentialId) {
+    @Override
+    public Mono<PrfSalt> getForPasskey(String tenantId, String holderId, String passkeyId, String credentialId) {
         return prfSaltPort.findBy(holderId, credentialId)
-                .switchIfEmpty(Mono.defer(() -> resolveAbsence(holderId, credentialId)));
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty())
+                .flatMap(found -> {
+                    String denial = denialOf(found, passkeyId);
+                    return denial == null
+                            ? emit(KeyAuditEventType.SALT_DELIVERED, tenantId, holderId, credentialId, null)
+                                    .thenReturn(found.get())
+                            : deny(tenantId, holderId, credentialId, denial);
+                });
     }
 
-    private Mono<byte[]> generateAndInsert(String holderId, String credentialId) {
+    private Mono<Outcome> insert(String holderId, String passkeyId, String credentialId) {
         byte[] salt = new byte[SALT_BYTES];
         secureRandom.nextBytes(salt);
-        return prfSaltPort.insert(holderId, credentialId, salt)
-                .then(prfSaltPort.findBy(holderId, credentialId))
-                .doOnSuccess(found ->
-                        log.debug("keymanager.prf_salt.get_or_create holder_present=true credential_id={}",
-                                credentialId));
+        return prfSaltPort.insert(holderId, credentialId, passkeyId, salt)
+                .flatMap(inserted -> prfSaltPort.findBy(holderId, credentialId)
+                        .map(found -> new Outcome(found, inserted)))
+                .switchIfEmpty(Mono.error(new PrfSaltNotFoundException(credentialId)));
     }
 
-    private Mono<byte[]> resolveAbsence(String holderId, String credentialId) {
-        return prfSaltPort.countByCredential(credentialId)
-                .flatMap(count -> {
-                    if (count > 0) {
-                        log.debug("keymanager.prf_salt.isolation_violation credential_id={}",
-                                credentialId);
-                        return Mono.error(new HolderIsolationViolationException(credentialId));
-                    }
-                    log.debug("keymanager.prf_salt.not_found credential_id={}",
-                            credentialId);
-                    return Mono.error(new PrfSaltNotFoundException(credentialId));
-                });
+    private static String denialOf(Optional<PrfSalt> found, String passkeyId) {
+        if (found.isEmpty()) {
+            return REASON_NOT_FOUND;
+        }
+        if (!found.get().isOwnedBy(passkeyId)) {
+            return REASON_OTHER_PASSKEY;
+        }
+        return found.get().publicJwk() == null ? REASON_NO_PUBLIC_KEY : null;
+    }
+
+    private Mono<PrfSalt> deny(String tenantId, String holderId, String credentialId, String reason) {
+        return emit(KeyAuditEventType.SALT_DELIVERY_DENIED, tenantId, holderId, credentialId, reason)
+                .then(Mono.error(new PrfSaltNotFoundException(credentialId)));
+    }
+
+    /** Audit is best effort: a broken audit channel must not fail the operation. */
+    private Mono<Void> emit(KeyAuditEventType type, String tenantId, String holderId, String credentialId,
+                            String reason) {
+        return auditPort.emit(KeyAuditEvent.forSalt(type, tenantId, holderId, credentialId, reason,
+                        Instant.now(), UUID.randomUUID().toString()))
+                .onErrorResume(e -> Mono.empty());
+    }
+
+    private record Outcome(PrfSalt salt, boolean created) {
     }
 }

@@ -256,14 +256,12 @@ public class KeyAuditCloudWatchAdapter implements KeyAuditPort, DisposableBean {
     private static Map<String, Object> toEventMap(KeyAuditEvent event, String batchId) {
         // TreeMap so each event entry also has sorted keys in canonical JSON
         TreeMap<String, Object> map = new TreeMap<>();
-        // algorithm/credential_id/format/jkt are each conditionally absent depending on event
-        // type — e.g. all four for CONSTRAINT_ACCEPTED and ONBOARDING_BLOCKED_PRF_UNSUPPORTED
-        // (no key context at all), credential_id only for WRAP_COMPLETED, and jkt only for
-        // UNWRAP_FAILED when the stored cnf.jwk could not be parsed (see KeyAuditEvent).
+        // algorithm/format/jkt are absent in the key and salt lifecycle events (see KeyAuditEvent)
         if (event.algorithm() != null) map.put("algorithm", event.algorithm().name());
         map.put("batch_id", batchId);
         map.put("correlation_id", event.correlationId());
-        if (event.credentialId() != null) map.put("credential_id", event.credentialId());
+        map.put("credential_id", event.credentialId());
+        map.put("custody_mode", event.custodyMode().getDbValue());
         map.put("event_type", event.type().name().toLowerCase().replace('_', '.'));
         map.put("event_version", "1");
         if (event.format() != null) map.put("format", event.format().dbValue());
