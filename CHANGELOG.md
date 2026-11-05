@@ -71,10 +71,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deleting an attestation deletes its key material** in the same transaction (its `holder_key` row or its `passkey_prf_salt` row); `ebw_app_role` gets DELETE on both tables.
 - **`/keys/generate` only accepts ES256** (400 otherwise), and an operation that belongs to the other custody mode answers 409 `unsupported-custody-mode` instead of 403.
 - **`hsm` and `qtsp` are no longer key managers**: they leave the enum, the resolver and the `key_manager` CHECK.
-- **Key audit stays disabled** (`KEYMANAGER_AUDIT_ENABLED=false`, the default) in every environment: the events are produced, and they will be delivered through the audit API in a later change.
+- **Key events go to the audit API** as one `HolderKeyOperation` event (catalogue 2.4.0, `details.operation`: `Generate`, `Fetch`, `Sign`, `Delete`, `SaltCreate`, `SaltDeliver`, `SaltDelete`, with `custody_mode`), through `AuditTrailPort`; they follow the audit publisher (`AUDIT_PUBLISHER_ENABLED`) and need no setting of their own. They no longer go to CloudWatch.
 
 ### Removed
 
+- **`KeyAuditCloudWatchAdapter`** and its `keymanager.audit.*` settings (`KEYMANAGER_AUDIT_ENABLED`, `KEYMANAGER_AUDIT_LOG_GROUP`), replaced by `KeyAuditTrailAdapter`; the CloudWatch Logs client and LocalStack test dependencies leave the build.
 - **Encrypted-key model of the passkey custody**: `/keys/passkey-prf/onboarding/init` and `/commit`, `/sign/prepare` and `/sign/submit`, `/constraint-accepted`, the `passkey_prf_wrapped_key_handle` table, and the PRF health indicator and telemetry that depended on them.
 - **Deployment note**: V10 deletes the attestations obtained with the encrypted key (the `cgcom` tenant in DEV and STG), their salts and that table; those users must obtain their attestations again.
 

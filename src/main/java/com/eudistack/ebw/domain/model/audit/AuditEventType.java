@@ -5,7 +5,7 @@ import java.util.Set;
 
 /**
  * The audit event types the Wallet EBW produces, with the {@code action} and the {@code reason}
- * vocabulary that catalogue 2.2.0 fixes for each. The audit API rejects an event whose action differs,
+ * vocabulary that the catalogue (2.2.0, and 2.4.0 for {@code HolderKeyOperation}) fixes for each. The audit API rejects an event whose action differs,
  * or whose reason is outside the type's vocabulary or contradicts the result the reason determines, so
  * those rules are enforced here before an event can be built.
  */
@@ -13,7 +13,12 @@ public enum AuditEventType {
 
     EXTERNAL_SYSTEM_ACCESS("ExternalSystemAccess", "AccessExternalSystem",
             Set.of("AuthenticationRejected", "SourceNotTrusted"),
-            Set.of("ErrorResponse", "InvalidResponse", "Timeout", "Unreachable"));
+            Set.of("ErrorResponse", "InvalidResponse", "Timeout", "Unreachable")),
+
+    HOLDER_KEY_OPERATION("HolderKeyOperation", "OperateHolderKey",
+            Set.of("KeyNotFound", "SigningTypeFormatMismatch", "SaltNotFound", "SaltOtherPasskey",
+                    "SaltNoPublicKey", "Rejected"),
+            Set.of("Timeout", "DependencyUnavailable"));
 
     private final String catalogName;
     private final String action;
