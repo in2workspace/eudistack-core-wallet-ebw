@@ -22,11 +22,12 @@ public record PrfSalt(String credentialId, byte[] value, @Nullable String passke
 
     @Override
     public boolean equals(Object other) {
-        return other instanceof PrfSalt that
-                && Objects.equals(credentialId, that.credentialId)
-                && Arrays.equals(value, that.value)
-                && Objects.equals(passkeyId, that.passkeyId)
-                && Objects.equals(publicJwk, that.publicJwk);
+        return other instanceof PrfSalt(String otherCredentialId, byte[] otherValue, String otherPasskeyId,
+                                        Map<String, Object> otherPublicJwk)
+                && Objects.equals(credentialId, otherCredentialId)
+                && Arrays.equals(value, otherValue)
+                && Objects.equals(passkeyId, otherPasskeyId)
+                && Objects.equals(publicJwk, otherPublicJwk);
     }
 
     @Override
