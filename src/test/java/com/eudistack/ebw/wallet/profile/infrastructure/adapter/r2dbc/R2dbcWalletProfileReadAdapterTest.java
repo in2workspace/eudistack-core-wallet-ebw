@@ -182,20 +182,17 @@ class R2dbcWalletProfileReadAdapterTest {
     }
 
     /**
-     * AC-07 (server/hsm variant): Verifies mapping for {@code key_manager='hsm'}.
+     * hsm is no longer a custody mode (EUD-11 AD-6): a stored {@code key_manager='hsm'} is rejected.
      */
     @Test
-    void findCurrent_maps_server_hsm_entity_to_domain_record_correctly() {
+    void findCurrent_rejects_hsm_key_manager() {
         Instant now = Instant.now();
         TenantWalletProfileEntity entity = new TenantWalletProfileEntity(
                 "kpmg", "server", "hsm", now, now);
         when(repository.findFirstBy()).thenReturn(Mono.just(entity));
 
         StepVerifier.create(adapter.findCurrent())
-                .assertNext(profile -> {
-                    assertThat(profile.walletMode()).isEqualTo(WalletMode.SERVER);
-                    assertThat(profile.keyManager()).isEqualTo(KeyManager.HSM);
-                })
-                .verifyComplete();
+                .expectError(IllegalArgumentException.class)
+                .verify();
     }
 }

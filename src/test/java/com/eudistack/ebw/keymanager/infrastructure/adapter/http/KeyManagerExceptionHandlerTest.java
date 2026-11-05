@@ -57,7 +57,7 @@ class KeyManagerExceptionHandlerTest {
                         HttpStatus.BAD_REQUEST, "unsupported-format"),
                 Arguments.of(call(h -> h.handleUnsupportedAlgorithm(
                                 new UnsupportedJwsAlgorithmException(List.of("RS256"), List.of("ES256")))),
-                        HttpStatus.UNPROCESSABLE_ENTITY, "unsupported-algorithm"),
+                        HttpStatus.BAD_REQUEST, "unsupported-algorithm"),
                 Arguments.of(call(h -> h.handleUnsupportedSigningType(
                                 new UnsupportedSigningTypeException(SigningType.VP_ENVELOPE))),
                         HttpStatus.BAD_REQUEST, "unsupported-signing-type"),
@@ -107,15 +107,23 @@ class KeyManagerExceptionHandlerTest {
     }
 
     @Test
-    void handleForbidden_unsupportedProfileOrUnknownTenant_returns403WithoutBody() {
+    void handleForbidden_unknownTenant_returns403WithoutBody() {
         // Act
-        var unsupported = handler.handleForbidden(new TenantWalletProfileUnsupportedException("sandbox"));
         var unknown = handler.handleForbidden(new TenantUnknownException(TenantUnknownException.Reason.PROFILE_NOT_SEEDED));
 
         // Assert
-        assertThat(unsupported.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
-        assertThat(unsupported.getBody()).isNull();
         assertThat(unknown.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(unknown.getBody()).isNull();
+    }
+
+    @Test
+    void handleUnsupportedCustodyMode_unsupportedProfile_returns409() {
+        // Act
+        var response = handler.handleUnsupportedCustodyMode(new TenantWalletProfileUnsupportedException("sandbox"));
+
+        // Assert
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().getType().toString()).endsWith("unsupported-custody-mode");
     }
 
     private static Function<KeyManagerExceptionHandler, ResponseEntity<ProblemDetail>> call(

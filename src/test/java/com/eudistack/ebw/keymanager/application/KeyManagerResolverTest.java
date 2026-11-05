@@ -6,13 +6,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 /**
  * Unit tests for {@link KeyManagerResolver} per-tenant adapter resolution.
  *
- * <p>Spec: EUDISTACK-533 AC-01, AC-02, EC-01, EC-02, EC-03, ES-02.</p>
+ * <p>Spec: EUDISTACK-533 AC-01, AC-02, EC-01, ES-02.</p>
  */
 class KeyManagerResolverTest {
 
@@ -49,24 +48,6 @@ class KeyManagerResolverTest {
     void resolve_givenNull_returnsDbAdapterAsDefault() {
         KeyManagerPort result = resolver.resolve(null);
         assertThat(result).isSameAs(dbAdapter);
-    }
-
-    // --- EC-02: HSM not yet implemented — fail fast ---
-
-    @Test
-    void resolve_givenKeyManagerHSM_throwsIllegalArgumentException() {
-        assertThatThrownBy(() -> resolver.resolve(KeyManager.HSM))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("hsm");
-    }
-
-    // --- EC-03: QTSP not yet implemented — fail fast ---
-
-    @Test
-    void resolve_givenKeyManagerQTSP_throwsIllegalArgumentException() {
-        assertThatThrownBy(() -> resolver.resolve(KeyManager.QTSP))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("qtsp");
     }
 
     // --- ES-02: resolver is stateless — repeated calls return the same instance ---

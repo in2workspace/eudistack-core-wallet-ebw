@@ -14,7 +14,8 @@ class KeyAuditEventAssertionsTest {
 
     @Test
     void assertNoSensitiveData_jktContainingPrfSubstring_doesNotFail() {
-        KeyAuditEvent event = KeyAuditEvent.forUnwrapSignCompleted(
+        KeyAuditEvent event = KeyAuditEvent.forGeneration(
+                KeyAuditEvent.KeyAuditEventType.KEY_GENERATED,
                 "sandbox",
                 "holder-1",
                 "cred-1",
@@ -29,16 +30,14 @@ class KeyAuditEventAssertionsTest {
 
     @Test
     void assertNoSensitiveData_reasonContainingPrf_fails() {
-        KeyAuditEvent event = KeyAuditEvent.forUnwrapFailed(
+        KeyAuditEvent event = KeyAuditEvent.forSalt(
+                KeyAuditEvent.KeyAuditEventType.SALT_DELIVERY_DENIED,
                 "sandbox",
                 "holder-1",
                 "cred-1",
-                CredentialFormat.SD_JWT_VC,
-                KeyAlgorithm.ES256,
-                "thumbprint-without-forbidden-tokens",
+                "denied: prf_salt mismatch",
                 Instant.now(),
-                "corr-1",
-                "unwrap failed: prf_salt mismatch");
+                "corr-1");
 
         assertThatThrownBy(() -> KeyAuditEventAssertions.assertNoSensitiveData(event))
                 .isInstanceOf(AssertionError.class)

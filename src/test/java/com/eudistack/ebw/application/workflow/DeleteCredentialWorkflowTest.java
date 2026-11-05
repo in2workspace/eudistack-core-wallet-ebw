@@ -5,6 +5,8 @@ import com.eudistack.ebw.domain.model.exception.CredentialNotFoundException;
 import com.eudistack.ebw.domain.repository.WalletCredentialRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.CredentialService;
+import com.eudistack.ebw.domain.spi.HolderKeyMaterialPort;
+import com.eudistack.ebw.domain.spi.TransactionRunner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,12 +40,17 @@ class DeleteCredentialWorkflowTest {
     @Mock private CredentialService credentialService;
     @Mock private AuditService auditService;
     @Mock private PasskeyCustodyPolicy custodyPolicy;
+    @Mock private HolderKeyMaterialPort holderKeyMaterial;
+    @Mock private TransactionRunner transactionRunner;
 
     private DeleteCredentialWorkflow workflow;
 
     @BeforeEach
     void setUp() {
-        workflow = new DeleteCredentialWorkflow(credentialRepository, credentialService, auditService, custodyPolicy);
+        workflow = new DeleteCredentialWorkflow(credentialRepository, credentialService, auditService, custodyPolicy,
+                holderKeyMaterial, transactionRunner);
+        org.mockito.Mockito.lenient().when(holderKeyMaterial.delete(any())).thenReturn(Mono.empty());
+        org.mockito.Mockito.lenient().when(transactionRunner.inTransaction(any())).thenAnswer(inv -> inv.getArgument(0));
         org.mockito.Mockito.lenient().when(custodyPolicy.visibleToSession(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
     }
@@ -70,6 +77,43 @@ class DeleteCredentialWorkflowTest {
                         "format", "dc+sd-jwt",
                         "previous_status", "SUSPENDED"));
         order.verify(credentialRepository).deleteById(CREDENTIAL_ID);
+    }
+
+    @Test
+    void deleteCredential_ownedCredential_deletesItsKeyMaterialBeforeTheRowInOneTransaction() {
+        // Arrange
+        var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.VALID);
+        when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.just(credential));
+        when(credentialService.computeAuditHash("raw-credential")).thenReturn("hash");
+        when(auditService.record(any(), any(), any(), any(), any())).thenReturn(Mono.empty());
+        when(credentialRepository.deleteById(CREDENTIAL_ID)).thenReturn(Mono.empty());
+
+        // Act
+        var result = workflow.deleteCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID);
+
+        // Assert
+        StepVerifier.create(result).verifyComplete();
+        var order = inOrder(transactionRunner, holderKeyMaterial, credentialRepository);
+        order.verify(transactionRunner).inTransaction(any());
+        order.verify(holderKeyMaterial).delete(credential);
+        order.verify(credentialRepository).deleteById(CREDENTIAL_ID);
+    }
+
+    @Test
+    void deleteCredential_keyMaterialDeletionFails_doesNotDeleteTheCredential() {
+        // Arrange
+        var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.VALID);
+        when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.just(credential));
+        when(credentialService.computeAuditHash("raw-credential")).thenReturn("hash");
+        when(auditService.record(any(), any(), any(), any(), any())).thenReturn(Mono.empty());
+        when(holderKeyMaterial.delete(credential)).thenReturn(Mono.error(new IllegalStateException("db down")));
+
+        // Act
+        var result = workflow.deleteCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID);
+
+        // Assert
+        StepVerifier.create(result).expectError(IllegalStateException.class).verify();
+        verify(credentialRepository, never()).deleteById(any());
     }
 
     @Test

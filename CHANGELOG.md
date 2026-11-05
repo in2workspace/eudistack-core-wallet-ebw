@@ -57,6 +57,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated Netty to 4.1.132.Final to address CVE-2026-33870.
 - Updated Bouncy Castle (bcprov-jdk18on and bcpkix-jdk18on) to version 1.84 to address CVE-2026-0636.
 
+## [2.1.0] - 2026-11-04
+
+### Added
+
+- **EUD-326 — Passkey custody with the key derived on the device**: `POST /api/v1/keys/passkey-prf/salts` creates the salt of a new attestation for the passkey of the session, and `GET /api/v1/keys/passkey-prf/salts/{credentialId}` returns the salt and the public key only to a session opened with that passkey (404 otherwise). The service keeps only the passkey, the salt and the public key; it never has the private key.
+- **Custody mode of an attestation**: `wallet_credential.custody_mode` (`server` or `passkey`), and `passkey_prf_salt` gains `passkey_id`, `public_jwk` and `algorithm` (migration V10).
+- **Check of the holder key when an attestation is stored**: if it has a `cnf`, its JWK thumbprint (RFC 7638) must be the one of the holder key (`holder_key.public_jwk`, or the new `holder_public_jwk` with passkey custody); otherwise the answer is 422 and nothing is stored. It applies to `credential-response` and to `POST /api/v1/credentials`.
+- **Key audit events**: `KEY_DELETED`, `SALT_CREATED`, `SALT_DELIVERED`, `SALT_DELIVERY_DENIED` and `SALT_DELETED`. Every key event carries the custody mode and never key material.
+
+### Changed
+
+- **Deleting an attestation deletes its key material** in the same transaction (its `holder_key` row or its `passkey_prf_salt` row); `ebw_app_role` gets DELETE on both tables.
+- **`/keys/generate` only accepts ES256** (400 otherwise), and an operation that belongs to the other custody mode answers 409 `unsupported-custody-mode` instead of 403.
+- **`hsm` and `qtsp` are no longer key managers**: they leave the enum, the resolver and the `key_manager` CHECK.
+- **Key audit stays disabled** (`KEYMANAGER_AUDIT_ENABLED=false`, the default) in every environment: the events are produced, and they will be delivered through the audit API in a later change.
+
+### Removed
+
+- **Encrypted-key model of the passkey custody**: `/keys/passkey-prf/onboarding/init` and `/commit`, `/sign/prepare` and `/sign/submit`, `/constraint-accepted`, the `passkey_prf_wrapped_key_handle` table, and the PRF health indicator and telemetry that depended on them.
+- **Deployment note**: V10 deletes the attestations obtained with the encrypted key (the `cgcom` tenant in DEV and STG), their salts and that table; those users must obtain their attestations again.
+
 ## [2.0.2] - 2026-11-03
 
 EUD-310 (per-IP rate limits of the registration and access API). The per-email limit is not changed.
