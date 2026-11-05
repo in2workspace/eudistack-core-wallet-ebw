@@ -94,8 +94,8 @@ public class PrfSaltService implements PrfSaltUseCase {
     /** Audit is best effort: a broken audit channel must not fail the operation. */
     private Mono<Void> emit(KeyAuditEventType type, String tenantId, String holderId, String credentialId,
                             String reason) {
-        return auditPort.emit(KeyAuditEvent.forSalt(type, tenantId, holderId, credentialId, reason,
-                        Instant.now(), UUID.randomUUID().toString()))
+        return Mono.defer(() -> auditPort.emit(KeyAuditEvent.forSalt(type, tenantId, holderId, credentialId, reason,
+                        Instant.now(), UUID.randomUUID().toString())))
                 .onErrorResume(e -> Mono.empty());
     }
 

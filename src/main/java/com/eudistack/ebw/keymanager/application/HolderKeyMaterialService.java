@@ -18,6 +18,7 @@ import reactor.util.context.ContextView;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * Checks that an attestation is bound to the key of its holder key and deletes that key's material
@@ -100,19 +101,19 @@ public class HolderKeyMaterialService implements HolderKeyMaterialPort {
                 .flatMap(keyId -> holderKeyReadPort.findById(tenantOf(ctx), holderId, keyId)
                         .flatMap(key -> holderKeyWritePort.deleteById(tenantOf(ctx), holderId, keyId)
                                 .filter(Boolean::booleanValue)
-                                .flatMap(deleted -> emit(KeyAuditEvent.forKeyDeleted(tenantOf(ctx), holderId,
+                                .flatMap(deleted -> emit(() -> KeyAuditEvent.forKeyDeleted(tenantOf(ctx), holderId,
                                         key.credentialId(), keyIdValue, Instant.now(),
                                         UUID.randomUUID().toString()))))));
     }
 
     private Mono<Void> emitSaltDeleted(String holderId, String credentialId) {
-        return Mono.deferContextual(ctx -> emit(KeyAuditEvent.forSalt(KeyAuditEventType.SALT_DELETED,
+        return Mono.deferContextual(ctx -> emit(() -> KeyAuditEvent.forSalt(KeyAuditEventType.SALT_DELETED,
                 tenantOf(ctx), holderId, credentialId, null, Instant.now(), UUID.randomUUID().toString())));
     }
 
-    /** Audit is best effort: a broken audit channel must not fail the deletion. */
-    private Mono<Void> emit(KeyAuditEvent event) {
-        return auditPort.emit(event).onErrorResume(e -> Mono.empty());
+    /** Audit is best effort: a broken audit channel, or an event that cannot be built, must not fail the deletion. */
+    private Mono<Void> emit(Supplier<KeyAuditEvent> event) {
+        return Mono.defer(() -> auditPort.emit(event.get())).onErrorResume(e -> Mono.empty());
     }
 
     private static Mono<HolderKeyId> parseKeyId(String value) {
