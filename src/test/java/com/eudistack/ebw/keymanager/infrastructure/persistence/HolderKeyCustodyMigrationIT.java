@@ -109,7 +109,7 @@ class HolderKeyCustodyMigrationIT {
     }
 
     @Test
-    void migrate_hsmKeyManager_isRejectedByTheCheckConstraint() throws SQLException {
+    void migrate_hsmKeyManager_isRejectedByTheCheckConstraint() {
         // Arrange
         flyway().load().migrate();
 
@@ -135,7 +135,7 @@ class HolderKeyCustodyMigrationIT {
     }
 
     @Test
-    void migrate_saltAlgorithm_onlyAcceptsEs256() throws SQLException {
+    void migrate_saltAlgorithm_onlyAcceptsEs256() {
         // Arrange
         flyway().load().migrate();
 

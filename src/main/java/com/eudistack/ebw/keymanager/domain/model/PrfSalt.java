@@ -2,7 +2,9 @@ package com.eudistack.ebw.keymanager.domain.model;
 
 import jakarta.annotation.Nullable;
 
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * The derivation material of an attestation obtained with passkey custody: its salt, the passkey it
@@ -16,5 +18,26 @@ public record PrfSalt(String credentialId, byte[] value, @Nullable String passke
 
     public boolean isOwnedBy(String sessionPasskeyId) {
         return passkeyId != null && passkeyId.equals(sessionPasskeyId);
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        return other instanceof PrfSalt that
+                && Objects.equals(credentialId, that.credentialId)
+                && Arrays.equals(value, that.value)
+                && Objects.equals(passkeyId, that.passkeyId)
+                && Objects.equals(publicJwk, that.publicJwk);
+    }
+
+    @Override
+    public int hashCode() {
+        return 31 * Objects.hash(credentialId, passkeyId, publicJwk) + Arrays.hashCode(value);
+    }
+
+    /** Leaves the salt bytes out so they never reach a log. */
+    @Override
+    public String toString() {
+        return "PrfSalt[credentialId=" + credentialId + ", passkeyId=" + passkeyId
+                + ", publicKeyPresent=" + (publicJwk != null) + "]";
     }
 }

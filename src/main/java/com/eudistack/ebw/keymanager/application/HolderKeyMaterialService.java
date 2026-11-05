@@ -118,7 +118,7 @@ public class HolderKeyMaterialService implements HolderKeyMaterialPort {
     private static Mono<HolderKeyId> parseKeyId(String value) {
         try {
             return Mono.just(HolderKeyId.of(UUID.fromString(value)));
-        } catch (IllegalArgumentException | NullPointerException e) {
+        } catch (IllegalArgumentException | NullPointerException _) {
             return Mono.error(new HolderKeyMismatchException("The holder key id is not valid"));
         }
     }
@@ -133,7 +133,7 @@ public class HolderKeyMaterialService implements HolderKeyMaterialPort {
         }
         try {
             return new JwkPublic(cnfJwk).jkt().equals(new JwkPublic(holderJwk).jkt());
-        } catch (RuntimeException e) {
+        } catch (RuntimeException _) {
             return false;
         }
     }

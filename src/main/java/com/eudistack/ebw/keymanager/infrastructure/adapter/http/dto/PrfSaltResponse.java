@@ -22,14 +22,14 @@ public record PrfSaltResponse(
     public record Kdf(String algorithm, String info) {
     }
 
-    private static final Kdf KDF = new Kdf("HKDF-SHA-256", "eudistack:passkey-prf:p256:v1");
+    private static final Kdf DEFAULT_KDF = new Kdf("HKDF-SHA-256", "eudistack:passkey-prf:p256:v1");
 
     public static PrfSaltResponse withoutPublicKey(PrfSalt salt) {
-        return new PrfSaltResponse(salt.credentialId(), encode(salt), KDF, null);
+        return new PrfSaltResponse(salt.credentialId(), encode(salt), DEFAULT_KDF, null);
     }
 
     public static PrfSaltResponse withPublicKey(PrfSalt salt) {
-        return new PrfSaltResponse(salt.credentialId(), encode(salt), KDF, salt.publicJwk());
+        return new PrfSaltResponse(salt.credentialId(), encode(salt), DEFAULT_KDF, salt.publicJwk());
     }
 
     private static String encode(PrfSalt salt) {

@@ -44,8 +44,7 @@ public class PrfSaltService implements PrfSaltUseCase {
                 .map(existing -> new Outcome(existing, false))
                 .switchIfEmpty(Mono.defer(() -> insert(holderId, passkeyId, credentialId)))
                 .flatMap(outcome -> outcome.salt().isOwnedBy(passkeyId)
-                        ? emit(outcome.created() ? KeyAuditEventType.SALT_CREATED : KeyAuditEventType.SALT_DELIVERED,
-                                tenantId, holderId, credentialId, null).thenReturn(outcome.salt())
+                        ? deliver(outcome, tenantId, holderId, credentialId)
                         : deny(tenantId, holderId, credentialId, REASON_OTHER_PASSKEY));
     }
 
@@ -80,6 +79,11 @@ public class PrfSaltService implements PrfSaltUseCase {
             return REASON_OTHER_PASSKEY;
         }
         return found.get().publicJwk() == null ? REASON_NO_PUBLIC_KEY : null;
+    }
+
+    private Mono<PrfSalt> deliver(Outcome outcome, String tenantId, String holderId, String credentialId) {
+        KeyAuditEventType type = outcome.created() ? KeyAuditEventType.SALT_CREATED : KeyAuditEventType.SALT_DELIVERED;
+        return emit(type, tenantId, holderId, credentialId, null).thenReturn(outcome.salt());
     }
 
     private Mono<PrfSalt> deny(String tenantId, String holderId, String credentialId, String reason) {

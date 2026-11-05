@@ -28,6 +28,10 @@ import java.util.UUID;
  */
 public class PrfSaltRepository implements PrfSaltPort {
 
+    private static final String PARAM_HOLDER_ID = "holderId";
+    private static final String PARAM_CREDENTIAL_ID = "credentialId";
+    private static final String PARAM_PASSKEY_ID = "passkeyId";
+
     private static final String SELECT_SQL =
             "SELECT prf_salt, passkey_id, public_jwk FROM passkey_prf_salt "
             + "WHERE holder_id = :holderId AND credential_id = :credentialId";
@@ -57,8 +61,8 @@ public class PrfSaltRepository implements PrfSaltPort {
     @Override
     public Mono<PrfSalt> findBy(String holderId, String credentialId) {
         return databaseClient.sql(SELECT_SQL)
-                .bind("holderId", UUID.fromString(holderId))
-                .bind("credentialId", credentialId)
+                .bind(PARAM_HOLDER_ID, UUID.fromString(holderId))
+                .bind(PARAM_CREDENTIAL_ID, credentialId)
                 .map((row, metadata) -> {
                     UUID passkeyId = row.get("passkey_id", UUID.class);
                     Json publicJwk = row.get("public_jwk", Json.class);
@@ -77,9 +81,9 @@ public class PrfSaltRepository implements PrfSaltPort {
     @Override
     public Mono<Boolean> insert(String holderId, String credentialId, String passkeyId, byte[] prfSalt) {
         return databaseClient.sql(INSERT_SQL)
-                .bind("holderId", UUID.fromString(holderId))
-                .bind("credentialId", credentialId)
-                .bind("passkeyId", UUID.fromString(passkeyId))
+                .bind(PARAM_HOLDER_ID, UUID.fromString(holderId))
+                .bind(PARAM_CREDENTIAL_ID, credentialId)
+                .bind(PARAM_PASSKEY_ID, UUID.fromString(passkeyId))
                 .bind("prfSalt", prfSalt)
                 .fetch()
                 .rowsUpdated()
@@ -94,9 +98,9 @@ public class PrfSaltRepository implements PrfSaltPort {
                                       Map<String, Object> publicJwk) {
         return databaseClient.sql(SET_PUBLIC_JWK_SQL)
                 .bind("publicJwk", serializeJwk(publicJwk))
-                .bind("holderId", UUID.fromString(holderId))
-                .bind("credentialId", credentialId)
-                .bind("passkeyId", UUID.fromString(passkeyId))
+                .bind(PARAM_HOLDER_ID, UUID.fromString(holderId))
+                .bind(PARAM_CREDENTIAL_ID, credentialId)
+                .bind(PARAM_PASSKEY_ID, UUID.fromString(passkeyId))
                 .fetch()
                 .rowsUpdated()
                 .map(rows -> rows > 0);
@@ -105,8 +109,8 @@ public class PrfSaltRepository implements PrfSaltPort {
     @Override
     public Mono<Boolean> delete(String holderId, String credentialId) {
         return databaseClient.sql(DELETE_SQL)
-                .bind("holderId", UUID.fromString(holderId))
-                .bind("credentialId", credentialId)
+                .bind(PARAM_HOLDER_ID, UUID.fromString(holderId))
+                .bind(PARAM_CREDENTIAL_ID, credentialId)
                 .fetch()
                 .rowsUpdated()
                 .map(rows -> rows > 0);

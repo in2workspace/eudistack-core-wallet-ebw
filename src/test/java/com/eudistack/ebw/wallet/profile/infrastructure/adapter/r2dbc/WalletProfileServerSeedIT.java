@@ -98,7 +98,7 @@ class WalletProfileServerSeedIT {
     }
 
     // -------------------------------------------------------------------------
-    // AC-03 — server + key_manager ∈ {db, passkey-prf}
+    // AC-03 — a server profile accepts the key managers db and passkey-prf
     // -------------------------------------------------------------------------
 
     /**

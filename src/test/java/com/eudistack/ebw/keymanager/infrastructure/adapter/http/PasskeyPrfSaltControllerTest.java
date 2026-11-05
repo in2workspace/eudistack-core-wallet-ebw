@@ -158,9 +158,10 @@ class PasskeyPrfSaltControllerTest {
     void create_sessionWithoutPasskey_failsWithInvalidSessionAndCreatesNothing() {
         // Arrange
         var noPasskey = new JwtAuthenticationToken(USER_ID, "holder@example.com", UUID.randomUUID(), null, List.of());
+        var request = new CreatePrfSaltRequest(CREDENTIAL);
 
         // Act + Assert
-        assertThatThrownBy(() -> controller.create(new CreatePrfSaltRequest(CREDENTIAL), noPasskey))
+        assertThatThrownBy(() -> controller.create(request, noPasskey))
                 .isInstanceOf(InvalidSessionException.class);
         verifyNoInteractions(prfSaltUseCase);
     }
