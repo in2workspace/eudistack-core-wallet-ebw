@@ -1,5 +1,6 @@
 package com.eudistack.ebw.keymanager.domain.model;
 
+import com.eudistack.ebw.domain.model.CustodyMode;
 import com.eudistack.ebw.keymanager.domain.exception.KeyAuditEventValidationException;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -33,7 +34,7 @@ class KeyAuditEventTest {
         return new KeyAuditEvent(
                 type, tenantId, holderId, credentialId, format, algorithm, jkt,
                 timestamp, correlationId,
-                null, null, null, null, null);
+                null, null, null, null, null, CustodyMode.SERVER);
     }
 
     // ------------------------------------------------------------------ fields required for every event type
@@ -145,7 +146,7 @@ class KeyAuditEventTest {
 
         @Test
         void constructor_nullJkt_throwsKeyAuditEventValidationException() {
-            assertThatThrownBy(() -> fullEvent(KeyAuditEvent.KeyAuditEventType.UNWRAP_SIGN_COMPLETED,
+            assertThatThrownBy(() -> fullEvent(KeyAuditEvent.KeyAuditEventType.KEY_GENERATED,
                     TENANT, HOLDER, CRED_ID, FORMAT, ALGORITHM, null, TIMESTAMP, CORRELATION_ID))
                     .isInstanceOf(KeyAuditEventValidationException.class)
                     .hasMessageContaining("jkt");
@@ -171,33 +172,22 @@ class KeyAuditEventTest {
         }
     }
 
-    // ------------------------------------------------------------------ no-key-context events (US-06/US-08)
+    // ------------------------------------------------------------------ key and salt lifecycle events (EUD-11 FR-04)
 
     @Nested
-    class NoKeyContextEvents {
+    class LifecycleEvents {
 
         @Test
-        void forConsent_givenValidArgs_constructsWithNullKeyFields() {
-            KeyAuditEvent event = KeyAuditEvent.forConsent(TENANT, HOLDER, TIMESTAMP, CORRELATION_ID);
+        void forSalt_saltCreated_carriesPasskeyCustodyAndNoKeyContext() {
+            // Arrange
+            // inputs are the constants of this test class
 
-            assertThat(event.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.CONSTRAINT_ACCEPTED);
-            assertThat(event.credentialId()).isNull();
-            assertThat(event.format()).isNull();
-            assertThat(event.algorithm()).isNull();
-            assertThat(event.jkt()).isNull();
-        }
-    }
+            // Act
+            KeyAuditEvent event = KeyAuditEvent.forSalt(KeyAuditEvent.KeyAuditEventType.SALT_CREATED, TENANT, HOLDER,
+                    CRED_ID, null, TIMESTAMP, CORRELATION_ID);
 
-    // ------------------------------------------------------------------ wrap-context events (US-08)
-
-    @Nested
-    class WrapContextEvent {
-
-        @Test
-        void forWrap_givenValidArgs_constructsWithNullFormatAlgorithmJkt() {
-            KeyAuditEvent event = KeyAuditEvent.forWrap(TENANT, HOLDER, CRED_ID, TIMESTAMP, CORRELATION_ID);
-
-            assertThat(event.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.WRAP_COMPLETED);
+            // Assert
+            assertThat(event.custodyMode()).isEqualTo(CustodyMode.PASSKEY);
             assertThat(event.credentialId()).isEqualTo(CRED_ID);
             assertThat(event.format()).isNull();
             assertThat(event.algorithm()).isNull();
@@ -205,35 +195,68 @@ class KeyAuditEventTest {
         }
 
         @Test
-        void constructor_wrapCompletedWithNullCredentialId_throwsKeyAuditEventValidationException() {
-            assertThatThrownBy(() -> fullEvent(KeyAuditEvent.KeyAuditEventType.WRAP_COMPLETED, TENANT,
-                    HOLDER, null, null, null, null, TIMESTAMP, CORRELATION_ID))
+        void forSalt_deliveryDenied_keepsTheReason() {
+            // Arrange
+            // inputs are the constants of this test class
+
+            // Act
+            KeyAuditEvent event = KeyAuditEvent.forSalt(KeyAuditEvent.KeyAuditEventType.SALT_DELIVERY_DENIED, TENANT,
+                    HOLDER, CRED_ID, "OTHER_PASSKEY", TIMESTAMP, CORRELATION_ID);
+
+            // Assert
+            assertThat(event.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.SALT_DELIVERY_DENIED);
+            assertThat(event.reason()).isEqualTo("OTHER_PASSKEY");
+        }
+
+        @Test
+        void forKeyDeleted_givenValidArgs_carriesServerCustodyAndTheKeyId() {
+            // Arrange
+            // inputs are the constants of this test class
+
+            // Act
+            KeyAuditEvent event = KeyAuditEvent.forKeyDeleted(TENANT, HOLDER, CRED_ID, "key-1", TIMESTAMP, CORRELATION_ID);
+
+            // Assert
+            assertThat(event.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.KEY_DELETED);
+            assertThat(event.custodyMode()).isEqualTo(CustodyMode.SERVER);
+            assertThat(event.keyId()).isEqualTo("key-1");
+        }
+
+        @Test
+        void constructor_lifecycleEventWithNullCredentialId_throwsKeyAuditEventValidationException() {
+            // Arrange
+            // null credential id
+
+            // Act + Assert
+            assertThatThrownBy(() -> KeyAuditEvent.forSalt(KeyAuditEvent.KeyAuditEventType.SALT_DELETED, TENANT, HOLDER,
+                    null, null, TIMESTAMP, CORRELATION_ID))
                     .isInstanceOf(KeyAuditEventValidationException.class)
                     .hasMessageContaining("credentialId");
         }
-    }
-
-    // ------------------------------------------------------------------ unwrap-failed events (US-04/US-08)
-
-    @Nested
-    class UnwrapFailedContextEvent {
 
         @Test
-        void forUnwrapFailed_givenNullJkt_constructsSuccessfully() {
-            KeyAuditEvent event = KeyAuditEvent.forUnwrapFailed(TENANT, HOLDER, CRED_ID, FORMAT,
-                    ALGORITHM, null, TIMESTAMP, CORRELATION_ID, "signature_invalid");
+        void constructor_nullCustodyMode_throwsKeyAuditEventValidationException() {
+            // Arrange
+            // no custody mode
 
-            assertThat(event.type()).isEqualTo(KeyAuditEvent.KeyAuditEventType.UNWRAP_FAILED);
-            assertThat(event.jkt()).isNull();
-            assertThat(event.reason()).isEqualTo("signature_invalid");
+            // Act + Assert
+            assertThatThrownBy(() -> new KeyAuditEvent(KeyAuditEvent.KeyAuditEventType.SALT_CREATED, TENANT, HOLDER,
+                    CRED_ID, null, null, null, TIMESTAMP, CORRELATION_ID, null, null, null, null, null, null))
+                    .isInstanceOf(KeyAuditEventValidationException.class)
+                    .hasMessageContaining("custodyMode");
         }
 
         @Test
-        void constructor_unwrapFailedWithNullFormat_throwsKeyAuditEventValidationException() {
-            assertThatThrownBy(() -> fullEvent(KeyAuditEvent.KeyAuditEventType.UNWRAP_FAILED, TENANT,
-                    HOLDER, CRED_ID, null, ALGORITHM, null, TIMESTAMP, CORRELATION_ID))
-                    .isInstanceOf(KeyAuditEventValidationException.class)
-                    .hasMessageContaining("format");
+        void forGeneration_signingFactories_carryServerCustody() {
+            // Arrange
+            // inputs are the constants of this test class
+
+            // Act
+            KeyAuditEvent event = KeyAuditEvent.forGeneration(KeyAuditEvent.KeyAuditEventType.KEY_GENERATED, TENANT,
+                    HOLDER, CRED_ID, FORMAT, ALGORITHM, JKT, TIMESTAMP, CORRELATION_ID);
+
+            // Assert
+            assertThat(event.custodyMode()).isEqualTo(CustodyMode.SERVER);
         }
     }
 

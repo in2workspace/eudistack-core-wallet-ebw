@@ -17,10 +17,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies schema-per-tenant isolation for {@code passkey_prf_wrapped_key_handle}.
+ * Verifies schema-per-tenant isolation for {@code passkey_prf_salt} (salt and public key of an attestation).
  *
  * <p>Two independent tenant schemas are created and seeded; each schema has its own
- * {@code passkey_prf_wrapped_key_handle} table. A connection whose {@code search_path} is
+ * {@code passkey_prf_salt} table. A connection whose {@code search_path} is
  * set to schema A must not see rows from schema B, and vice versa.
  *
  * <p>No additional code was written to enforce this isolation — it is inherited from
@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Covered criteria:
  * <ul>
  *   <li>AC-06 — cross-tenant read is impossible by schema isolation</li>
- *   <li>NFR-S-535-04 — no cross-tenant access route exists for the handle</li>
+ *   <li>NFR-S-535-04 — no cross-tenant access route exists for the salt</li>
  * </ul>
  *
  * <p>Spec: EUDISTACK-535 T9; acceptance-criteria.md §1 AC-06; NFR-S-535-04;
@@ -77,7 +77,7 @@ class PasskeyPrfMultiTenantIsolationIT {
             conn.createStatement().execute("SET search_path TO " + schemaA);
 
             try (ResultSet rs = conn.createStatement().executeQuery(
-                    "SELECT count(*) FROM passkey_prf_wrapped_key_handle "
+                    "SELECT count(*) FROM passkey_prf_salt "
                     + "WHERE credential_id = '" + CRED_B + "'")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getLong(1))
@@ -94,7 +94,7 @@ class PasskeyPrfMultiTenantIsolationIT {
             conn.createStatement().execute("SET search_path TO " + schemaB);
 
             try (ResultSet rs = conn.createStatement().executeQuery(
-                    "SELECT count(*) FROM passkey_prf_wrapped_key_handle "
+                    "SELECT count(*) FROM passkey_prf_salt "
                     + "WHERE credential_id = '" + CRED_A + "'")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getLong(1))
@@ -115,7 +115,7 @@ class PasskeyPrfMultiTenantIsolationIT {
             conn.createStatement().execute("SET search_path TO " + schemaA);
 
             try (ResultSet rs = conn.createStatement().executeQuery(
-                    "SELECT count(*) FROM passkey_prf_wrapped_key_handle")) {
+                    "SELECT count(*) FROM passkey_prf_salt")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getLong(1))
                         .as("Schema A context must see exactly its own row (1 handle seeded)")
@@ -130,7 +130,7 @@ class PasskeyPrfMultiTenantIsolationIT {
             conn.createStatement().execute("SET search_path TO " + schemaB);
 
             try (ResultSet rs = conn.createStatement().executeQuery(
-                    "SELECT count(*) FROM passkey_prf_wrapped_key_handle")) {
+                    "SELECT count(*) FROM passkey_prf_salt")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getLong(1))
                         .as("Schema B context must see exactly its own row (1 handle seeded)")
@@ -187,27 +187,17 @@ class PasskeyPrfMultiTenantIsolationIT {
             conn.createStatement().execute(
                     "INSERT INTO wallet_user (id, email) "
                     + "VALUES ('" + holderId + "', 'mt-" + schema + "@test.local')");
-            // Must insert prf_salt before handle (composite FK)
             conn.createStatement().execute(
                     "INSERT INTO passkey_prf_salt (holder_id, credential_id, prf_salt) "
                     + "VALUES ('" + holderId + "', '" + credId + "', "
                     + " decode('" + hex(new byte[32]) + "', 'hex'))");
-            byte[] blob = new byte[48];
-            conn.createStatement().execute(
-                    "INSERT INTO passkey_prf_wrapped_key_handle "
-                    + "(holder_id, credential_id, wrapped_blob, iv, tag, kdf_algo, kdf_version, cnf_jwk) "
-                    + "VALUES ('" + holderId + "', '" + credId + "', "
-                    + " decode('" + hex(blob) + "', 'hex'), "
-                    + " decode('" + hex(new byte[12]) + "', 'hex'), "
-                    + " decode('" + hex(new byte[16]) + "', 'hex'), "
-                    + " 'HKDF-SHA-256', 1, '{\"kty\":\"EC\"}')");
         }
     }
 
     private long countHandlesInSchema(String schema) throws SQLException {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
              ResultSet rs = conn.createStatement().executeQuery(
-                     "SELECT count(*) FROM " + schema + ".passkey_prf_wrapped_key_handle")) {
+                     "SELECT count(*) FROM " + schema + ".passkey_prf_salt")) {
             assertThat(rs.next()).isTrue();
             return rs.getLong(1);
         }

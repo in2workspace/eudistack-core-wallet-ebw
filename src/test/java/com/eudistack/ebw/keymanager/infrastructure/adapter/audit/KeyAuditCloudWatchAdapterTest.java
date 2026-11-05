@@ -142,6 +142,7 @@ class KeyAuditCloudWatchAdapterTest {
                 .containsEntry("algorithm", "ES256")
                 .containsEntry("format", "dc+sd-jwt")
                 .containsEntry("credential_id", "cred-1")
+                .containsEntry("custody_mode", "server")
                 .containsEntry("jkt", "jkt-1")
                 .containsEntry("signing_type", "KB_JWT")
                 .containsEntry("purpose", "PRESENTATION")
@@ -156,15 +157,18 @@ class KeyAuditCloudWatchAdapterTest {
     void drain_eventWithoutKeyContext_omitsTheOptionalFields() throws Exception {
         // Arrange
         adapter = newAdapter();
-        adapter.emit(KeyAuditEvent.forConsent("sandbox", "holder-1", TIMESTAMP, "corr-1"));
+        adapter.emit(KeyAuditEvent.forSalt(KeyAuditEvent.KeyAuditEventType.SALT_CREATED,
+                "sandbox", "holder-1", "cred-1", null, TIMESTAMP, "corr-1"));
 
         // Act
         StepVerifier.create(adapter.triggerDrainForTest()).verifyComplete();
 
         // Assert
         var event = eventsOf(publishedMessages(1).get(0)).get(0);
-        assertThat(event).containsEntry("event_type", "constraint.accepted")
-                .doesNotContainKeys("algorithm", "credential_id", "format", "jkt", "signing_type", "purpose",
+        assertThat(event).containsEntry("event_type", "salt.created")
+                .containsEntry("credential_id", "cred-1")
+                .containsEntry("custody_mode", "passkey")
+                .doesNotContainKeys("algorithm", "format", "jkt", "signing_type", "purpose",
                         "consumer_origin", "reason", "key_id");
     }
 
@@ -220,7 +224,8 @@ class KeyAuditCloudWatchAdapterTest {
         // Arrange
         var toDestroy = newAdapter();
         toDestroy.emit(signingEvent());
-        toDestroy.emit(KeyAuditEvent.forWrap("sandbox", "holder-1", "cred-1", TIMESTAMP, "corr-2"));
+        toDestroy.emit(KeyAuditEvent.forSalt(KeyAuditEvent.KeyAuditEventType.SALT_DELETED,
+                "sandbox", "holder-1", "cred-1", null, TIMESTAMP, "corr-2"));
 
         // Act
         toDestroy.destroy();

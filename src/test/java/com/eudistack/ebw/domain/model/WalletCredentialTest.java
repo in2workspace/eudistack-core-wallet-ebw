@@ -15,7 +15,7 @@ class WalletCredentialTest {
 
     private static WalletCredential credential(boolean bound, UUID passkeyId) {
         return WalletCredential.create(UUID.randomUUID(), "raw", CredentialFormat.DC_SD_JWT, "cfg", "kid", "Type",
-                null, "iss", null, Instant.now(), null, Map.of(), null, bound, passkeyId);
+                null, "iss", null, Instant.now(), null, Map.of(), null, bound, passkeyId, CustodyMode.PASSKEY);
     }
 
     @Test
@@ -41,5 +41,15 @@ class WalletCredentialTest {
     @Test
     void create_unbound_dropsThePasskey() {
         assertThat(credential(false, SESSION_PASSKEY).getPasskeyId()).isNull();
+    }
+
+    @Test
+    void create_bound_keepsTheCustodyMode() {
+        assertThat(credential(true, SESSION_PASSKEY).getCustodyMode()).isEqualTo(CustodyMode.PASSKEY);
+    }
+
+    @Test
+    void create_unbound_dropsTheCustodyMode() {
+        assertThat(credential(false, SESSION_PASSKEY).getCustodyMode()).isNull();
     }
 }

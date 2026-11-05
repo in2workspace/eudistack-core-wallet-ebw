@@ -20,8 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Integration tests for {@code server} seed scenarios against {@code tenant_wallet_profile}.
  *
- * <p>Parameterized over all valid {@code key_manager} values — {@code db}, {@code passkey-prf},
- * {@code hsm}, {@code qtsp} — as required by AC-03.
+ * <p>Parameterized over all valid {@code key_manager} values — {@code db}, {@code passkey-prf} — as required by AC-03.
  *
  * <p>Each parameterized invocation runs in an isolated UUID-suffix schema to prevent
  * any state leakage. The same shared TestContainers PostgreSQL instance is used for all
@@ -29,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Covered criteria:
  * <ul>
- *   <li>AC-03 — server + key_manager ∈ {db, passkey-prf, hsm, qtsp} persists successfully for each value</li>
+ *   <li>AC-03 — server + key_manager ∈ {db, passkey-prf} persists successfully for each value</li>
  * </ul>
  *
  * @see WalletProfileBrowserSeedIT for browser-mode seed tests
@@ -99,7 +98,7 @@ class WalletProfileServerSeedIT {
     }
 
     // -------------------------------------------------------------------------
-    // AC-03 — server + key_manager ∈ {db, passkey-prf, hsm, qtsp}
+    // AC-03 — server + key_manager ∈ {db, passkey-prf}
     // -------------------------------------------------------------------------
 
     /**
@@ -110,10 +109,10 @@ class WalletProfileServerSeedIT {
      * the CHECK constraint {@code chk_wallet_profile_mode_manager}. Each invocation
      * runs in an isolated schema (UUID-suffix) to avoid PK conflicts.
      *
-     * @param keyManager one of {@code db}, {@code passkey-prf}, {@code hsm}, {@code qtsp}
+     * @param keyManager one of {@code db}, {@code passkey-prf}
      */
     @ParameterizedTest(name = "server_profile_with_key_manager_{0}_inserts_successfully")
-    @ValueSource(strings = {"db", "passkey-prf", "hsm", "qtsp"})
+    @ValueSource(strings = {"db", "passkey-prf"})
     void server_profile_with_valid_key_manager_inserts_successfully(String keyManager)
             throws SQLException {
         String schema = schemaFor(keyManager);
@@ -149,10 +148,10 @@ class WalletProfileServerSeedIT {
      * AC-03 (extended): created_at and updated_at are auto-populated by DEFAULT now()
      * for every server-mode key_manager value.
      *
-     * @param keyManager one of {@code db}, {@code passkey-prf}, {@code hsm}, {@code qtsp}
+     * @param keyManager one of {@code db}, {@code passkey-prf}
      */
     @ParameterizedTest(name = "server_profile_with_key_manager_{0}_auto_populates_timestamps")
-    @ValueSource(strings = {"db", "passkey-prf", "hsm", "qtsp"})
+    @ValueSource(strings = {"db", "passkey-prf"})
     void server_profile_insert_auto_populates_timestamps(String keyManager)
             throws SQLException {
         String schema = schemaFor(keyManager);
