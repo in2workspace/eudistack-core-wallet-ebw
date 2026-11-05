@@ -34,7 +34,7 @@ public class MaskingPatternLayout extends PatternLayout {
             // only starts at a token boundary, which may be a URL-encoded character, and = only ends
             // a segment as padding: otherwise a long run of eyJ or =eyJ scans to the end from each one
             new AbstractMap.SimpleImmutableEntry<>(
-                    Pattern.compile("(?:(?<![a-zA-Z0-9_\\-])|(?<=%[0-9a-fA-F]{2}))eyJ[a-zA-Z0-9_\\-]++={0,2}+\\.[a-zA-Z0-9_\\-]++={0,2}+\\.[a-zA-Z0-9_\\-]*+={0,2}+(?:~[a-zA-Z0-9_\\-.~]*+)?"),
+                    Pattern.compile("(?:(?<![a-zA-Z0-9_\\-])|(?<=%[0-9a-fA-F]{2}))eyJ[a-zA-Z0-9_\\-]++={0,2}+\\.[a-zA-Z0-9_\\-]++={0,2}+\\.[a-zA-Z0-9_\\-=~.]*+"),
                     REPLACEMENT),
             new AbstractMap.SimpleImmutableEntry<>(
                     Pattern.compile("(?i)((?:Bearer|Basic)\\s+)\\S+"),
