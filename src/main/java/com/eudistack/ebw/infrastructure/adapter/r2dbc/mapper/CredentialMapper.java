@@ -2,6 +2,7 @@ package com.eudistack.ebw.infrastructure.adapter.r2dbc.mapper;
 
 import com.eudistack.ebw.domain.model.CredentialFormat;
 import com.eudistack.ebw.domain.model.CredentialStatus;
+import com.eudistack.ebw.domain.model.CustodyMode;
 import com.eudistack.ebw.domain.model.WalletCredential;
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.entity.WalletCredentialEntity;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -38,7 +39,8 @@ public final class CredentialMapper {
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),
                 entity.getPasskeyId(),
-                entity.isBound()
+                entity.isBound(),
+                CustodyMode.fromDbValue(entity.getCustodyMode())
         );
     }
 
@@ -63,6 +65,7 @@ public final class CredentialMapper {
         entity.setUpdatedAt(domain.getUpdatedAt());
         entity.setPasskeyId(domain.getPasskeyId());
         entity.setBound(domain.isBound());
+        entity.setCustodyMode(domain.getCustodyMode() != null ? domain.getCustodyMode().getDbValue() : null);
         return entity;
     }
 
