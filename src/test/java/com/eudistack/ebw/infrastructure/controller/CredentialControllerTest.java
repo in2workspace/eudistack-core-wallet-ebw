@@ -58,15 +58,33 @@ class CredentialControllerTest {
     }
 
     @Test
+    void store_requestWithHolderKey_passesItToTheWorkflow() {
+        // Arrange
+        var credential = credential(CredentialStatus.VALID);
+        var holderPublicJwk = Map.<String, Object>of("kty", "EC", "crv", "P-256", "x", "x1", "y", "y1");
+        when(storeCredentialWorkflow.storeCredential(USER_ID, "raw", "dc+sd-jwt", "cfg-1", "kid-1", null, "key-1",
+                holderPublicJwk, auth.getPasskeyId())).thenReturn(Mono.just(credential));
+
+        // Act
+        var result = controller.store(
+                new StoreCredentialRequest("raw", "dc+sd-jwt", "cfg-1", "kid-1", null, "key-1", holderPublicJwk), auth);
+
+        // Assert
+        StepVerifier.create(result)
+                .assertNext(response -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED))
+                .verifyComplete();
+    }
+
+    @Test
     void store_validRequest_returns201WithLocationAndDetail() {
         // Arrange
         var credential = credential(CredentialStatus.VALID);
         var metadata = Map.<String, Object>of("credential_issuer", "https://issuer");
-        when(storeCredentialWorkflow.storeCredential(USER_ID, "raw", "dc+sd-jwt", "cfg-1", "kid-1", metadata, null, auth.getPasskeyId()))
+        when(storeCredentialWorkflow.storeCredential(USER_ID, "raw", "dc+sd-jwt", "cfg-1", "kid-1", metadata, null, null, auth.getPasskeyId()))
                 .thenReturn(Mono.just(credential));
 
         // Act
-        var result = controller.store(new StoreCredentialRequest("raw", "dc+sd-jwt", "cfg-1", "kid-1", metadata), auth);
+        var result = controller.store(new StoreCredentialRequest("raw", "dc+sd-jwt", "cfg-1", "kid-1", metadata, null, null), auth);
 
         // Assert
         StepVerifier.create(result)
@@ -146,6 +164,6 @@ class CredentialControllerTest {
         var now = Instant.now();
         return new WalletCredential(UUID.randomUUID(), USER_ID, "raw", CredentialFormat.DC_SD_JWT, "cfg-1", "kid-1",
                 "LEARCredentialEmployee", "urn:vct", "https://issuer", "did:sub", now, null, status,
-                Map.of(), "hk-1", now, now, null, false);
+                Map.of(), "hk-1", now, now, null, false, null);
     }
 }

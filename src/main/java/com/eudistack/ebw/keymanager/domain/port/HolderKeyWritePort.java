@@ -1,6 +1,7 @@
 package com.eudistack.ebw.keymanager.domain.port;
 
 import com.eudistack.ebw.keymanager.domain.model.HolderKey;
+import com.eudistack.ebw.keymanager.domain.model.HolderKeyId;
 import com.eudistack.ebw.keymanager.domain.model.HolderKeyPersistResult;
 import reactor.core.publisher.Mono;
 
@@ -19,4 +20,11 @@ import reactor.core.publisher.Mono;
 public interface HolderKeyWritePort {
 
     Mono<HolderKeyPersistResult> upsertIfAbsent(HolderKey holderKey);
+
+    /**
+     * Deletes the holder key together with its attestation (EUD-11 FR-10).
+     *
+     * @return {@code true} when a key of the holder was deleted
+     */
+    Mono<Boolean> deleteById(String tenantId, String holderId, HolderKeyId keyId);
 }

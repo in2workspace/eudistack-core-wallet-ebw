@@ -1,274 +1,231 @@
 package com.eudistack.ebw.keymanager.application;
 
-import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException;
 import com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException;
-import io.r2dbc.spi.R2dbcDataIntegrityViolationException;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent.KeyAuditEventType;
+import com.eudistack.ebw.keymanager.domain.model.PrfSalt;
+import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
+import com.eudistack.ebw.domain.model.CustodyMode;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link PrfSaltService} (the {@link PrfSaltUseCase} implementation).
- *
- * <p>Covers:
- * <ul>
- *   <li>getOrCreatePrfSalt — cache miss: generates 32-byte CSPRNG salt, inserts, re-reads</li>
- *   <li>getOrCreatePrfSalt — cache hit: returns existing salt without calling insert (EC-01)</li>
- *   <li>getOrCreatePrfSalt — DB failure on insert: error propagates without salt in message (ES-05, NFR-S-537-01)</li>
- *   <li>getForHolder — absent, no other holder: PrfSaltNotFoundException (ES-02)</li>
- *   <li>getForHolder — cross-holder: HolderIsolationViolationException 403 (ES-04)</li>
- *   <li>holderId taken from method parameter, never from any other source (AD-2)</li>
- * </ul>
- *
- * <p>Spec: EUDISTACK-537 T9; AC-01, AC-04, EC-01, ES-02, ES-04, ES-05, NFR-S-537-01.</p>
+ * Unit tests for {@link PrfSaltService}: the salt of an attestation is created for, and only given to, the
+ * passkey of the session; any other passkey is answered as if the salt did not exist (EUD-11 FR-13, FR-14).
  */
 @ExtendWith(MockitoExtension.class)
 class PrfSaltUseCaseTest {
 
-    private static final String TENANT    = "sandbox";
-    private static final String HOLDER_1  = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
-    private static final String HOLDER_2  = "cccccccc-4444-5555-6666-dddddddddddd";
-    private static final String CRED_ID   = "cred-test-1";
+    private static final String TENANT = "cgcom";
+    private static final String HOLDER = "11111111-1111-1111-1111-111111111111";
+    private static final String PASSKEY = "22222222-2222-2222-2222-222222222222";
+    private static final String OTHER_PASSKEY = "33333333-3333-3333-3333-333333333333";
+    private static final String CREDENTIAL = "holder-1";
+    private static final Map<String, Object> PUBLIC_JWK = Map.of("kty", "EC", "crv", "P-256", "x", "x1", "y", "y1");
 
     @Mock private PrfSaltPort prfSaltPort;
+    @Mock private KeyAuditPort auditPort;
 
     private PrfSaltService service;
 
     @BeforeEach
     void setUp() {
-        service = new PrfSaltService(prfSaltPort);
+        service = new PrfSaltService(prfSaltPort, auditPort);
+        org.mockito.Mockito.lenient().when(auditPort.emit(any())).thenReturn(Mono.empty());
     }
 
-    // ------------------------------------------------------------------ getOrCreatePrfSalt — miss
-
-    @Test
-    void getOrCreatePrfSalt_miss_generatesAndInsertsAndReturns32Bytes() {
-        byte[] storedSalt = new byte[32];
-        storedSalt[0] = 0x7F;  // non-zero marker to distinguish from zero-filled
-
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.empty());
-        when(prfSaltPort.insert(eq(HOLDER_1), eq(CRED_ID), any(byte[].class)))
-                .thenReturn(Mono.empty());
-        // re-SELECT after insert returns the stored value
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID))
-                .thenReturn(Mono.empty())
-                .thenReturn(Mono.just(storedSalt));
-
-        StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
-                .assertNext(salt -> assertThat(salt).hasSize(32))
-                .verifyComplete();
-
-        verify(prfSaltPort).insert(eq(HOLDER_1), eq(CRED_ID), any(byte[].class));
+    private KeyAuditEvent emittedEvent() {
+        var captor = ArgumentCaptor.forClass(KeyAuditEvent.class);
+        verify(auditPort).emit(captor.capture());
+        return captor.getValue();
     }
 
-    @Test
-    void getOrCreatePrfSalt_miss_saltIsNotDerivedFromInputs() {
-        // Capture the salt passed to insert and assert it does not contain HOLDER_1 or CRED_ID bytes
-        ArgumentCaptor<byte[]> saltCaptor = ArgumentCaptor.forClass(byte[].class);
-        byte[] reReadSalt = new byte[32];
-        reReadSalt[3] = 0x42;
+    @Nested
+    @DisplayName("createForPasskey")
+    class CreateForPasskey {
 
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID))
-                .thenReturn(Mono.empty())
-                .thenReturn(Mono.just(reReadSalt));
-        when(prfSaltPort.insert(eq(HOLDER_1), eq(CRED_ID), saltCaptor.capture()))
-                .thenReturn(Mono.empty());
+        @Test
+        void createForPasskey_newCredential_insertsA32ByteSaltBoundToThePasskeyAndAuditsSaltCreated() {
+            // Arrange
+            var created = new PrfSalt(CREDENTIAL, new byte[32], PASSKEY, null);
+            when(prfSaltPort.findBy(HOLDER, CREDENTIAL)).thenReturn(Mono.empty(), Mono.just(created));
+            when(prfSaltPort.insert(eq(HOLDER), eq(CREDENTIAL), eq(PASSKEY), any())).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
-                .expectNextCount(1)
-                .verifyComplete();
+            // Act
+            var result = service.createForPasskey(TENANT, HOLDER, PASSKEY, CREDENTIAL);
 
-        byte[] capturedSalt = saltCaptor.getValue();
-        assertThat(capturedSalt).hasSize(32);
+            // Assert
+            StepVerifier.create(result).expectNext(created).verifyComplete();
+            var salt = ArgumentCaptor.forClass(byte[].class);
+            verify(prfSaltPort).insert(eq(HOLDER), eq(CREDENTIAL), eq(PASSKEY), salt.capture());
+            assertThat(salt.getValue()).hasSize(32);
+            var event = emittedEvent();
+            assertThat(event.type()).isEqualTo(KeyAuditEventType.SALT_CREATED);
+            assertThat(event.custodyMode()).isEqualTo(CustodyMode.PASSKEY);
+            assertThat(event.credentialId()).isEqualTo(CREDENTIAL);
+        }
 
-        // The salt must not equal the raw UTF-8 bytes of holderId or credentialId
-        byte[] holderBytes = HOLDER_1.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        byte[] credBytes   = CRED_ID.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        assertThat(capturedSalt).isNotEqualTo(holderBytes);
-        assertThat(capturedSalt).isNotEqualTo(credBytes);
+        @Test
+        void createForPasskey_samePasskeyAsksAgain_returnsTheSameSaltWithoutInsertingAndAuditsDelivery() {
+            // Arrange
+            var existing = new PrfSalt(CREDENTIAL, new byte[32], PASSKEY, null);
+            when(prfSaltPort.findBy(HOLDER, CREDENTIAL)).thenReturn(Mono.just(existing));
+
+            // Act
+            var result = service.createForPasskey(TENANT, HOLDER, PASSKEY, CREDENTIAL);
+
+            // Assert
+            StepVerifier.create(result).expectNext(existing).verifyComplete();
+            verify(prfSaltPort, never()).insert(anyString(), anyString(), anyString(), any());
+            assertThat(emittedEvent().type()).isEqualTo(KeyAuditEventType.SALT_DELIVERED);
+        }
+
+        @Test
+        void createForPasskey_concurrentCreationWonByAnother_returnsTheWinnersSaltAsDelivered() {
+            // Arrange
+            var winner = new PrfSalt(CREDENTIAL, new byte[32], PASSKEY, null);
+            when(prfSaltPort.findBy(HOLDER, CREDENTIAL)).thenReturn(Mono.empty(), Mono.just(winner));
+            when(prfSaltPort.insert(eq(HOLDER), eq(CREDENTIAL), eq(PASSKEY), any())).thenReturn(Mono.just(false));
+
+            // Act
+            var result = service.createForPasskey(TENANT, HOLDER, PASSKEY, CREDENTIAL);
+
+            // Assert
+            StepVerifier.create(result).expectNext(winner).verifyComplete();
+            assertThat(emittedEvent().type()).isEqualTo(KeyAuditEventType.SALT_DELIVERED);
+        }
+
+        @Test
+        void createForPasskey_credentialOfAnotherPasskey_failsAsNotFoundAndAuditsTheDenial() {
+            // Arrange
+            when(prfSaltPort.findBy(HOLDER, CREDENTIAL)).thenReturn(Mono.just(new PrfSalt(CREDENTIAL, new byte[32], OTHER_PASSKEY, null)));
+
+            // Act
+            var result = service.createForPasskey(TENANT, HOLDER, PASSKEY, CREDENTIAL);
+
+            // Assert
+            StepVerifier.create(result).expectError(PrfSaltNotFoundException.class).verify();
+            var event = emittedEvent();
+            assertThat(event.type()).isEqualTo(KeyAuditEventType.SALT_DELIVERY_DENIED);
+            assertThat(event.reason()).isEqualTo(PrfSaltService.REASON_OTHER_PASSKEY);
+        }
+
+        @Test
+        void createForPasskey_saltWhosePasskeyWasDeleted_failsAsNotFound() {
+            // Arrange
+            when(prfSaltPort.findBy(HOLDER, CREDENTIAL)).thenReturn(Mono.just(new PrfSalt(CREDENTIAL, new byte[32], null, null)));
+
+            // Act
+            var result = service.createForPasskey(TENANT, HOLDER, PASSKEY, CREDENTIAL);
+
+            // Assert
+            StepVerifier.create(result).expectError(PrfSaltNotFoundException.class).verify();
+        }
+
+        @Test
+        void createForPasskey_auditChannelFails_stillReturnsTheSalt() {
+            // Arrange
+            var existing = new PrfSalt(CREDENTIAL, new byte[32], PASSKEY, null);
+            when(prfSaltPort.findBy(HOLDER, CREDENTIAL)).thenReturn(Mono.just(existing));
+            when(auditPort.emit(any())).thenReturn(Mono.error(new IllegalStateException("audit down")));
+
+            // Act
+            var result = service.createForPasskey(TENANT, HOLDER, PASSKEY, CREDENTIAL);
+
+            // Assert
+            StepVerifier.create(result).expectNext(existing).verifyComplete();
+        }
     }
 
-    // ------------------------------------------------------------------ getOrCreatePrfSalt — hit (EC-01)
+    @Nested
+    @DisplayName("getForPasskey")
+    class GetForPasskey {
 
-    @Test
-    void getOrCreatePrfSalt_hit_returnsExistingSaltAndDoesNotSubscribeToInsert() {
-        byte[] existingSalt = new byte[32];
-        existingSalt[0] = 0x11;
+        @Test
+        void getForPasskey_saltOfThePasskeyWithPublicKey_returnsItAndAuditsDelivery() {
+            // Arrange
+            var stored = new PrfSalt(CREDENTIAL, new byte[32], PASSKEY, PUBLIC_JWK);
+            when(prfSaltPort.findBy(HOLDER, CREDENTIAL)).thenReturn(Mono.just(stored));
 
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.just(existingSalt));
+            // Act
+            var result = service.getForPasskey(TENANT, HOLDER, PASSKEY, CREDENTIAL);
 
-        StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
-                .assertNext(salt -> assertThat(salt).isEqualTo(existingSalt))
-                .verifyComplete();
+            // Assert
+            StepVerifier.create(result).expectNext(stored).verifyComplete();
+            assertThat(emittedEvent().type()).isEqualTo(KeyAuditEventType.SALT_DELIVERED);
+        }
 
-        // Mono.defer makes generateAndInsert lazy — insert must never be called on a cache hit
-        verify(prfSaltPort, never()).insert(any(), any(), any());
-    }
+        @Test
+        void getForPasskey_attestationOfAnotherPasskey_failsAsNotFoundAndAuditsTheDenial() {
+            // Arrange
+            when(prfSaltPort.findBy(HOLDER, CREDENTIAL)).thenReturn(Mono.just(new PrfSalt(CREDENTIAL, new byte[32], OTHER_PASSKEY, PUBLIC_JWK)));
 
-    @Test
-    void getOrCreatePrfSalt_hit_isIdempotentAcrossMultipleCalls() {
-        byte[] existingSalt = new byte[32];
-        existingSalt[1] = 0x22;
+            // Act
+            var result = service.getForPasskey(TENANT, HOLDER, PASSKEY, CREDENTIAL);
 
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.just(existingSalt));
+            // Assert
+            StepVerifier.create(result).expectError(PrfSaltNotFoundException.class).verify();
+            var event = emittedEvent();
+            assertThat(event.type()).isEqualTo(KeyAuditEventType.SALT_DELIVERY_DENIED);
+            assertThat(event.reason()).isEqualTo(PrfSaltService.REASON_OTHER_PASSKEY);
+        }
 
-        // First call
-        StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
-                .assertNext(salt -> assertThat(salt).isEqualTo(existingSalt))
-                .verifyComplete();
+        @Test
+        void getForPasskey_attestationWithoutPublicKeyYet_failsAsNotFound() {
+            // Arrange
+            when(prfSaltPort.findBy(HOLDER, CREDENTIAL)).thenReturn(Mono.just(new PrfSalt(CREDENTIAL, new byte[32], PASSKEY, null)));
 
-        // Second call — same result; Mono.defer means insert is never invoked (EC-01)
-        StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
-                .assertNext(salt -> assertThat(salt).isEqualTo(existingSalt))
-                .verifyComplete();
+            // Act
+            var result = service.getForPasskey(TENANT, HOLDER, PASSKEY, CREDENTIAL);
 
-        verify(prfSaltPort, never()).insert(any(), any(), any());
-    }
+            // Assert
+            StepVerifier.create(result).expectError(PrfSaltNotFoundException.class).verify();
+            assertThat(emittedEvent().reason()).isEqualTo(PrfSaltService.REASON_NO_PUBLIC_KEY);
+        }
 
-    // ------------------------------------------------------------------ getOrCreatePrfSalt — DB failure (ES-05, NFR-S-537-01)
+        @Test
+        void getForPasskey_unknownAttestation_failsAsNotFoundAndAuditsTheDenial() {
+            // Arrange
+            when(prfSaltPort.findBy(HOLDER, CREDENTIAL)).thenReturn(Mono.empty());
 
-    @Test
-    void getOrCreatePrfSalt_dbInsertFailure_errorPropagatesWithoutSaltInMessage() {
-        RuntimeException dbError = new RuntimeException("connection timeout");
+            // Act
+            var result = service.getForPasskey(TENANT, HOLDER, PASSKEY, CREDENTIAL);
 
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.empty());
-        when(prfSaltPort.insert(eq(HOLDER_1), eq(CRED_ID), any(byte[].class)))
-                .thenReturn(Mono.error(dbError));
+            // Assert
+            StepVerifier.create(result).expectError(PrfSaltNotFoundException.class).verify();
+            assertThat(emittedEvent().reason()).isEqualTo(PrfSaltService.REASON_NOT_FOUND);
+        }
 
-        StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
-                .expectErrorSatisfies(ex -> {
-                    // Error must propagate
-                    assertThat(ex).isNotNull();
-                    // The exception message must not contain any prf_salt-related disclosure
-                    // (NFR-S-537-01: no cryptographic material in error messages)
-                    String msg = ex.getMessage() != null ? ex.getMessage() : "";
-                    assertThat(msg).doesNotContainIgnoringCase("prf_salt");
-                    assertThat(msg).doesNotContainIgnoringCase("salt bytes");
-                })
-                .verify();
-    }
+        @Test
+        void getForPasskey_denial_neverCarriesTheSaltInTheAuditEvent() {
+            // Arrange
+            var salt = new byte[]{42, 42, 42, 42};
+            when(prfSaltPort.findBy(HOLDER, CREDENTIAL)).thenReturn(Mono.just(new PrfSalt(CREDENTIAL, salt, OTHER_PASSKEY, PUBLIC_JWK)));
 
-    @Test
-    void getOrCreatePrfSalt_fkViolation_errorPropagates() {
-        // A FK violation (SQLSTATE 23503) wrapped in DataIntegrityViolationException must NOT
-        // be swallowed — only duplicate-key (23505) is benign in the get-or-create scenario.
-        R2dbcDataIntegrityViolationException r2dbcCause =
-                new R2dbcDataIntegrityViolationException("fk violation", "23503");
-        DataIntegrityViolationException fkError =
-                new DataIntegrityViolationException("fk", r2dbcCause);
+            // Act
+            StepVerifier.create(service.getForPasskey(TENANT, HOLDER, PASSKEY, CREDENTIAL))
+                    .expectError(PrfSaltNotFoundException.class).verify();
 
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.empty());
-        when(prfSaltPort.insert(eq(HOLDER_1), eq(CRED_ID), any(byte[].class)))
-                .thenReturn(Mono.error(fkError));
-
-        StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
-                .expectErrorMatches(ex -> ex instanceof DataIntegrityViolationException)
-                .verify();
-    }
-
-    // ------------------------------------------------------------------ getForHolder — absent, no other holder (ES-02)
-
-    @Test
-    void getForHolder_saltAbsent_andCredentialNotExistsAnywhere_throwsPrfSaltNotFoundException() {
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.empty());
-        when(prfSaltPort.countByCredential(CRED_ID)).thenReturn(Mono.just(0L));
-
-        StepVerifier.create(service.getForHolder(TENANT, HOLDER_1, CRED_ID))
-                .expectError(PrfSaltNotFoundException.class)
-                .verify();
-    }
-
-    @Test
-    void getForHolder_saltAbsent_credentialNotFound_exceptionMessageDoesNotContainSalt() {
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.empty());
-        when(prfSaltPort.countByCredential(CRED_ID)).thenReturn(Mono.just(0L));
-
-        StepVerifier.create(service.getForHolder(TENANT, HOLDER_1, CRED_ID))
-                .expectErrorSatisfies(ex -> {
-                    assertThat(ex).isInstanceOf(PrfSaltNotFoundException.class);
-                    String msg = ex.getMessage() != null ? ex.getMessage() : "";
-                    assertThat(msg).doesNotContainIgnoringCase("prf_salt");
-                    assertThat(msg).doesNotContainIgnoringCase("salt bytes");
-                })
-                .verify();
-    }
-
-    // ------------------------------------------------------------------ getForHolder — cross-holder (ES-04)
-
-    @Test
-    void getForHolder_saltAbsent_butCredentialExistsForOtherHolder_throwsHolderIsolationViolation() {
-        // HOLDER_1 does not have a row for CRED_ID, but another holder does (count = 1)
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.empty());
-        when(prfSaltPort.countByCredential(CRED_ID)).thenReturn(Mono.just(1L));
-
-        StepVerifier.create(service.getForHolder(TENANT, HOLDER_1, CRED_ID))
-                .expectError(HolderIsolationViolationException.class)
-                .verify();
-    }
-
-    @Test
-    void getForHolder_crossHolder_isolationViolationMessageDoesNotLeakSalt() {
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.empty());
-        when(prfSaltPort.countByCredential(CRED_ID)).thenReturn(Mono.just(1L));
-
-        StepVerifier.create(service.getForHolder(TENANT, HOLDER_1, CRED_ID))
-                .expectErrorSatisfies(ex -> {
-                    assertThat(ex).isInstanceOf(HolderIsolationViolationException.class);
-                    String msg = ex.getMessage() != null ? ex.getMessage() : "";
-                    assertThat(msg).doesNotContainIgnoringCase("prf_salt");
-                    assertThat(msg).doesNotContainIgnoringCase("salt bytes");
-                })
-                .verify();
-    }
-
-    // ------------------------------------------------------------------ holderId from parameter (AD-2)
-
-    @Test
-    void getOrCreatePrfSalt_holderIdFromParameter_isPassedToPort() {
-        byte[] salt = new byte[32];
-        salt[5] = 0x55;
-
-        when(prfSaltPort.findBy(HOLDER_1, CRED_ID)).thenReturn(Mono.just(salt));
-
-        StepVerifier.create(service.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID))
-                .expectNextCount(1)
-                .verifyComplete();
-
-        // Mono.defer makes generateAndInsert lazy — insert never called on a cache hit (EC-01)
-        verify(prfSaltPort, never()).insert(any(), any(), any());
-        // HOLDER_2 was never used — holderId comes from the method parameter only
-        verify(prfSaltPort, never()).findBy(eq(HOLDER_2), any());
-        verify(prfSaltPort, never()).insert(eq(HOLDER_2), any(), any());
-    }
-
-    @Test
-    void getForHolder_holderIdFromParameter_isPassedToPort() {
-        byte[] salt = new byte[32];
-        salt[7] = 0x77;
-
-        when(prfSaltPort.findBy(HOLDER_2, CRED_ID)).thenReturn(Mono.just(salt));
-
-        StepVerifier.create(service.getForHolder(TENANT, HOLDER_2, CRED_ID))
-                .expectNextCount(1)
-                .verifyComplete();
-
-        // Mono.defer makes resolveAbsence lazy — countByCredential never called on a cache hit
-        verify(prfSaltPort, never()).countByCredential(any());
-        // HOLDER_1 was never used — holderId comes from the method parameter only
-        verify(prfSaltPort).findBy(HOLDER_2, CRED_ID);
-        verify(prfSaltPort, never()).findBy(eq(HOLDER_1), any());
+            // Assert
+            assertThat(emittedEvent().toString()).doesNotContain("42, 42");
+        }
     }
 }

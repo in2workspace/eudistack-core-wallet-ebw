@@ -51,11 +51,12 @@ class CredentialIssuanceControllerTest {
     void finalizeIssuance_fullRequest_storesTheFirstCredentialWithHolderKey() {
         // Arrange
         var metadata = Map.<String, Object>of("credential_issuer", "https://issuer");
+        var holderPublicJwk = Map.<String, Object>of("kty", "EC", "crv", "P-256", "x", "x1", "y", "y1");
         var request = request(List.of(new CredentialItem("raw-1"), new CredentialItem("raw-2")),
-                metadata, "hk-1", "did:key:holder#0");
+                metadata, "hk-1", "did:key:holder#0", holderPublicJwk);
         var stored = credential();
         when(storeCredentialWorkflow.storeCredential(USER_ID, "raw-1", "dc+sd-jwt", "cfg-1", "did:key:holder#0",
-                metadata, "hk-1", auth.getPasskeyId())).thenReturn(Mono.just(stored));
+                metadata, "hk-1", holderPublicJwk, auth.getPasskeyId())).thenReturn(Mono.just(stored));
 
         // Act
         var result = controller.finalizeIssuance(request, auth);
@@ -69,9 +70,9 @@ class CredentialIssuanceControllerTest {
     @Test
     void finalizeIssuance_withoutHolderKidOrMetadata_usesEmptyDefaults() {
         // Arrange
-        var request = request(List.of(new CredentialItem("raw-1")), null, null, null);
+        var request = request(List.of(new CredentialItem("raw-1")), null, null, null, null);
         var stored = credential();
-        when(storeCredentialWorkflow.storeCredential(USER_ID, "raw-1", "dc+sd-jwt", "cfg-1", "", Map.of(), null, auth.getPasskeyId()))
+        when(storeCredentialWorkflow.storeCredential(USER_ID, "raw-1", "dc+sd-jwt", "cfg-1", "", Map.of(), null, null, auth.getPasskeyId()))
                 .thenReturn(Mono.just(stored));
 
         // Act
@@ -84,7 +85,7 @@ class CredentialIssuanceControllerTest {
     @Test
     void finalizeIssuance_responseWithoutCredentials_failsBeforeStoring() {
         // Arrange
-        var request = request(List.of(), null, null, null);
+        var request = request(List.of(), null, null, null, null);
 
         // Act + Assert
         assertThatThrownBy(() -> controller.finalizeIssuance(request, auth))
@@ -96,11 +97,11 @@ class CredentialIssuanceControllerTest {
     @Test
     void extractCredentialRaw_missingNestedObjects_failsWithIllegalArgument() {
         // Arrange
-        var noWrapper = new FinalizeIssuanceRequest(null, "dc+sd-jwt", "cfg-1", null, null, null);
+        var noWrapper = new FinalizeIssuanceRequest(null, "dc+sd-jwt", "cfg-1", null, null, null, null);
         var noResponse = new FinalizeIssuanceRequest(new CredentialResponseWithStatus(null),
-                "dc+sd-jwt", "cfg-1", null, null, null);
+                "dc+sd-jwt", "cfg-1", null, null, null, null);
         var noList = new FinalizeIssuanceRequest(new CredentialResponseWithStatus(new CredentialResponse(null)),
-                "dc+sd-jwt", "cfg-1", null, null, null);
+                "dc+sd-jwt", "cfg-1", null, null, null, null);
 
         // Act + Assert
         assertThatThrownBy(noWrapper::extractCredentialRaw).isInstanceOf(IllegalArgumentException.class);
@@ -109,15 +110,16 @@ class CredentialIssuanceControllerTest {
     }
 
     private static FinalizeIssuanceRequest request(List<CredentialItem> items, Map<String, Object> metadata,
-                                                   String holderKeyId, String holderKid) {
+                                                   String holderKeyId, String holderKid,
+                                                   Map<String, Object> holderPublicJwk) {
         return new FinalizeIssuanceRequest(
                 new CredentialResponseWithStatus(new CredentialResponse(items)),
-                "dc+sd-jwt", "cfg-1", metadata, holderKeyId, holderKid);
+                "dc+sd-jwt", "cfg-1", metadata, holderKeyId, holderKid, holderPublicJwk);
     }
 
     private static WalletCredential credential() {
         var now = Instant.now();
         return new WalletCredential(UUID.randomUUID(), USER_ID, "raw-1", CredentialFormat.DC_SD_JWT, "cfg-1", "",
-                "Type", null, "https://issuer", "did:sub", now, null, CredentialStatus.VALID, Map.of(), "hk-1", now, now, null, false);
+                "Type", null, "https://issuer", "did:sub", now, null, CredentialStatus.VALID, Map.of(), "hk-1", now, now, null, false, null);
     }
 }

@@ -256,15 +256,15 @@ class KeyManagerControllerIT_Sign {
                 .expectStatus().isBadRequest();
     }
 
-    // --- ES-03: browser tenant → 403 ---
+    // --- browser tenant → 409 unsupported custody mode ---
 
     @Test
-    void sign_browserTenant_returns403() {
+    void sign_browserTenant_returns409() {
         when(keyManagerPort.signWithHolderKey(any())).thenReturn(
                 Mono.error(new TenantWalletProfileUnsupportedException("browser")));
 
         postSign(BROWSER_TENANT, KEY_ID, validBody("KB_JWT"))
-                .expectStatus().isForbidden();
+                .expectStatus().isEqualTo(409);
     }
 
     // --- ES-05: timeout → 504 Gateway Timeout (B1) ---

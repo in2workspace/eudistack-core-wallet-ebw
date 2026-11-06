@@ -61,6 +61,7 @@ class PrfSaltGenerationIT {
 
     private static final String CRED_ID_1 = "cred-gen-1";
     private static final String CRED_ID_2 = "cred-gen-2";
+    private static final String PASSKEY_1 = UUID.randomUUID().toString();
 
     @Container
     static final PostgreSQLContainer<?> postgres =
@@ -124,6 +125,12 @@ class PrfSaltGenerationIT {
                     + "ON CONFLICT (id) DO NOTHING");
             // Clear salt table before each test
             conn.createStatement().execute(
+                    "INSERT INTO " + TENANT_SCHEMA + ".user_passkey (id, user_id, credential_id, display_name, attested_credential_data, "
+                    + "sign_count, uv_initialized, backup_eligible, backup_state, prf_enabled) "
+                    + "VALUES ('" + PASSKEY_1 + "', '" + HOLDER_1 + "', 'webauthn-cred-1', 'test passkey', "
+                    + "decode('00', 'hex'), 0, true, false, false, true) "
+                    + "ON CONFLICT (id) DO NOTHING");
+            conn.createStatement().execute(
                     "DELETE FROM " + TENANT_SCHEMA + ".passkey_prf_salt");
         }
     }
@@ -131,11 +138,11 @@ class PrfSaltGenerationIT {
     // ------------------------------------------------------------------ AC-01
 
     @Test
-    void getOrCreatePrfSalt_firstCall_persistsExactlyOneRowWith32ByteSalt() throws SQLException {
+    void createForPasskey_firstCall_persistsExactlyOneRowWith32ByteSalt() throws SQLException {
         StepVerifier.create(
-                prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID_1)
+                prfSaltService.createForPasskey(TENANT, HOLDER_1, PASSKEY_1, CRED_ID_1)
                         .contextWrite(ctx -> ctx.put("tenantDomain", TENANT)))
-                .assertNext(salt -> assertThat(salt).hasSize(32))
+                .assertNext(salt -> assertThat(salt.value()).hasSize(32))
                 .verifyComplete();
 
         // Verify exactly one row in the DB
@@ -152,11 +159,11 @@ class PrfSaltGenerationIT {
     }
 
     @Test
-    void getOrCreatePrfSalt_firstCall_returnedSaltMatchesStoredSalt() throws SQLException {
+    void createForPasskey_firstCall_returnedSaltMatchesStoredSalt() throws SQLException {
         byte[] returnedSalt = prfSaltService
-                .getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID_1)
+                .createForPasskey(TENANT, HOLDER_1, PASSKEY_1, CRED_ID_1)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT))
-                .block();
+                .block().value();
 
         assertThat(returnedSalt).isNotNull().hasSize(32);
 
@@ -173,16 +180,16 @@ class PrfSaltGenerationIT {
     // ------------------------------------------------------------------ AC-02
 
     @Test
-    void getOrCreatePrfSalt_twoCredentialsSameHolder_produceTwoDistinctSalts() {
+    void createForPasskey_twoCredentialsSameHolder_produceTwoDistinctSalts() {
         byte[] salt1 = prfSaltService
-                .getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID_1)
+                .createForPasskey(TENANT, HOLDER_1, PASSKEY_1, CRED_ID_1)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT))
-                .block();
+                .block().value();
 
         byte[] salt2 = prfSaltService
-                .getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID_2)
+                .createForPasskey(TENANT, HOLDER_1, PASSKEY_1, CRED_ID_2)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT))
-                .block();
+                .block().value();
 
         assertThat(salt1).isNotNull().hasSize(32);
         assertThat(salt2).isNotNull().hasSize(32);
@@ -190,11 +197,11 @@ class PrfSaltGenerationIT {
     }
 
     @Test
-    void getOrCreatePrfSalt_twoCredentialsSameHolder_twoRowsInDb() throws SQLException {
-        prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID_1)
+    void createForPasskey_twoCredentialsSameHolder_twoRowsInDb() throws SQLException {
+        prfSaltService.createForPasskey(TENANT, HOLDER_1, PASSKEY_1, CRED_ID_1)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT))
                 .block();
-        prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID_2)
+        prfSaltService.createForPasskey(TENANT, HOLDER_1, PASSKEY_1, CRED_ID_2)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT))
                 .block();
 
@@ -211,16 +218,16 @@ class PrfSaltGenerationIT {
     // ------------------------------------------------------------------ EC-01
 
     @Test
-    void getOrCreatePrfSalt_calledTwiceForSameKey_returnsSameSalt() {
+    void createForPasskey_calledTwiceForSameKey_returnsSameSalt() {
         byte[] first = prfSaltService
-                .getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID_1)
+                .createForPasskey(TENANT, HOLDER_1, PASSKEY_1, CRED_ID_1)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT))
-                .block();
+                .block().value();
 
         byte[] second = prfSaltService
-                .getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID_1)
+                .createForPasskey(TENANT, HOLDER_1, PASSKEY_1, CRED_ID_1)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT))
-                .block();
+                .block().value();
 
         assertThat(first).isNotNull().hasSize(32);
         assertThat(second).isNotNull().hasSize(32);
@@ -228,11 +235,11 @@ class PrfSaltGenerationIT {
     }
 
     @Test
-    void getOrCreatePrfSalt_calledTwiceForSameKey_onlyOneRowInDb() throws SQLException {
-        prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID_1)
+    void createForPasskey_calledTwiceForSameKey_onlyOneRowInDb() throws SQLException {
+        prfSaltService.createForPasskey(TENANT, HOLDER_1, PASSKEY_1, CRED_ID_1)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT))
                 .block();
-        prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_1, CRED_ID_1)
+        prfSaltService.createForPasskey(TENANT, HOLDER_1, PASSKEY_1, CRED_ID_1)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT))
                 .block();
 

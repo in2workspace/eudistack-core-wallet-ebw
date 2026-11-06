@@ -37,6 +37,9 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
             "ON CONFLICT ON CONSTRAINT uq_holder_key_tenant_holder_credential DO NOTHING " +
             "RETURNING key_id";
 
+    private static final String DELETE_SQL =
+            "DELETE FROM holder_key WHERE tenant_id = :tenantId AND holder_id = :holderId AND key_id = :keyId";
+
     private final SpringHolderKeyRepository repository;
     private final ObjectMapper objectMapper;
     private final DatabaseClient databaseClient;
@@ -108,6 +111,17 @@ public class HolderKeyR2dbcAdapter implements HolderKeyReadPort, HolderKeyWriteP
                         repository.findFirstByTenantIdAndHolderIdAndCredentialIdAndRevokedAtIsNull(
                                         holderKey.tenantId(), holderKey.holderId(), holderKey.credentialId())
                                 .map(existing -> new HolderKeyPersistResult(false, toDomain(existing))));
+    }
+
+    @Override
+    public Mono<Boolean> deleteById(String tenantId, String holderId, HolderKeyId keyId) {
+        return databaseClient.sql(DELETE_SQL)
+                .bind("tenantId", tenantId)
+                .bind("holderId", holderId)
+                .bind("keyId", keyId.value().toString())
+                .fetch()
+                .rowsUpdated()
+                .map(rows -> rows > 0);
     }
 
     private HolderKey toDomain(HolderKeyEntity entity) {

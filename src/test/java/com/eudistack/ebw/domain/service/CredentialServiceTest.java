@@ -193,6 +193,40 @@ class CredentialServiceTest {
     }
 
     @Test
+    void parseCredential_sdJwtWithCnfJwk_exposesTheBoundKey() {
+        // Arrange
+        var jwk = java.util.Map.of("kty", "EC", "crv", "P-256", "x", "x1", "y", "y1");
+        var sdJwt = signedJwt(new JWTClaimsSet.Builder().issuer("iss")
+                .claim("cnf", java.util.Map.of("jwk", jwk)).build()) + "~";
+
+        // Act
+        var result = credentialService.parseCredential(sdJwt, CredentialFormat.DC_SD_JWT);
+
+        // Assert
+        StepVerifier.create(result)
+                .assertNext(parsed -> assertThat(parsed.cnfJwk()).isEqualTo(jwk))
+                .verifyComplete();
+    }
+
+    @Test
+    void parseCredential_cnfWithoutJwk_hasNoBoundKey() {
+        // Arrange
+        var sdJwt = signedJwt(new JWTClaimsSet.Builder().issuer("iss")
+                .claim("cnf", java.util.Map.of("kid", "did:key:holder#0")).build()) + "~";
+
+        // Act
+        var result = credentialService.parseCredential(sdJwt, CredentialFormat.DC_SD_JWT);
+
+        // Assert
+        StepVerifier.create(result)
+                .assertNext(parsed -> {
+                    assertThat(parsed.hasCnf()).isTrue();
+                    assertThat(parsed.cnfJwk()).isNull();
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void parseCredential_sdJwtWithoutCnf_reportsNoHolderBinding() {
         // Arrange
         var sdJwt = signedJwt(new JWTClaimsSet.Builder().issuer("iss").build()) + "~";
@@ -451,7 +485,7 @@ class CredentialServiceTest {
     private WalletCredential credential(String raw, CredentialFormat format, Instant issuance, Instant expiration) {
         return new WalletCredential(UUID.randomUUID(), UUID.randomUUID(), raw, format, "config-1", "kid-1",
                 "Type", null, "https://stored-issuer", "subject", issuance, expiration,
-                CredentialStatus.VALID, Map.of(), "holder-key-1", Instant.now(), Instant.now(), null, false);
+                CredentialStatus.VALID, Map.of(), "holder-key-1", Instant.now(), Instant.now(), null, false, null);
     }
 
     private static String disclosure(String salt, String name, Object value) {

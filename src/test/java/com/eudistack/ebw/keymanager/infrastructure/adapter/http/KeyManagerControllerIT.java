@@ -50,9 +50,9 @@ import static org.mockito.Mockito.when;
  *   <li>AC-01 — new key: 201 with key_id, public_jwk, jws_proof, no warning field</li>
  *   <li>AC-01 / EC-01 — existing key: 201 + {@code warning="existing_key_algorithm_used"}</li>
  *   <li>AC-02 — unsupported credential format → 400</li>
- *   <li>AC-03 — no intersecting algorithm → 422</li>
+ *   <li>AC-03 — no ES256 in the issuer's algorithms → 400</li>
  *   <li>ES-01 — invalid request body → 400, no field-name disclosure</li>
- *   <li>ES-02 — browser-mode tenant → 403 with no body (anti-probing)</li>
+ *   <li>browser-mode tenant → 409 unsupported custody mode</li>
  *   <li>ES-04 — key generation timeout → 503</li>
  *   <li>No Authorization header → 401</li>
  * </ul>
@@ -249,17 +249,17 @@ class KeyManagerControllerIT {
     }
 
     // -------------------------------------------------------------------------
-    // AC-03 — no intersecting algorithm → 422
+    // AC-03 — no ES256 in the issuer's algorithms → 400
     // -------------------------------------------------------------------------
 
     @Test
-    void generate_noIntersectingAlgorithm_returns422() {
+    void generate_noEs256_returns400() {
         when(keyManagerPort.generateHolderKey(any())).thenReturn(
                 Mono.error(new UnsupportedJwsAlgorithmException(
                         java.util.List.of("RS256"), java.util.List.of("ES256", "ES384", "EdDSA"))));
 
         postWithAuth(SERVER_DB_TENANT, validBody("cred-alg"))
-                .expectStatus().isEqualTo(422);
+                .expectStatus().isBadRequest();
     }
 
     // -------------------------------------------------------------------------
@@ -317,16 +317,15 @@ class KeyManagerControllerIT {
     }
 
     // -------------------------------------------------------------------------
-    // ES-02 — browser-mode tenant → 403 with no body (anti-probing)
+    // browser-mode tenant → 409 unsupported custody mode
     // -------------------------------------------------------------------------
 
     @Test
-    void generate_browserTenant_returns403WithNoBody() {
+    void generate_browserTenant_returns409() {
         when(keyManagerPort.generateHolderKey(any())).thenReturn(Mono.just(fakeResult(true)));
 
         postWithAuth(BROWSER_TENANT, validBody("cred-browser"))
-                .expectStatus().isForbidden()
-                .expectBody().isEmpty();
+                .expectStatus().isEqualTo(409);
     }
 
     // -------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 package com.eudistack.ebw.application.workflow;
 
+import com.eudistack.ebw.domain.model.CustodyMode;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.TenantWalletProfile;
@@ -83,5 +84,55 @@ class PasskeyCustodyPolicyTest {
         when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(profile(KeyManager.DB)));
 
         StepVerifier.create(policy.visibleToSession(credential, PASSKEY_ID)).expectNext(credential).verifyComplete();
+    }
+
+    @Test
+    void custodyMode_serverWithDbKeys_isServer() {
+        // Arrange
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(profile(KeyManager.DB)));
+
+        // Act
+        var result = policy.custodyMode();
+
+        // Assert
+        StepVerifier.create(result).expectNext(CustodyMode.SERVER).verifyComplete();
+    }
+
+    @Test
+    void custodyMode_serverWithPasskeyPrf_isPasskey() {
+        // Arrange
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(profile(KeyManager.PASSKEY_PRF)));
+
+        // Act
+        var result = policy.custodyMode();
+
+        // Assert
+        StepVerifier.create(result).expectNext(CustodyMode.PASSKEY).verifyComplete();
+    }
+
+    @Test
+    void custodyMode_browserTenant_isEmpty() {
+        // Arrange
+        var browser = new TenantWalletProfile("t", WalletMode.BROWSER, null, Instant.now(), Instant.now());
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(browser));
+
+        // Act
+        var result = policy.custodyMode();
+
+        // Assert
+        StepVerifier.create(result).verifyComplete();
+    }
+
+    @Test
+    void custodyMode_tenantWithoutProfile_isEmpty() {
+        // Arrange
+        when(walletProfileQueryPort.queryByCurrentTenant())
+                .thenReturn(Mono.error(new TenantUnknownException(TenantUnknownException.Reason.PROFILE_NOT_SEEDED)));
+
+        // Act
+        var result = policy.custodyMode();
+
+        // Assert
+        StepVerifier.create(result).verifyComplete();
     }
 }

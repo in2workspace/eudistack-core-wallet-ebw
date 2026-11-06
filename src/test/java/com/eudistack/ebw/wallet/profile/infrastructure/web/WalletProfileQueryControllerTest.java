@@ -131,9 +131,9 @@ class WalletProfileQueryControllerTest {
     }
 
     @Test
-    void getWalletConfigMetadata_serverProfileWithHsm_serialisesAllFields() {
+    void getWalletConfigMetadata_serverProfileWithDb_serialisesAllFields() {
         TenantWalletProfile profile =
-                new TenantWalletProfile("kpmg", WalletMode.SERVER, KeyManager.HSM, NOW, NOW);
+                new TenantWalletProfile("kpmg", WalletMode.SERVER, KeyManager.DB, NOW, NOW);
         when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(profile));
 
         webTestClient.get()
@@ -142,7 +142,7 @@ class WalletProfileQueryControllerTest {
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.wallet_mode").isEqualTo("server")
-                .jsonPath("$.key_manager").isEqualTo("hsm");
+                .jsonPath("$.key_manager").isEqualTo("db");
     }
 
     @Test

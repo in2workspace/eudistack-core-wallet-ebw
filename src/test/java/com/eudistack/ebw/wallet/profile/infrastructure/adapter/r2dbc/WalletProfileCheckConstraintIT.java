@@ -169,10 +169,10 @@ class WalletProfileCheckConstraintIT {
      * AC-04 (extended): All four server key_manager values are rejected when paired
      * with {@code wallet_mode='browser'}.
      *
-     * @param keyManager one of {@code db}, {@code passkey-prf}, {@code hsm}, {@code qtsp}
+     * @param keyManager one of {@code db}, {@code passkey-prf}
      */
     @ParameterizedTest(name = "browser_with_key_manager_{0}_violates_check_constraint")
-    @ValueSource(strings = {"db", "passkey-prf", "hsm", "qtsp"})
+    @ValueSource(strings = {"db", "passkey-prf"})
     void browser_with_any_key_manager_value_violates_check_constraint(String keyManager)
             throws SQLException {
         String tenant = "browser_km_" + keyManager;
@@ -241,12 +241,12 @@ class WalletProfileCheckConstraintIT {
      * {@code key_manager} value outside the allowed enum is rejected with SQLSTATE 23514.
      *
      * <p>The CHECK constraint explicitly enumerates the allowed values
-     * {@code ('db', 'passkey-prf', 'hsm', 'qtsp')}; any other value must be rejected.
+     * {@code ('db', 'passkey-prf')}; any other value must be rejected.
      *
      * @param keyManager a value not in the allowed set
      */
     @ParameterizedTest(name = "server_with_invalid_key_manager_{0}_violates_check_constraint")
-    @ValueSource(strings = {"not_in_enum", "cloud", "QTSP", "  ", ""})
+    @ValueSource(strings = {"not_in_enum", "cloud", "QTSP", "hsm", "qtsp", "  ", ""})
     void server_with_key_manager_outside_enum_violates_check_constraint(String keyManager)
             throws SQLException {
         String tenant = "server_inv_" + UUID.randomUUID().toString().replace("-", "").substring(0, 6);
