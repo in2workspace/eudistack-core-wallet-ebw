@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
+import com.eudistack.ebw.application.workflow.ExpireOnboardingWorkflow;
 import com.eudistack.ebw.application.workflow.ExpireSessionsWorkflow;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
@@ -20,7 +21,9 @@ import java.time.Instant;
  * without anyone renewing or ending them ({@link ExpireSessionsWorkflow}, FR-22); then deletes the
  * WebAuthn ceremonies and registration tickets created more than one day ago (design AD-3; they
  * are single use and expire after 5 minutes, the day of margin keeps them for diagnosis), and the
- * refresh tokens of the sessions that ended more than {@link #ENDED_SESSION_RETENTION} ago. If the
+ * refresh tokens of the sessions that ended more than {@link #ENDED_SESSION_RETENTION} ago, and the
+ * expired onboarding pre-registrations and used or expired "it was not me" tokens
+ * ({@link ExpireOnboardingWorkflow}, EUD-315). If the
  * expiry step fails, the tenant's deletions wait for the next pass, so no lapsed session is
  * deleted before it is audited.
  */
@@ -38,17 +41,20 @@ public class WebAuthnHousekeepingJob {
     private final WebAuthnCeremonyRepository ceremonyRepository;
     private final RegistrationTicketRepository ticketRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final ExpireOnboardingWorkflow expireOnboardingWorkflow;
 
     public WebAuthnHousekeepingJob(ActiveTenantDirectory tenantDirectory,
                                    ExpireSessionsWorkflow expireSessionsWorkflow,
                                    WebAuthnCeremonyRepository ceremonyRepository,
                                    RegistrationTicketRepository ticketRepository,
-                                   RefreshTokenRepository refreshTokenRepository) {
+                                   RefreshTokenRepository refreshTokenRepository,
+                                   ExpireOnboardingWorkflow expireOnboardingWorkflow) {
         this.tenantDirectory = tenantDirectory;
         this.expireSessionsWorkflow = expireSessionsWorkflow;
         this.ceremonyRepository = ceremonyRepository;
         this.ticketRepository = ticketRepository;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.expireOnboardingWorkflow = expireOnboardingWorkflow;
     }
 
     @Scheduled(cron = "0 0 * * * *")
@@ -83,6 +89,7 @@ public class WebAuthnHousekeepingJob {
     private Mono<Long> deleteExpiredRows(Instant cutoff, Instant sessionCutoff) {
         return ceremonyRepository.deleteCreatedBefore(cutoff)
                 .zipWith(ticketRepository.deleteCreatedBefore(cutoff), Long::sum)
-                .zipWith(refreshTokenRepository.deleteSessionsEndedBefore(sessionCutoff), Long::sum);
+                .zipWith(refreshTokenRepository.deleteSessionsEndedBefore(sessionCutoff), Long::sum)
+                .zipWith(expireOnboardingWorkflow.expire(), Long::sum);
     }
 }

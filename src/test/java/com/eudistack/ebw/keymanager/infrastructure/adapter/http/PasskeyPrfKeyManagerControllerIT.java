@@ -293,7 +293,7 @@ class PasskeyPrfKeyManagerControllerIT {
 
         @Bean
         RateLimitProperties rateLimitProperties() {
-            return new RateLimitProperties(100, 100, 100, 100, 100, 100, 100, 100, 2, Duration.ofMinutes(1));
+            return new RateLimitProperties(100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 2, Duration.ofMinutes(1));
         }
 
         @Bean

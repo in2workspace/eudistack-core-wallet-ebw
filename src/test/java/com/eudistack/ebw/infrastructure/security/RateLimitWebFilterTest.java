@@ -35,7 +35,7 @@ class RateLimitWebFilterTest {
     // registerPerIp=2, verifyPerIp=2, refreshPerIp=2, passkeyRegistrationPerIp=2, sessionPerIp=2,
     // passkeyPrfSignPerIp=2, trustedProxies=2 (CloudFront + ALB), window=1h
     private static final RateLimitProperties PROPERTIES =
-            new RateLimitProperties(10, 2, 10, 2, 2, 2, 2, 2, 2, Duration.ofHours(1));
+            new RateLimitProperties(10, 2, 10, 2, 2, 2, 2, 2, 2, 2, 2, Duration.ofHours(1));
 
     private RateLimitWebFilter filter;
     private AtomicInteger chainCalls;
@@ -53,7 +53,8 @@ class RateLimitWebFilterTest {
     @ValueSource(strings = {
             "/api/v1/auth/register", "/api/v1/auth/verify-email", "/api/v1/auth/refresh",
             "/api/v1/auth/passkeys/registration/options", "/api/v1/auth/passkeys/registration",
-            "/api/v1/auth/sessions/options", "/api/v1/auth/sessions"})
+            "/api/v1/auth/sessions/options", "/api/v1/auth/sessions",
+            "/api/v1/auth/onboarding-tickets/redeem", "/api/v1/auth/onboarding-tickets/disavowals"})
     void filter_authEndpointOverBudget_returnsRateLimitedProblemWithRetryAfter(String path) {
         // Arrange
         StepVerifier.create(filter.filter(post(path, "10.0.0.1"), chain)).verifyComplete();
@@ -144,6 +145,22 @@ class RateLimitWebFilterTest {
     @Nested
     @DisplayName("Behind the base-path and the trusted proxies")
     class BehindTheProxies {
+
+        @Test
+        void filter_redemptionUnderTheBasePath_isCountedAgainstItsBudget() {
+            // Arrange: ES-07, the redemption and "it was not me" budgets apply behind /business-wallet
+            var path = "/api/v1/auth/onboarding-tickets/redeem";
+            StepVerifier.create(filter.filter(underBasePath(path, "10.0.0.7"), chain)).verifyComplete();
+            StepVerifier.create(filter.filter(underBasePath(path, "10.0.0.7"), chain)).verifyComplete();
+            var third = underBasePath(path, "10.0.0.7");
+
+            // Act
+            StepVerifier.create(filter.filter(third, chain)).verifyComplete();
+
+            // Assert
+            assertThat(chainCalls).hasValue(2);
+            assertThat(third.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        }
 
         @Test
         void filter_requestUnderTheBasePath_isCountedAgainstTheRouteBudget() {

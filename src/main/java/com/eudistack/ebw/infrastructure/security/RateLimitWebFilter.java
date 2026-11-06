@@ -37,6 +37,9 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
     private static final List<PathPattern> PASSKEY_REGISTRATION = patterns(
             "/api/v1/auth/passkeys/registration/options", "/api/v1/auth/passkeys/registration");
     private static final List<PathPattern> SESSION = patterns("/api/v1/auth/sessions/options", "/api/v1/auth/sessions");
+    // Onboarding ticket (EUD-315, FR-30): public routes of the Wallet App, 10 per origin and window each.
+    private static final PathPattern ONBOARDING_REDEEM = pattern("/api/v1/auth/onboarding-tickets/redeem");
+    private static final PathPattern ONBOARDING_DISAVOWAL = pattern("/api/v1/auth/onboarding-tickets/disavowals");
     private static final List<PathPattern> PASSKEY_PRF = patterns(
             "/api/v1/keys/passkey-prf/onboarding/init", "/api/v1/keys/passkey-prf/onboarding/commit",
             "/api/v1/keys/passkey-prf/sign/prepare", "/api/v1/keys/passkey-prf/sign/submit");
@@ -92,6 +95,12 @@ public class RateLimitWebFilter implements WebFilter, Ordered {
         }
         if (matchesAny(SESSION, path)) {
             return Optional.of(new Budget("session", properties.sessionPerIp()));
+        }
+        if (ONBOARDING_REDEEM.matches(path)) {
+            return Optional.of(new Budget("onboarding-redeem", properties.onboardingRedeemPerIp()));
+        }
+        if (ONBOARDING_DISAVOWAL.matches(path)) {
+            return Optional.of(new Budget("onboarding-disavowal", properties.onboardingDisavowalPerIp()));
         }
         if (matchesAny(PASSKEY_PRF, path)) {
             return Optional.of(new Budget("passkey-prf", properties.passkeyPrfSignPerIp()));

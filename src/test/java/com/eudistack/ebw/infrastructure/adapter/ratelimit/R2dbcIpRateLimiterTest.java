@@ -24,7 +24,7 @@ import static org.mockito.Mockito.when;
 class R2dbcIpRateLimiterTest {
 
     private static final RateLimitProperties PROPERTIES =
-            new RateLimitProperties(3, 10, 10, 20, 60, 20, 60, 30, 2, Duration.ofHours(1));
+            new RateLimitProperties(3, 10, 10, 20, 60, 20, 60, 30, 30, 30, 2, Duration.ofHours(1));
 
     private DatabaseClientStub db;
     private SimpleMeterRegistry meterRegistry;

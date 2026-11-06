@@ -18,7 +18,7 @@ class RateLimitPropertiesTest {
         var window = Duration.ofHours(1);
 
         // Act + Assert
-        assertThatThrownBy(() -> new RateLimitProperties(3, 10, 10, 20, 60, 20, 60, 30, proxies, window))
+        assertThatThrownBy(() -> new RateLimitProperties(3, 10, 10, 20, 60, 20, 60, 30, 30, 30, proxies, window))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("trusted-proxies");
     }
@@ -26,9 +26,19 @@ class RateLimitPropertiesTest {
     @Test
     void constructor_oneTrustedProxy_isAccepted() {
         // Act
-        var properties = new RateLimitProperties(3, 10, 10, 20, 60, 20, 60, 30, 1, Duration.ofHours(1));
+        var properties = new RateLimitProperties(3, 10, 10, 20, 60, 20, 60, 30, 30, 30, 1, Duration.ofHours(1));
 
         // Assert
         assertThat(properties.trustedProxies()).isEqualTo(1);
+    }
+
+    @Test
+    void constructor_onboardingLimitsNotSet_defaultToTenPerIp() {
+        // Act: a configuration without the onboarding keys binds them as 0
+        var properties = new RateLimitProperties(3, 10, 10, 20, 60, 20, 60, 30, 0, 0, 1, Duration.ofHours(1));
+
+        // Assert: FR-30
+        assertThat(properties.onboardingRedeemPerIp()).isEqualTo(10);
+        assertThat(properties.onboardingDisavowalPerIp()).isEqualTo(10);
     }
 }

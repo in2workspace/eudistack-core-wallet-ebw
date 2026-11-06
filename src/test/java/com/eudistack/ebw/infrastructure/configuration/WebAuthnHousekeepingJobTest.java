@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.configuration;
 
+import com.eudistack.ebw.application.workflow.ExpireOnboardingWorkflow;
 import com.eudistack.ebw.application.workflow.ExpireSessionsWorkflow;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
@@ -24,6 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -38,13 +40,34 @@ class WebAuthnHousekeepingJobTest {
     @Mock private WebAuthnCeremonyRepository ceremonyRepository;
     @Mock private RegistrationTicketRepository ticketRepository;
     @Mock private RefreshTokenRepository refreshTokenRepository;
+    @Mock private ExpireOnboardingWorkflow expireOnboardingWorkflow;
 
     private WebAuthnHousekeepingJob job;
 
     @BeforeEach
     void setUp() {
         job = new WebAuthnHousekeepingJob(tenantDirectory, expireSessionsWorkflow, ceremonyRepository, ticketRepository,
-                refreshTokenRepository);
+                refreshTokenRepository, expireOnboardingWorkflow);
+        lenient().when(expireOnboardingWorkflow.expire()).thenReturn(Mono.just(0L));
+    }
+
+    @Test
+    void cleanup_everyActiveTenant_expiresItsOnboardingDataInItsSchema() {
+        // Arrange: AC-05, EC-12
+        var tenantsSeen = new CopyOnWriteArrayList<String>();
+        when(tenantDirectory.activeTenants()).thenReturn(Flux.just("sandbox", "cgcom"));
+        when(expireSessionsWorkflow.expireLapsedSessions()).thenReturn(Mono.just(0L));
+        when(ceremonyRepository.deleteCreatedBefore(any())).thenReturn(Mono.just(0L));
+        when(ticketRepository.deleteCreatedBefore(any())).thenReturn(Mono.just(0L));
+        when(refreshTokenRepository.deleteSessionsEndedBefore(any())).thenReturn(Mono.just(0L));
+        when(expireOnboardingWorkflow.expire()).thenReturn(Mono.deferContextual(ctx -> {
+            tenantsSeen.add(ctx.get(ReactorContextKeys.TENANT_DOMAIN));
+            return Mono.just(2L);
+        }));
+
+        // Act + Assert
+        StepVerifier.create(job.cleanup()).expectNext(4L).verifyComplete();
+        assertThat(tenantsSeen).containsExactly("sandbox", "cgcom");
     }
 
     @Test
