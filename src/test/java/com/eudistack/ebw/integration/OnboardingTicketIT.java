@@ -1,0 +1,361 @@
+package com.eudistack.ebw.integration;
+
+import com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilter;
+import com.eudistack.ebw.support.FakeVerifierServer;
+import com.eudistack.ebw.support.SoftwareAuthenticator;
+import com.eudistack.ebw.support.TestSystemTokens;
+import com.eudistack.ebw.support.WalletAuthClient;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.reactive.server.WebTestClient;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * End-to-end onboarding ticket flow on a running service with PostgreSQL and a simulated tenant
+ * Verifier (EUD-315 task 11, first part): the ticket request with system tokens, the redemption
+ * and the restricted onboarding mode. Two tenants: {@link #TEST_TENANT}, with onboarding tickets
+ * and mode {@code open}, and {@link #RESTRICTED_TENANT}, in mode {@code restricted} without
+ * onboarding tickets.
+ */
+class OnboardingTicketIT extends IntegrationTestBase {
+
+    private static final String RESTRICTED_TENANT = "onboardingb";
+    private static final String RESTRICTED_SCHEMA = RESTRICTED_TENANT + "_business_wallet";
+    private static final String SIGNUP_URL = "https://portal.onboardingb.example/";
+    private static final String PUBLIC_HOST = TEST_TENANT + ".eudistack.test";
+    private static final String ISSUER = "https://" + PUBLIC_HOST + "/verifier";
+    private static final String OFFER =
+            "openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fissuer.example%2Fcredential-offer%2F3f2a";
+
+    private static final TestSystemTokens VERIFIER_KEYS = new TestSystemTokens();
+    private static final FakeVerifierServer VERIFIER = new FakeVerifierServer(VERIFIER_KEYS.publicJwks());
+
+    static {
+        configureTenant(TEST_TENANT + "_business_wallet", Map.of(
+                "ebw.onboarding.enabled", "true",
+                "ebw.onboarding.mode", "open"));
+        provisionSchema(RESTRICTED_SCHEMA);
+        configureTenant(RESTRICTED_SCHEMA, Map.of(
+                "ebw.webauthn.rp_id", RESTRICTED_TENANT + ".eudistack.test",
+                "ebw.webauthn.origins", "https://" + RESTRICTED_TENANT + ".eudistack.test",
+                "ebw.onboarding.enabled", "false",
+                "ebw.onboarding.mode", "restricted",
+                "ebw.onboarding.signup_url", SIGNUP_URL));
+    }
+
+    @DynamicPropertySource
+    static void verifierProperties(DynamicPropertyRegistry registry) {
+        registry.add("ebw.verifier.internal-url", VERIFIER::internalUrl);
+    }
+
+    // ------------------------------------------------------------------ fixtures
+
+    private static void provisionSchema(String schema) {
+        try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
+            conn.createStatement().execute("CREATE SCHEMA IF NOT EXISTS " + schema);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        Flyway.configure().dataSource(postgres.getJdbcUrl(), "test", "test").locations("classpath:db/tenant")
+                .defaultSchema(schema).schemas(schema).table("flyway_schema_history").baselineOnMigrate(true)
+                .load().migrate();
+    }
+
+    private static void configureTenant(String schema, Map<String, String> values) {
+        try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
+            for (var entry : values.entrySet()) {
+                var statement = conn.prepareStatement("INSERT INTO " + schema + ".tenant_config (config_key, config_value)"
+                        + " VALUES (?, ?) ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value");
+                statement.setString(1, entry.getKey());
+                statement.setString(2, entry.getValue());
+                statement.execute();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static long count(String schema, String where) {
+        try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test");
+             var result = conn.createStatement().executeQuery("SELECT count(*) FROM " + schema + "." + where)) {
+            result.next();
+            return result.getLong(1);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static long countInTestTenant(String where) {
+        return count(TEST_TENANT + "_business_wallet", where);
+    }
+
+    private static String email(String name) {
+        return name + "-" + System.nanoTime() + "@example.com";
+    }
+
+    private static String adminToken() {
+        return VERIFIER_KEYS.token(ISSUER, TEST_TENANT);
+    }
+
+    private WebTestClient.ResponseSpec requestTicket(String token, Map<String, Object> body) {
+        return webClient.post().uri("/api/v1/onboarding-tickets")
+                .header("X-Forwarded-Proto", "https")
+                .header("X-Forwarded-Host", PUBLIC_HOST)
+                .headers(h -> {
+                    if (token != null) {
+                        h.setBearerAuth(token);
+                    }
+                })
+                .bodyValue(body)
+                .exchange();
+    }
+
+    /** The ticket of a new onboarding address for {@code email}, with the offer. */
+    private String ticketFor(String email) {
+        var url = (String) requestTicket(adminToken(), Map.of("email", email, "credentialOffer", OFFER))
+                .expectStatus().isCreated()
+                .expectBody(Map.class).returnResult().getResponseBody().get("onboardingUrl");
+        return url.substring(url.lastIndexOf('/') + 1);
+    }
+
+    private WebTestClient.ResponseSpec redeem(String ticket, String tenant, String accessToken) {
+        return redeem(ticket, tenant, accessToken, null);
+    }
+
+    /**
+     * @param forwardedFor {@code X-Forwarded-For} as our proxies send it; {@code null} for the local address.
+     *                     The rate limiter remembers blocked addresses in memory, so a test that exhausts a
+     *                     budget uses its own address and does not block the other tests.
+     */
+    private WebTestClient.ResponseSpec redeem(String ticket, String tenant, String accessToken, String forwardedFor) {
+        return webClient.post().uri("/api/v1/auth/onboarding-tickets/redeem")
+                .header(TenantDomainWebFilter.HEADER_X_TENANT, tenant)
+                .headers(h -> {
+                    if (accessToken != null) {
+                        h.setBearerAuth(accessToken);
+                    }
+                    if (forwardedFor != null) {
+                        h.set("X-Forwarded-For", forwardedFor);
+                    }
+                })
+                .bodyValue(Map.of("ticket", ticket))
+                .exchange();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> redeemed(String ticket) {
+        return redeem(ticket, TEST_TENANT, null).expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+    }
+
+    // ------------------------------------------------------------------ ticket request
+
+    @Test
+    void requestTicket_tenantAdministratorMachine_getsAShortAddressAndCreatesNoAccount() {
+        // Arrange: AC-01
+        var email = email("ana");
+
+        // Act
+        var body = requestTicket(adminToken(), Map.of("email", email, "credentialOffer", OFFER))
+                .expectStatus().isCreated()
+                .expectBody(Map.class).returnResult().getResponseBody();
+
+        // Assert
+        var url = (String) body.get("onboardingUrl");
+        assertThat(url).matches("https://" + PUBLIC_HOST.replace(".", "\\.") + "/t/[A-Za-z0-9_-]{22}");
+        assertThat(body.get("expiresIn")).isEqualTo(300);
+        var ticket = url.substring(url.lastIndexOf('/') + 1);
+        assertThat(ticket).hasSize(22);
+        assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'")).isEqualTo(1);
+        assertThat(countInTestTenant("onboarding_preregistration WHERE token_hash = '" + ticket + "'")).isZero();
+        assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isZero();
+        assertThat(countInTestTenant("audit_log WHERE action = 'PREREGISTRATION_CREATED'"
+                + " AND metadata LIKE '%portal-machine.example.org%'")).isPositive();
+        assertThat(countInTestTenant("audit_log WHERE metadata LIKE '%" + email + "%'")).isZero();
+    }
+
+    @Test
+    void requestTicket_withoutTheTenantAdministratorPower_isRejectedAndStoresNothing() {
+        // Arrange: AC-02
+        var email = email("rejected");
+        var future = Instant.now().plusSeconds(60);
+        var adminPower = List.of(TestSystemTokens.onboardingPower(TEST_TENANT));
+
+        // Act + Assert
+        requestTicket(null, Map.of("email", email)).expectStatus().isUnauthorized();
+        requestTicket(VERIFIER_KEYS.token(ISSUER, TEST_TENANT, "LEARCredentialEmployee", adminPower, future),
+                Map.of("email", email)).expectStatus().isForbidden()
+                .expectBody().jsonPath("$.type").isEqualTo("insufficient_permission");
+        requestTicket(VERIFIER_KEYS.token(ISSUER, TEST_TENANT, "LEARCredentialMachine",
+                        List.of(Map.of("type", "Domain", "domain", TEST_TENANT, "function", "ProductOffering",
+                                "action", List.of("Create"))), future),
+                Map.of("email", email)).expectStatus().isForbidden();
+        requestTicket(VERIFIER_KEYS.token(ISSUER, TEST_TENANT, "LEARCredentialMachine",
+                        List.of(TestSystemTokens.onboardingPower("kpmg")), future),
+                Map.of("email", email)).expectStatus().isForbidden();
+        requestTicket(VERIFIER_KEYS.token(ISSUER, "kpmg", "LEARCredentialMachine", adminPower, future),
+                Map.of("email", email)).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_token");
+        assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'")).isZero();
+    }
+
+    @Test
+    void requestTicket_tenantWithoutOnboardingTickets_isOnboardingDisabled() {
+        // Arrange: AC-02, the restricted tenant does not enable onboarding tickets
+        var token = VERIFIER_KEYS.token("https://" + RESTRICTED_TENANT + ".eudistack.test/verifier", RESTRICTED_TENANT,
+                "LEARCredentialMachine", List.of(TestSystemTokens.onboardingPower(RESTRICTED_TENANT)),
+                Instant.now().plusSeconds(60));
+
+        // Act + Assert
+        webClient.post().uri("/api/v1/onboarding-tickets")
+                .header(TenantDomainWebFilter.HEADER_X_TENANT, RESTRICTED_TENANT)
+                .header("X-Forwarded-Proto", "https")
+                .header("X-Forwarded-Host", RESTRICTED_TENANT + ".eudistack.test")
+                .headers(h -> h.setBearerAuth(token))
+                .bodyValue(Map.of("email", email("disabled")))
+                .exchange()
+                .expectStatus().isForbidden()
+                .expectBody().jsonPath("$.type").isEqualTo("onboarding_disabled");
+    }
+
+    // ------------------------------------------------------------------ redemption
+
+    @Test
+    void redeem_emailWithoutAccount_givesTheRegistrationTicketAndTheOfferWithoutCreatingTheAccount() {
+        // Arrange
+        var email = email("new");
+        var ticket = ticketFor(email);
+
+        // Act
+        var body = redeemed(ticket);
+
+        // Assert
+        assertThat(body).containsEntry("hasPasskeys", false).containsEntry("sessionOfAccount", false)
+                .containsEntry("credentialOffer", OFFER).containsKey("registrationTicket");
+        assertThat(body.get("expiresIn")).isEqualTo(300);
+        assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isZero();
+        assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'"
+                + " AND webauthn_user_handle IS NOT NULL AND redeemed_at IS NOT NULL")).isEqualTo(1);
+    }
+
+    @Test
+    void redeem_sameTicketTwice_isInvalidTheSecondTime() {
+        // Arrange: AC-06
+        var ticket = ticketFor(email("twice"));
+        redeemed(ticket);
+
+        // Act + Assert
+        redeem(ticket, TEST_TENANT, null).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_ticket");
+        assertThat(countInTestTenant("audit_log WHERE action = 'ONBOARDING_TICKET_REJECTED'")).isPositive();
+    }
+
+    @Test
+    void redeem_twoConcurrentRedemptions_onlyOneSucceeds() {
+        // Arrange: AC-07
+        var ticket = ticketFor(email("concurrent"));
+        var statuses = new ArrayList<CompletableFuture<HttpStatus>>();
+
+        // Act
+        for (int i = 0; i < 2; i++) {
+            statuses.add(CompletableFuture.supplyAsync(() -> HttpStatus.valueOf(
+                    redeem(ticket, TEST_TENANT, null).returnResult(Void.class).getStatus().value())));
+        }
+        var results = statuses.stream().map(CompletableFuture::join).toList();
+
+        // Assert
+        assertThat(results).containsExactlyInAnyOrder(HttpStatus.OK, HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void redeem_accountWithPasskeys_givesNoRegistrationTicketAndDeletesThePreregistration() {
+        // Arrange: AC-08
+        var email = email("existing");
+        authClient().signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        var ticket = ticketFor(email);
+
+        // Act
+        var body = redeemed(ticket);
+
+        // Assert
+        assertThat(body).containsEntry("hasPasskeys", true).containsEntry("credentialOffer", OFFER)
+                .doesNotContainKey("registrationTicket");
+        assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'")).isZero();
+    }
+
+    @Test
+    void redeem_withASessionOfTheTicketAccount_saysSo() {
+        // Arrange: AC-09
+        var email = email("session");
+        var session = authClient().signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        var ticket = ticketFor(email);
+
+        // Act + Assert
+        redeem(ticket, TEST_TENANT, session.accessToken()).expectStatus().isOk().expectBody()
+                .jsonPath("$.sessionOfAccount").isEqualTo(true)
+                .jsonPath("$.registrationTicket").doesNotExist()
+                .jsonPath("$.credentialOffer").isEqualTo(OFFER);
+    }
+
+    @Test
+    void redeem_ticketOfAnotherTenant_isInvalidAndLeavesItIntact() {
+        // Arrange: AC-12
+        var email = email("othertenant");
+        var ticket = ticketFor(email);
+
+        // Act + Assert
+        redeem(ticket, RESTRICTED_TENANT, null).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_ticket");
+        assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'"
+                + " AND redeemed_at IS NULL")).isEqualTo(1);
+    }
+
+    @Test
+    void redeem_overTheLimitPerIp_isRateLimited() {
+        // Arrange: ES-07, 10 per origin and window
+        var unknownTicket = "AAAAAAAAAAAAAAAAAAAAAA";
+        var forwardedFor = "198.51.100.1, 203.0.113.60, 10.0.0.9";
+        for (int i = 0; i < 10; i++) {
+            redeem(unknownTicket, TEST_TENANT, null, forwardedFor).expectStatus().isUnauthorized();
+        }
+
+        // Act + Assert
+        redeem(unknownTicket, TEST_TENANT, null, forwardedFor).expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
+                .expectHeader().exists("Retry-After")
+                .expectBody().jsonPath("$.type").isEqualTo("rate_limited");
+    }
+
+    // ------------------------------------------------------------------ restricted mode
+
+    @Test
+    void verifyEmail_restrictedModeEmailWithoutAccount_createsNothingAndAnswersNoAccount() {
+        // Arrange: AC-13
+        setupEmailCapture();
+        var email = email("restricted");
+        var client = new WalletAuthClient(webClient, capturedOtps,
+                h -> h.set(TenantDomainWebFilter.HEADER_X_TENANT, RESTRICTED_TENANT),
+                "https://" + RESTRICTED_TENANT + ".eudistack.test");
+        client.requestCode(email).expectStatus().isAccepted();
+
+        // Act + Assert
+        client.verifyCode(email, capturedOtps.get(email)).expectStatus().isForbidden().expectBody()
+                .jsonPath("$.type").isEqualTo("no_account")
+                .jsonPath("$.signupUrl").isEqualTo(SIGNUP_URL);
+        assertThat(count(RESTRICTED_SCHEMA, "wallet_user WHERE email = '" + email + "'")).isZero();
+        assertThat(count(RESTRICTED_SCHEMA, "audit_log WHERE action = 'ONBOARDING_WITHOUT_TICKET_REJECTED'"))
+                .isPositive();
+    }
+}
