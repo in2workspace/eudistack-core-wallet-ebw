@@ -3,6 +3,8 @@ package com.eudistack.ebw.application.workflow;
 import com.eudistack.ebw.domain.model.AuthRejectionReason;
 import com.eudistack.ebw.domain.model.CeremonyType;
 import com.eudistack.ebw.domain.model.IssuedSession;
+import com.eudistack.ebw.domain.model.OnboardingDisavowal;
+import com.eudistack.ebw.domain.model.OnboardingPreregistration;
 import com.eudistack.ebw.domain.model.RegistrationOptions;
 import com.eudistack.ebw.domain.model.RegistrationTicket;
 import com.eudistack.ebw.domain.model.RelyingPartySettings;
@@ -10,10 +12,13 @@ import com.eudistack.ebw.domain.model.UserPasskey;
 import com.eudistack.ebw.domain.model.VerifiedPasskeyRegistration;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.WebAuthnCeremony;
+import com.eudistack.ebw.domain.model.exception.DuplicateAccountException;
 import com.eudistack.ebw.domain.model.exception.InvalidTicketException;
 import com.eudistack.ebw.domain.model.exception.PasskeyPrfUnsupportedException;
 import com.eudistack.ebw.domain.model.exception.RegistrationFailedException;
 import com.eudistack.ebw.domain.model.exception.WebAuthnVerificationException;
+import com.eudistack.ebw.domain.repository.OnboardingDisavowalRepository;
+import com.eudistack.ebw.domain.repository.OnboardingPreregistrationRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.domain.repository.WebAuthnCeremonyRepository;
@@ -30,6 +35,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -42,6 +48,16 @@ import java.util.UUID;
  * and opening the session are one transaction: a failure leaves nothing stored. Rejections are
  * audited outside it. If the account already had a passkey, the holder is emailed after the
  * commit; a failed or slow email never fails the registration.
+ *
+ * <p>With a registration ticket of an onboarding pre-registration (EUD-315, design §2.6), the same
+ * transaction creates the account with the WebAuthn user handle the options already sent (decision
+ * P2), or recognizes the account the ticket names if it still has no passkey; marks the passkey with
+ * the pre-registration, deletes it and, for a new account, keeps the "it was not me" row without
+ * token (decision P6). An onboarding ticket never adds a passkey to an account that has one: the
+ * account is locked and checked inside the transaction (FR-28, decision P7). If the account of the
+ * email appeared after the redemption, the passkey would carry another user handle and could never
+ * sign in, so the registration is rejected too. Every registration ceremony is bound to the ticket
+ * that started it (decision P9). All provisional, pending the Tech Lead.
  */
 @Service
 public class PasskeyRegistrationWorkflow {
@@ -64,6 +80,8 @@ public class PasskeyRegistrationWorkflow {
     private final EmailSender emailSender;
     private final AuditService auditService;
     private final TransactionRunner transactionRunner;
+    private final OnboardingPreregistrationRepository preregistrationRepository;
+    private final OnboardingDisavowalRepository disavowalRepository;
 
     /** Input of {@link #register}. {@code replacedRefreshToken} is the refresh cookie of the request, if any. */
     public record RegisterPasskeyCommand(String rawTicket, UUID ceremonyId, String credentialJson,
@@ -72,6 +90,22 @@ public class PasskeyRegistrationWorkflow {
 
     private record Stored(IssuedSession session, UserPasskey passkey, boolean hadPasskeys) {}
 
+    /** Who the passkey is for: the account, or the one an onboarding pre-registration will create. */
+    private record Target(UUID userId, byte[] userHandle, String email) {}
+
+    /** Account of an onboarding registration, and whether this registration created it. */
+    private record OnboardingAccount(WalletUser user, boolean created) {}
+
+    /** The onboarding ticket cannot register this passkey (decision P7); answered as {@code invalid_ticket}. */
+    private static final class OnboardingAccountConflictException extends RuntimeException {
+        private final String reason;
+
+        private OnboardingAccountConflictException(String reason) {
+            super(reason, null, false, false);
+            this.reason = reason;
+        }
+    }
+
     @SuppressWarnings("java:S107")
     public PasskeyRegistrationWorkflow(RegistrationTicketService ticketService, WalletUserRepository userRepository,
                                        UserPasskeyRepository passkeyRepository,
@@ -79,7 +113,9 @@ public class PasskeyRegistrationWorkflow {
                                        WalletAuthSettingsService settingsService, PasskeyCustodyPolicy custodyPolicy,
                                        WebAuthnVerifier webAuthnVerifier, SecureRandomGenerator randomGenerator,
                                        SessionOpener sessionOpener, EmailSender emailSender,
-                                       AuditService auditService, TransactionRunner transactionRunner) {
+                                       AuditService auditService, TransactionRunner transactionRunner,
+                                       OnboardingPreregistrationRepository preregistrationRepository,
+                                       OnboardingDisavowalRepository disavowalRepository) {
         this.ticketService = ticketService;
         this.userRepository = userRepository;
         this.passkeyRepository = passkeyRepository;
@@ -92,33 +128,159 @@ public class PasskeyRegistrationWorkflow {
         this.emailSender = emailSender;
         this.auditService = auditService;
         this.transactionRunner = transactionRunner;
+        this.preregistrationRepository = preregistrationRepository;
+        this.disavowalRepository = disavowalRepository;
     }
 
     public Mono<RegistrationOptions> startRegistration(String rawTicket) {
         return ticketService.resolve(rawTicket)
-                .flatMap(this::accountOf)
-                .flatMap(user -> Mono.zip(settingsService.relyingParty(), custodyPolicy.isPasskeyCustody(),
-                                passkeyRepository.findByUserId(user.getId()).collectList())
-                        .flatMap(tuple -> {
-                            var ceremony = WebAuthnCeremony.start(CeremonyType.REGISTRATION,
-                                    randomGenerator.generateBytes(WebAuthnCeremony.CHALLENGE_LENGTH), user.getId());
-                            return ceremonyRepository.insert(ceremony)
-                                    .thenReturn(new RegistrationOptions(ceremony.id(), tuple.getT1(),
-                                            user.getWebauthnUserHandle(), user.getEmail(), ceremony.challenge(),
-                                            tuple.getT3(), tuple.getT2()));
-                        }));
+                .flatMap(ticket -> targetOf(ticket)
+                        .flatMap(target -> Mono.zip(settingsService.relyingParty(), custodyPolicy.isPasskeyCustody(),
+                                        passkeysOf(target.userId()))
+                                .flatMap(tuple -> {
+                                    var ceremony = WebAuthnCeremony.startRegistration(
+                                            randomGenerator.generateBytes(WebAuthnCeremony.CHALLENGE_LENGTH),
+                                            target.userId(), ticket.id());
+                                    return ceremonyRepository.insert(ceremony)
+                                            .thenReturn(new RegistrationOptions(ceremony.id(), tuple.getT1(),
+                                                    target.userHandle(), target.email(), ceremony.challenge(),
+                                                    tuple.getT3(), tuple.getT2()));
+                                })));
+    }
+
+    /** The account of the ticket or, without one, the account its pre-registration will create. */
+    private Mono<Target> targetOf(RegistrationTicket ticket) {
+        if (ticket.userId() != null) {
+            return accountOf(ticket).map(user -> new Target(user.getId(), user.getWebauthnUserHandle(),
+                    user.getEmail()));
+        }
+        return preregistrationOf(ticket)
+                .map(preregistration -> new Target(null, preregistration.webauthnUserHandle(),
+                        preregistration.email()));
+    }
+
+    private Mono<List<UserPasskey>> passkeysOf(UUID userId) {
+        return userId == null ? Mono.just(List.of()) : passkeyRepository.findByUserId(userId).collectList();
     }
 
     public Mono<IssuedSession> register(RegisterPasskeyCommand command) {
         return ticketService.resolve(command.rawTicket())
-                .flatMap(ticket -> accountOf(ticket)
-                        .flatMap(user -> consumeCeremony(command.ceremonyId(), ticket)
+                .flatMap(ticket -> ticket.preregistrationId() == null
+                        ? registerForAccount(command, ticket)
+                        : registerWithOnboardingTicket(command, ticket));
+    }
+
+    private Mono<IssuedSession> registerForAccount(RegisterPasskeyCommand command, RegistrationTicket ticket) {
+        return accountOf(ticket)
+                .flatMap(user -> consumeCeremony(command.ceremonyId(), ticket)
                                 .flatMap(ceremony -> Mono.zip(settingsService.relyingParty(),
                                                 custodyPolicy.isPasskeyCustody())
                                         .flatMap(tuple -> registerVerified(command, ticket, ceremony, user,
                                                 tuple.getT1(), tuple.getT2())))
                                 .onErrorResume(RegistrationFailedException.class,
-                                        e -> auditRejection(user, e.getReason()).then(Mono.error(e)))));
+                                        e -> auditRejection(user, e.getReason()).then(Mono.error(e))));
+    }
+
+    private Mono<IssuedSession> registerWithOnboardingTicket(RegisterPasskeyCommand command,
+                                                             RegistrationTicket ticket) {
+        return preregistrationOf(ticket)
+                .flatMap(preregistration -> consumeCeremony(command.ceremonyId(), ticket)
+                        .flatMap(ceremony -> Mono.zip(settingsService.relyingParty(), custodyPolicy.isPasskeyCustody())
+                                .flatMap(tuple -> registerOnboarding(command, ticket, preregistration, ceremony,
+                                        tuple.getT1(), tuple.getT2())))
+                        .onErrorResume(RegistrationFailedException.class,
+                                e -> auditOnboardingRejection(preregistration, e.getReason().code())
+                                        .then(Mono.error(e))));
+    }
+
+    @SuppressWarnings("java:S107")
+    private Mono<IssuedSession> registerOnboarding(RegisterPasskeyCommand command, RegistrationTicket ticket,
+                                                   OnboardingPreregistration preregistration,
+                                                   WebAuthnCeremony ceremony, RelyingPartySettings relyingParty,
+                                                   boolean passkeyCustody) {
+        boolean prfSupported = Boolean.TRUE.equals(command.prfSupported());
+        if (passkeyCustody && !prfSupported) {
+            AuthRejectionLog.log(log, REJECTION_SUBJECT, AuthRejectionReason.PRF_UNSUPPORTED);
+            return auditOnboardingRejection(preregistration, AuthRejectionReason.PRF_UNSUPPORTED.code())
+                    .then(Mono.error(new PasskeyPrfUnsupportedException()));
+        }
+        return verify(command.credentialJson(), ceremony, relyingParty)
+                .flatMap(verified -> passkeyRepository.findByCredentialId(verified.credentialId())
+                        .flatMap(existing -> Mono.<VerifiedPasskeyRegistration>error(new RegistrationFailedException(
+                                AuthRejectionReason.CREDENTIAL_ALREADY_REGISTERED)))
+                        .defaultIfEmpty(verified))
+                .flatMap(verified -> transactionRunner.inTransaction(
+                        ticketService.consume(ticket)
+                                .then(onboardingAccount(ticket, preregistration))
+                                .flatMap(account -> storeOnboardingPasskey(command, account, verified, prfSupported,
+                                        preregistration))))
+                .doOnError(RegistrationFailedException.class,
+                        e -> AuthRejectionLog.log(log, REJECTION_SUBJECT, e.getReason()))
+                .onErrorResume(OnboardingAccountConflictException.class,
+                        e -> preregistrationRepository.deleteById(preregistration.id())
+                                .then(auditOnboardingRejection(preregistration, e.reason))
+                                .then(Mono.error(new InvalidTicketException())));
+    }
+
+    /** Inside the transaction: passkey, mark, session, pre-registration deleted, "it was not me" row. */
+    private Mono<IssuedSession> storeOnboardingPasskey(RegisterPasskeyCommand command, OnboardingAccount account,
+                                                       VerifiedPasskeyRegistration verified, boolean prfSupported,
+                                                       OnboardingPreregistration preregistration) {
+        return storePasskey(command, account.user(), verified, prfSupported)
+                .flatMap(passkey -> passkeyRepository.markOnboarding(passkey.getId(), preregistration.id())
+                        .then(sessionOpener.open(account.user(), passkey.getId(), command.replacedRefreshToken(),
+                                "registration"))
+                        .flatMap(session -> preregistrationRepository.deleteById(preregistration.id())
+                                .then(account.created()
+                                        ? disavowalRepository.insert(OnboardingDisavowal.pending(
+                                                account.user().getId(), passkey.getId(),
+                                                preregistration.requestedBy(), passkey.getCreatedAt())).then()
+                                        : Mono.<Void>empty())
+                                .thenReturn(session)));
+    }
+
+    /**
+     * Inside the registration transaction. The account the ticket names is locked, so a concurrent
+     * registration of the same account waits and then finds the passkey of the first one.
+     */
+    private Mono<OnboardingAccount> onboardingAccount(RegistrationTicket ticket,
+                                                      OnboardingPreregistration preregistration) {
+        if (ticket.userId() != null) {
+            return userRepository.lockById(ticket.userId())
+                    .switchIfEmpty(Mono.error(new InvalidTicketException()))
+                    .flatMap(user -> passkeyRepository.countByUserId(user.getId()).defaultIfEmpty(0L)
+                            .flatMap(passkeys -> passkeys > 0
+                                    ? Mono.<OnboardingAccount>error(
+                                            new OnboardingAccountConflictException("account_has_passkeys"))
+                                    : auditService.record(AuthAuditEvents.ENTITY_USER, user.getId(),
+                                                    AuthAuditEvents.ACCOUNT_RECOGNIZED, user.getId(), Map.of())
+                                            .thenReturn(new OnboardingAccount(user, false))));
+        }
+        return userRepository.findByEmail(preregistration.email())
+                .flatMap(existing -> Mono.<OnboardingAccount>error(
+                        new OnboardingAccountConflictException("account_appeared")))
+                .switchIfEmpty(Mono.defer(() -> userRepository
+                        .save(WalletUser.create(preregistration.email(), preregistration.webauthnUserHandle()))
+                        .onErrorMap(DuplicateAccountException.class,
+                                e -> new OnboardingAccountConflictException("account_appeared"))
+                        .flatMap(created -> auditService.record(AuthAuditEvents.ENTITY_USER, created.getId(),
+                                        AuthAuditEvents.ACCOUNT_CREATED, created.getId(), Map.of("onboarding", true))
+                                .thenReturn(new OnboardingAccount(created, true)))));
+    }
+
+    /** The pre-registration of the ticket; without an account it must hold the user handle (decision P2). */
+    private Mono<OnboardingPreregistration> preregistrationOf(RegistrationTicket ticket) {
+        if (ticket.preregistrationId() == null) {
+            return Mono.error(new InvalidTicketException());
+        }
+        return preregistrationRepository.findById(ticket.preregistrationId())
+                .filter(preregistration -> preregistration.webauthnUserHandle() != null || ticket.userId() != null)
+                .switchIfEmpty(Mono.error(new InvalidTicketException()));
+    }
+
+    private Mono<Void> auditOnboardingRejection(OnboardingPreregistration preregistration, String reason) {
+        return auditService.record(AuthAuditEvents.ENTITY_PREREGISTRATION, preregistration.id(),
+                AuthAuditEvents.PASSKEY_REJECTED, null, Map.of("reason", reason));
     }
 
     private Mono<IssuedSession> registerVerified(RegisterPasskeyCommand command, RegistrationTicket ticket,
@@ -182,11 +344,16 @@ public class PasskeyRegistrationWorkflow {
         return ceremonyRepository.consume(ceremonyId, CeremonyType.REGISTRATION)
                 .switchIfEmpty(Mono.error(new RegistrationFailedException(AuthRejectionReason.CEREMONY_INVALID)))
                 .flatMap(ceremony -> Objects.equals(ceremony.userId(), ticket.userId())
+                        && Objects.equals(ceremony.registrationTicketId(), ticket.id())
                         ? Mono.just(ceremony)
                         : Mono.error(new RegistrationFailedException(AuthRejectionReason.CEREMONY_MISMATCH)));
     }
 
+    /** A ticket without account and without pre-registration never creates one (EC-07). */
     private Mono<WalletUser> accountOf(RegistrationTicket ticket) {
+        if (ticket.userId() == null) {
+            return Mono.error(new InvalidTicketException());
+        }
         return userRepository.findById(ticket.userId())
                 .switchIfEmpty(Mono.error(new InvalidTicketException()));
     }

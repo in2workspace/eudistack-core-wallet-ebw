@@ -27,8 +27,9 @@ public class OnboardingDisavowalR2dbcRepository implements OnboardingDisavowalRe
                       created_at
             """;
 
-    private static final String DELETE_SQL =
-            "DELETE FROM onboarding_disavowal WHERE consumed_at IS NOT NULL OR expires_at <= now()";
+    /** Also the rows whose email was never sent, once they could no longer be used anyway. */
+    private static final String DELETE_SQL = "DELETE FROM onboarding_disavowal WHERE consumed_at IS NOT NULL"
+            + " OR expires_at <= now() OR (token_hash IS NULL AND created_at < now() - interval '7 days')";
 
     private final DatabaseClient databaseClient;
 
@@ -40,12 +41,16 @@ public class OnboardingDisavowalR2dbcRepository implements OnboardingDisavowalRe
     public Mono<OnboardingDisavowal> insert(OnboardingDisavowal disavowal) {
         var spec = databaseClient.sql(INSERT_SQL)
                 .bind("id", disavowal.id())
-                .bind("tokenHash", disavowal.tokenHash())
                 .bind("userId", disavowal.userId())
                 .bind("requestedBy", disavowal.requestedBy())
                 .bind("registeredAt", disavowal.registeredAt())
-                .bind("expiresAt", disavowal.expiresAt())
                 .bind("createdAt", disavowal.createdAt());
+        spec = disavowal.tokenHash() == null
+                ? spec.bindNull("tokenHash", String.class)
+                : spec.bind("tokenHash", disavowal.tokenHash());
+        spec = disavowal.expiresAt() == null
+                ? spec.bindNull("expiresAt", Instant.class)
+                : spec.bind("expiresAt", disavowal.expiresAt());
         spec = disavowal.passkeyId() == null
                 ? spec.bindNull("passkeyId", UUID.class)
                 : spec.bind("passkeyId", disavowal.passkeyId());

@@ -26,6 +26,15 @@ public record OnboardingDisavowal(
 
     public static final Duration TTL = Duration.ofDays(7);
 
+    /**
+     * Row created with the account, before the new-account email: the token and its expiry are set
+     * when the email is sent (EUD-315 decision P6, provisional).
+     */
+    public static OnboardingDisavowal pending(UUID userId, UUID passkeyId, String requestedBy, Instant registeredAt) {
+        return new OnboardingDisavowal(UUID.randomUUID(), null, userId, passkeyId, requestedBy, registeredAt, null,
+                null, Instant.now());
+    }
+
     public static OnboardingDisavowal issue(String tokenHash, UUID userId, UUID passkeyId, String requestedBy,
                                             Instant registeredAt) {
         var now = Instant.now();

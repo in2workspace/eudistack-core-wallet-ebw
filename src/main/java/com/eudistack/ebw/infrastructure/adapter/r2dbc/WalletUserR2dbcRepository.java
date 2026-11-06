@@ -26,6 +26,11 @@ public class WalletUserR2dbcRepository implements WalletUserRepository {
     }
 
     @Override
+    public Mono<WalletUser> lockById(UUID id) {
+        return springRepository.lockById(id).map(UserMapper::toDomain);
+    }
+
+    @Override
     public Mono<WalletUser> findByEmail(String email) {
         return springRepository.findByEmail(email).map(UserMapper::toDomain);
     }

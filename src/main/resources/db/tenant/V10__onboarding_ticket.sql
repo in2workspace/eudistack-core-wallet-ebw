@@ -43,14 +43,17 @@ CREATE INDEX idx_onboarding_preregistration_expires_at ON onboarding_preregistra
 -- onboarding_disavowal
 -- passkey_id: SET NULL if the holder removes the passkey before using the link.
 -- -----------------------------------------------------------------------------
+-- token_hash and expires_at are set when the new-account email is sent, which may be after the
+-- registration (EUD-315 decision P6, provisional): only the hash is stored, so the raw token can
+-- only be built at that moment.
 CREATE TABLE onboarding_disavowal (
     id            UUID         PRIMARY KEY,
-    token_hash    VARCHAR(64)  NOT NULL,
+    token_hash    VARCHAR(64),
     user_id       UUID         NOT NULL REFERENCES wallet_user (id) ON DELETE CASCADE,
     passkey_id    UUID         REFERENCES user_passkey (id) ON DELETE SET NULL,
     requested_by  VARCHAR(255) NOT NULL,
     registered_at TIMESTAMPTZ  NOT NULL,
-    expires_at    TIMESTAMPTZ  NOT NULL,
+    expires_at    TIMESTAMPTZ,
     consumed_at   TIMESTAMPTZ,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
 
@@ -73,6 +76,10 @@ ALTER TABLE registration_ticket
 -- user_passkey: passkey registered with an onboarding ticket
 -- -----------------------------------------------------------------------------
 ALTER TABLE user_passkey ADD COLUMN onboarding_preregistration_id UUID;
+
+-- A registration ceremony is bound to the registration ticket that started it (EUD-315 decision
+-- P9, provisional): without an account its user_id is null, so it alone binds nothing.
+ALTER TABLE webauthn_ceremony ADD COLUMN registration_ticket_id UUID;
 
 REVOKE ALL ON onboarding_preregistration FROM PUBLIC;
 REVOKE ALL ON onboarding_disavowal FROM PUBLIC;

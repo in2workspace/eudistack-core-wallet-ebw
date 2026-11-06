@@ -11,5 +11,11 @@ public interface WalletUserRepository {
 
     Mono<WalletUser> findByEmail(String email);
 
+    /**
+     * Reads the account and locks its row until the end of the transaction, so two registrations
+     * with onboarding tickets of the same account are serialized (EUD-315 decision P7).
+     */
+    Mono<WalletUser> lockById(UUID id);
+
     Mono<WalletUser> save(WalletUser user);
 }
