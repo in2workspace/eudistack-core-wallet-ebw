@@ -35,6 +35,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
     private static final String RESTRICTED_TENANT = "onboardingb";
     private static final String RESTRICTED_SCHEMA = RESTRICTED_TENANT + "_business_wallet";
     private static final String SIGNUP_URL = "https://portal.onboardingb.example/";
+    private static final String SECURITY_CONTACT = "security@integrationtest.example";
     private static final String PUBLIC_HOST = TEST_TENANT + ".eudistack.test";
     private static final String ISSUER = "https://" + PUBLIC_HOST + "/verifier";
     private static final String OFFER =
@@ -46,7 +47,8 @@ class OnboardingTicketIT extends IntegrationTestBase {
     static {
         configureTenant(TEST_TENANT + "_business_wallet", Map.of(
                 "ebw.onboarding.enabled", "true",
-                "ebw.onboarding.mode", "open"));
+                "ebw.onboarding.mode", "open",
+                "ebw.onboarding.security_contact", SECURITY_CONTACT));
         provisionSchema(RESTRICTED_SCHEMA);
         configureTenant(RESTRICTED_SCHEMA, Map.of(
                 "ebw.webauthn.rp_id", RESTRICTED_TENANT + ".eudistack.test",
@@ -357,5 +359,80 @@ class OnboardingTicketIT extends IntegrationTestBase {
         assertThat(count(RESTRICTED_SCHEMA, "wallet_user WHERE email = '" + email + "'")).isZero();
         assertThat(count(RESTRICTED_SCHEMA, "audit_log WHERE action = 'ONBOARDING_WITHOUT_TICKET_REJECTED'"))
                 .isPositive();
+    }
+
+    // ------------------------------------------------------------------ "it was not me"
+
+    private static String sha256(String raw) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * An account created with a ticket and the "it was not me" token of its new-account email. Until
+     * task 6 creates it, the token row is inserted here as the registration will store it.
+     */
+    private String disavowalTokenFor(String email, String expiresAt) {
+        authClient().signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        var token = "nm" + System.nanoTime() + "abcdefghijklmnopqrstuvwxyz";
+        var schema = TEST_TENANT + "_business_wallet";
+        try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
+            var inserted = conn.createStatement().executeUpdate("INSERT INTO " + schema + ".onboarding_disavowal"
+                    + " (id, token_hash, user_id, passkey_id, requested_by, registered_at, expires_at)"
+                    + " SELECT gen_random_uuid(), '" + sha256(token) + "', u.id, p.id, 'portal-machine.example.org',"
+                    + " now(), " + expiresAt + " FROM " + schema + ".wallet_user u JOIN " + schema + ".user_passkey p"
+                    + " ON p.user_id = u.id WHERE u.email = '" + email + "'");
+            assertThat(inserted).isEqualTo(1);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        return token;
+    }
+
+    private WebTestClient.ResponseSpec disavow(String token) {
+        return webClient.post().uri("/api/v1/auth/onboarding-tickets/disavowals")
+                .bodyValue(Map.of("token", token)).exchange();
+    }
+
+    @Test
+    void disavow_endsTheSessionsRemovesThePasskeyAndAlertsTheSecurityContact() {
+        // Arrange: AC-10
+        var email = email("notme");
+        var token = disavowalTokenFor(email, "now() + interval '7 days'");
+        org.mockito.Mockito.when(emailSender.sendOnboardingAlert(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(reactor.core.publisher.Mono.empty());
+
+        // Act
+        disavow(token).expectStatus().isNoContent();
+
+        // Assert
+        var user = "(SELECT id FROM " + TEST_TENANT + "_business_wallet.wallet_user WHERE email = '" + email + "')";
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + user)).isZero();
+        assertThat(countInTestTenant("refresh_token WHERE user_id = " + user + " AND revoked = false")).isZero();
+        assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isEqualTo(1);
+        assertThat(countInTestTenant("audit_log WHERE action = 'ONBOARDING_DISAVOWED' AND actor_id = " + user))
+                .isEqualTo(1);
+        org.mockito.Mockito.verify(emailSender).sendOnboardingAlert(org.mockito.ArgumentMatchers.eq(SECURITY_CONTACT),
+                org.mockito.ArgumentMatchers.argThat(alert -> alert.maskedEmail().startsWith("n***@")
+                        && !alert.maskedEmail().contains("notme")), org.mockito.ArgumentMatchers.any());
+
+        // A second time, the link is no longer valid
+        disavow(token).expectStatus().isUnauthorized().expectBody().jsonPath("$.type").isEqualTo("invalid_token");
+    }
+
+    @Test
+    void disavow_tokenOlderThanSevenDays_isInvalidAndChangesNothing() {
+        // Arrange: AC-10
+        var email = email("notmelate");
+        var token = disavowalTokenFor(email, "now() - interval '1 minute'");
+
+        // Act + Assert
+        disavow(token).expectStatus().isUnauthorized();
+        assertThat(countInTestTenant("user_passkey WHERE user_id = (SELECT id FROM " + TEST_TENANT
+                + "_business_wallet.wallet_user WHERE email = '" + email + "')")).isEqualTo(1);
     }
 }

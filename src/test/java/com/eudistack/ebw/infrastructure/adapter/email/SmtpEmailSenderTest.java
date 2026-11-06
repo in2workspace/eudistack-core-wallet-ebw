@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.adapter.email;
 
+import com.eudistack.ebw.domain.model.OnboardingAlert;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.repository.TenantRegistryRepository;
 import com.eudistack.ebw.domain.service.TenantConfigService;
@@ -22,8 +23,10 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 
@@ -114,6 +117,31 @@ class SmtpEmailSenderTest {
                 .contains("https://assets.example.com/tenants/dome/email/logo.png")
                 .contains("cid:icon-github.png");
         assertThat(contentIds(message)).containsExactly("<icon-github.png>");
+    }
+
+    @Test
+    void sendOnboardingAlert_securityContact_getsTheMaskedEmailTheDateAndTheSystem() throws Exception {
+        // Arrange: FR-32, the alert never carries the holder's full email
+        when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
+        var alert = new OnboardingAlert(OnboardingAlert.mask("ana.garcia@cgcom.es"),
+                Instant.parse("2026-10-30T09:42:00Z"), "portal-machine.cgcom.es");
+
+        // Act
+        StepVerifier.create(sender.sendOnboardingAlert("security@cgcom.es", alert, Locale.ENGLISH)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "cgcom")))
+                .verifyComplete();
+
+        // Assert
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).isEqualTo("Wallet onboarding not recognized — CGCOM");
+        assertThat(message.getAllRecipients()).extracting(Address::toString).containsExactly("security@cgcom.es");
+        assertThat(htmlOf(message))
+                .contains("The holder of a***@cgcom.es has said they did not create their wallet.")
+                .contains("Created: 30/10/2026 10:42")
+                .contains("System that requested the onboarding: portal-machine.cgcom.es")
+                .doesNotContain("ana.garcia");
     }
 
     @Test

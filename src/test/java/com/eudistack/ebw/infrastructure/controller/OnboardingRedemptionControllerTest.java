@@ -1,7 +1,9 @@
 package com.eudistack.ebw.infrastructure.controller;
 
+import com.eudistack.ebw.application.workflow.DisavowOnboardingWorkflow;
 import com.eudistack.ebw.application.workflow.RedeemOnboardingTicketWorkflow;
 import com.eudistack.ebw.domain.model.OnboardingTicketRedemption;
+import com.eudistack.ebw.domain.model.exception.InvalidDisavowalTokenException;
 import com.eudistack.ebw.domain.model.exception.InvalidTicketException;
 import com.eudistack.ebw.infrastructure.security.ActiveSessionChecker;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
@@ -34,17 +36,19 @@ class OnboardingRedemptionControllerTest {
     private static final String OFFER = "openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fi.example%2Fo";
 
     private RedeemOnboardingTicketWorkflow workflow;
+    private DisavowOnboardingWorkflow disavowWorkflow;
     private ActiveSessionChecker activeSessionChecker;
 
     @BeforeEach
     void setUp() {
         workflow = mock(RedeemOnboardingTicketWorkflow.class);
+        disavowWorkflow = mock(DisavowOnboardingWorkflow.class);
         activeSessionChecker = mock(ActiveSessionChecker.class);
     }
 
     private WebTestClient client(JwtAuthenticationToken session) {
         var builder = WebTestClient.bindToController(new OnboardingRedemptionController(workflow,
-                        activeSessionChecker))
+                        disavowWorkflow, activeSessionChecker))
                 .controllerAdvice(new AuthProblemExceptionHandler(mock(RefreshCookies.class)));
         if (session != null) {
             WebFilter authenticated = (exchange, chain) -> chain.filter(exchange)
@@ -135,5 +139,38 @@ class OnboardingRedemptionControllerTest {
                 .jsonPath("$.type").isEqualTo("invalid_request");
         redeem(client(null), "Zk3q9Xw2Lp7Rt4Vb8Nc1H=").expectStatus().isBadRequest();
         verify(workflow, never()).redeem(anyString(), any());
+    }
+
+    private static WebTestClient.ResponseSpec disavow(WebTestClient client, Object token) {
+        return client.post().uri("/api/v1/auth/onboarding-tickets/disavowals").contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("token", token)).exchange();
+    }
+
+    @Test
+    void disavow_validToken_answers204() {
+        // Arrange: AC-10
+        var token = "k".repeat(43);
+        when(disavowWorkflow.disavow(token)).thenReturn(Mono.empty());
+
+        // Act + Assert
+        disavow(client(null), token).expectStatus().isNoContent().expectBody().isEmpty();
+    }
+
+    @Test
+    void disavow_usedOrExpiredToken_answers401InvalidToken() {
+        // Arrange: AC-10
+        when(disavowWorkflow.disavow(anyString())).thenReturn(Mono.error(new InvalidDisavowalTokenException()));
+
+        // Act + Assert
+        disavow(client(null), "k".repeat(43)).expectStatus().isUnauthorized().expectBody()
+                .jsonPath("$.type").isEqualTo("invalid_token");
+    }
+
+    @Test
+    void disavow_malformedToken_answers400() {
+        // Act + Assert
+        disavow(client(null), "short").expectStatus().isBadRequest();
+        disavow(client(null), "k".repeat(65)).expectStatus().isBadRequest();
+        verify(disavowWorkflow, never()).disavow(anyString());
     }
 }

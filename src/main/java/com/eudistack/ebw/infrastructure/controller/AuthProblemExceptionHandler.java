@@ -1,6 +1,7 @@
 package com.eudistack.ebw.infrastructure.controller;
 
 import com.eudistack.ebw.domain.model.exception.AuthenticationFailedException;
+import com.eudistack.ebw.domain.model.exception.InvalidDisavowalTokenException;
 import com.eudistack.ebw.domain.model.exception.InvalidOnboardingRequestException;
 import com.eudistack.ebw.domain.model.exception.NoAccountException;
 import com.eudistack.ebw.domain.model.exception.InvalidOtpException;
@@ -56,6 +57,12 @@ public class AuthProblemExceptionHandler {
     @ExceptionHandler(InvalidOnboardingRequestException.class)
     public ResponseEntity<ProblemDetail> handleInvalidOnboardingRequest(InvalidOnboardingRequestException ex) {
         return problem(HttpStatus.BAD_REQUEST, AuthProblems.INVALID_REQUEST);
+    }
+
+    /** "It was not me" token unknown, used or expired (AC-10). */
+    @ExceptionHandler(InvalidDisavowalTokenException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidDisavowalToken(InvalidDisavowalTokenException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, AuthProblems.INVALID_TOKEN);
     }
 
     /** Restricted mode: the email has no account; {@code signupUrl} only when the tenant has one (FR-34). */

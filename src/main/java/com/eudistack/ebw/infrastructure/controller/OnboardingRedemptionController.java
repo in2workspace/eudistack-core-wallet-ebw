@@ -1,17 +1,21 @@
 package com.eudistack.ebw.infrastructure.controller;
 
+import com.eudistack.ebw.application.workflow.DisavowOnboardingWorkflow;
 import com.eudistack.ebw.application.workflow.RedeemOnboardingTicketWorkflow;
+import com.eudistack.ebw.infrastructure.controller.dto.DisavowOnboardingRequest;
 import com.eudistack.ebw.infrastructure.controller.dto.RedeemOnboardingTicketRequest;
 import com.eudistack.ebw.infrastructure.controller.dto.RedeemOnboardingTicketResponse;
 import com.eudistack.ebw.infrastructure.security.ActiveSessionChecker;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
@@ -28,12 +32,22 @@ import java.util.UUID;
 public class OnboardingRedemptionController {
 
     private final RedeemOnboardingTicketWorkflow redeemWorkflow;
+    private final DisavowOnboardingWorkflow disavowWorkflow;
     private final ActiveSessionChecker activeSessionChecker;
 
     public OnboardingRedemptionController(RedeemOnboardingTicketWorkflow redeemWorkflow,
+                                          DisavowOnboardingWorkflow disavowWorkflow,
                                           ActiveSessionChecker activeSessionChecker) {
         this.redeemWorkflow = redeemWorkflow;
+        this.disavowWorkflow = disavowWorkflow;
         this.activeSessionChecker = activeSessionChecker;
+    }
+
+    /** "It was not me" from the new-account email: needs no session and never starts one (FR-32). */
+    @PostMapping("/disavowals")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Mono<Void> disavow(@Valid @RequestBody DisavowOnboardingRequest request) {
+        return disavowWorkflow.disavow(request.token());
     }
 
     /**
