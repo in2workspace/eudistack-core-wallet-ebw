@@ -75,6 +75,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     @Mock private TransactionRunner transactionRunner;
     @Mock private OnboardingPreregistrationRepository preregistrationRepository;
     @Mock private OnboardingDisavowalRepository disavowalRepository;
+    @Mock private NotifyOnboardingAccountCreatedWorkflow onboardingNotice;
 
     private PasskeyRegistrationWorkflow workflow;
     private byte[] handle;
@@ -88,7 +89,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     void setUp() {
         workflow = new PasskeyRegistrationWorkflow(ticketService, userRepository, passkeyRepository, ceremonyRepository,
                 settingsService, custodyPolicy, webAuthnVerifier, randomGenerator, sessionOpener, emailSender,
-                auditService, transactionRunner, preregistrationRepository, disavowalRepository);
+                auditService, transactionRunner, preregistrationRepository, disavowalRepository, onboardingNotice);
         handle = new byte[WalletUser.USER_HANDLE_LENGTH];
         Arrays.fill(handle, (byte) 7);
         preregistration = withHandle(OnboardingPreregistration.create("h", EMAIL, null, "portal-machine.example.org",
@@ -115,6 +116,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         lenient().when(passkeyRepository.markOnboarding(any(), any())).thenReturn(Mono.empty());
         lenient().when(sessionOpener.open(any(), any(), eq(null), eq("registration"))).thenReturn(Mono.just(session));
         lenient().when(disavowalRepository.insert(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        lenient().when(onboardingNotice.notify(any(), any())).thenReturn(Mono.empty());
     }
 
     private static OnboardingPreregistration withHandle(OnboardingPreregistration p, byte[] handle) {
@@ -181,6 +183,8 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         assertThat(row.getValue().expiresAt()).isNull();
         assertThat(row.getValue().requestedBy()).isEqualTo("portal-machine.example.org");
         assertThat(row.getValue().passkeyId()).isNotNull();
+        // Provisional (P5): the new-account email goes right after the registration
+        verify(onboardingNotice).notify(row.getValue().passkeyId(), "Passkey");
     }
 
     @Test
@@ -200,6 +204,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         StepVerifier.create(workflow.register(command(ceremony.id(), null))).expectNext(session).verifyComplete();
         verify(userRepository, never()).save(any());
         verify(disavowalRepository, never()).insert(any());
+        verify(onboardingNotice, never()).notify(any(), any());
         verify(preregistrationRepository).deleteById(preregistration.id());
     }
 

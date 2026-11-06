@@ -27,6 +27,13 @@ public class OnboardingDisavowalR2dbcRepository implements OnboardingDisavowalRe
                       created_at
             """;
 
+    private static final String ASSIGN_TOKEN_SQL = """
+            UPDATE onboarding_disavowal SET token_hash = :tokenHash, expires_at = :expiresAt
+             WHERE passkey_id = :passkeyId AND token_hash IS NULL
+            RETURNING id, token_hash, user_id, passkey_id, requested_by, registered_at, expires_at, consumed_at,
+                      created_at
+            """;
+
     /** Also the rows whose email was never sent, once they could no longer be used anyway. */
     private static final String DELETE_SQL = "DELETE FROM onboarding_disavowal WHERE consumed_at IS NOT NULL"
             + " OR expires_at <= now() OR (token_hash IS NULL AND created_at < now() - interval '7 days')";
@@ -61,6 +68,16 @@ public class OnboardingDisavowalR2dbcRepository implements OnboardingDisavowalRe
     public Mono<OnboardingDisavowal> consume(String tokenHash) {
         return databaseClient.sql(CONSUME_SQL)
                 .bind("tokenHash", tokenHash)
+                .map((row, metadata) -> toDisavowal(row))
+                .one();
+    }
+
+    @Override
+    public Mono<OnboardingDisavowal> assignToken(UUID passkeyId, String tokenHash, Instant expiresAt) {
+        return databaseClient.sql(ASSIGN_TOKEN_SQL)
+                .bind("passkeyId", passkeyId)
+                .bind("tokenHash", tokenHash)
+                .bind("expiresAt", expiresAt)
                 .map((row, metadata) -> toDisavowal(row))
                 .one();
     }

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="en">
+<head th:replace="~{fragments/email-layout :: head(title=#{email.account-created.header})}">
+    <title>Your wallet has been created</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Blinker', Arial, Helvetica, sans-serif;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #ffffff;">
+    <tr>
+        <td align="center" style="padding: 24px 10px;">
+            <table role="presentation" width="640" cellspacing="0" cellpadding="0" border="0" style="width: 100%; max-width: 640px; background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+                <tr th:replace="~{fragments/email-layout :: header(${branding}, #{email.account-created.greeting}, 'font-size: 18px; line-height: 1.5; margin-bottom: 8px;')}"></tr>
+
+                <!-- CONTENT (EUD-8 wireframes, "Cuenta nueva"; FR-29) -->
+                <tr>
+                    <td align="center" style="padding: 12px 40px 32px 40px; font-family: 'Blinker', Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.5; color: #000000; text-align: center;">
+                        <p style="margin: 0 0 16px 0; font-size: 20px; font-weight: 700;" th:text="#{email.account-created.header}">Your wallet has been created</p>
+                        <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400;" th:text="#{email.account-created.body(${createdAt}, ${requestedBy}, ${deviceName})}">On 30/10/2026 10:42 your wallet was created from the issuance portal, on the device «iPhone · Safari».</p>
+                        <p style="margin: 0 0 24px 0; font-size: 14px; font-weight: 400;" th:text="#{email.account-created.hint}">If it was you, you do not need to do anything.</p>
+                        <p style="margin: 0 0 12px 0; font-size: 14px; font-weight: 700;" th:text="#{email.account-created.question}">Was it not you?</p>
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin: 0 auto 12px auto;">
+                            <tr>
+                                <td align="center" style="border-radius: 6px; background-color: #000000;">
+                                    <a th:href="${disavowalUrl}" href="#" style="display: inline-block; padding: 12px 24px; font-size: 14px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 6px;" th:text="#{email.account-created.button}">It was not me</a>
+                                </td>
+                            </tr>
+                        </table>
+                        <p style="margin: 0; font-size: 12px; font-weight: 400;" th:text="#{email.account-created.expiry(${linkExpiresAt})}">The link expires on 06/11/2026.</p>
+                    </td>
+                </tr>
+
+                <tr th:replace="~{fragments/email-layout :: footer(${branding}, ~{::footerText})}">
+                    <td>
+                        <span th:fragment="footerText" style="font-size: 12px; font-weight: 400;" th:text="#{email.account-created.footer}">The link can be used only once. It ends the sessions of the wallet and removes the passkey that was created.</span>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+</body>
+</html>

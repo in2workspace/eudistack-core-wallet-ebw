@@ -70,6 +70,7 @@ class PasskeyRegistrationWorkflowTest {
     @Mock private TransactionRunner transactionRunner;
     @Mock private OnboardingPreregistrationRepository preregistrationRepository;
     @Mock private OnboardingDisavowalRepository disavowalRepository;
+    @Mock private NotifyOnboardingAccountCreatedWorkflow onboardingNotice;
 
     private PasskeyRegistrationWorkflow workflow;
     private WalletUser user;
@@ -82,7 +83,7 @@ class PasskeyRegistrationWorkflowTest {
     void setUp() {
         workflow = new PasskeyRegistrationWorkflow(ticketService, userRepository, passkeyRepository, ceremonyRepository,
                 settingsService, custodyPolicy, webAuthnVerifier, randomGenerator, sessionOpener, emailSender,
-                auditService, transactionRunner, preregistrationRepository, disavowalRepository);
+                auditService, transactionRunner, preregistrationRepository, disavowalRepository, onboardingNotice);
         user = TestPasskeys.user("holder@example.com");
         ticket = RegistrationTicket.issue(user.getId(), "hash");
         ceremony = WebAuthnCeremony.startRegistration(new byte[32], user.getId(), ticket.id());

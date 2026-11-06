@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.adapter.email;
 
+import com.eudistack.ebw.domain.model.AccountCreatedNotice;
 import com.eudistack.ebw.domain.model.OnboardingAlert;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.repository.TenantRegistryRepository;
@@ -142,6 +143,29 @@ class SmtpEmailSenderTest {
                 .contains("Created: 30/10/2026 10:42")
                 .contains("System that requested the onboarding: portal-machine.cgcom.es")
                 .doesNotContain("ana.garcia");
+    }
+
+    @Test
+    void sendAccountCreatedNotice_holder_getsTheDateTheSystemTheDeviceAndTheLink() throws Exception {
+        // Arrange: FR-29
+        when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
+        var notice = new AccountCreatedNotice(Instant.parse("2026-10-30T09:42:00Z"), "portal-machine.cgcom.es",
+                "iPhone · Safari", "https://cgcom.eudistack.net/no-he-sido-yo/tok", Instant.parse("2026-11-06T09:42:00Z"));
+
+        // Act
+        StepVerifier.create(sender.sendAccountCreatedNotice("ana@cgcom.es", notice, Locale.ENGLISH)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "cgcom")))
+                .verifyComplete();
+
+        // Assert
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).isEqualTo("Your CGCOM wallet has been created");
+        assertThat(htmlOf(message))
+                .contains("On 30/10/2026 10:42 your wallet was created from portal-machine.cgcom.es")
+                .contains("href=\"https://cgcom.eudistack.net/no-he-sido-yo/tok\"")
+                .contains("The link expires on 06/11/2026.");
     }
 
     @Test

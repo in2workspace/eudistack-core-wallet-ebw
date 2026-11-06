@@ -82,6 +82,7 @@ public class PasskeyRegistrationWorkflow {
     private final TransactionRunner transactionRunner;
     private final OnboardingPreregistrationRepository preregistrationRepository;
     private final OnboardingDisavowalRepository disavowalRepository;
+    private final NotifyOnboardingAccountCreatedWorkflow onboardingNotice;
 
     /** Input of {@link #register}. {@code replacedRefreshToken} is the refresh cookie of the request, if any. */
     public record RegisterPasskeyCommand(String rawTicket, UUID ceremonyId, String credentialJson,
@@ -95,6 +96,9 @@ public class PasskeyRegistrationWorkflow {
 
     /** Account of an onboarding registration, and whether this registration created it. */
     private record OnboardingAccount(WalletUser user, boolean created) {}
+
+    /** What an onboarding registration stored, for the new-account email after the commit. */
+    private record OnboardingStored(IssuedSession session, UserPasskey passkey, boolean created) {}
 
     /** The onboarding ticket cannot register this passkey (decision P7); answered as {@code invalid_ticket}. */
     private static final class OnboardingAccountConflictException extends RuntimeException {
@@ -115,7 +119,8 @@ public class PasskeyRegistrationWorkflow {
                                        SessionOpener sessionOpener, EmailSender emailSender,
                                        AuditService auditService, TransactionRunner transactionRunner,
                                        OnboardingPreregistrationRepository preregistrationRepository,
-                                       OnboardingDisavowalRepository disavowalRepository) {
+                                       OnboardingDisavowalRepository disavowalRepository,
+                                       NotifyOnboardingAccountCreatedWorkflow onboardingNotice) {
         this.ticketService = ticketService;
         this.userRepository = userRepository;
         this.passkeyRepository = passkeyRepository;
@@ -130,6 +135,7 @@ public class PasskeyRegistrationWorkflow {
         this.transactionRunner = transactionRunner;
         this.preregistrationRepository = preregistrationRepository;
         this.disavowalRepository = disavowalRepository;
+        this.onboardingNotice = onboardingNotice;
     }
 
     public Mono<RegistrationOptions> startRegistration(String rawTicket) {
@@ -216,6 +222,12 @@ public class PasskeyRegistrationWorkflow {
                                         preregistration))))
                 .doOnError(RegistrationFailedException.class,
                         e -> AuthRejectionLog.log(log, REJECTION_SUBJECT, e.getReason()))
+                // PROVISIONAL (decision P5): the new-account email goes after the commit, until the device
+                // registration of EUD-15 sends it. Best effort: it never fails the registration.
+                .flatMap(stored -> stored.created()
+                        ? onboardingNotice.notify(stored.passkey().getId(), stored.passkey().getDisplayName())
+                                .thenReturn(stored.session())
+                        : Mono.just(stored.session()))
                 .onErrorResume(OnboardingAccountConflictException.class,
                         e -> preregistrationRepository.deleteById(preregistration.id())
                                 .then(auditOnboardingRejection(preregistration, e.reason))
@@ -223,7 +235,7 @@ public class PasskeyRegistrationWorkflow {
     }
 
     /** Inside the transaction: passkey, mark, session, pre-registration deleted, "it was not me" row. */
-    private Mono<IssuedSession> storeOnboardingPasskey(RegisterPasskeyCommand command, OnboardingAccount account,
+    private Mono<OnboardingStored> storeOnboardingPasskey(RegisterPasskeyCommand command, OnboardingAccount account,
                                                        VerifiedPasskeyRegistration verified, boolean prfSupported,
                                                        OnboardingPreregistration preregistration) {
         return storePasskey(command, account.user(), verified, prfSupported)
@@ -236,7 +248,7 @@ public class PasskeyRegistrationWorkflow {
                                                 account.user().getId(), passkey.getId(),
                                                 preregistration.requestedBy(), passkey.getCreatedAt())).then()
                                         : Mono.<Void>empty())
-                                .thenReturn(session)));
+                                .thenReturn(new OnboardingStored(session, passkey, account.created()))));
     }
 
     /**

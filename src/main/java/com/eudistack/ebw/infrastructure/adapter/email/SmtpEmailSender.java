@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.adapter.email;
 
+import com.eudistack.ebw.domain.model.AccountCreatedNotice;
 import com.eudistack.ebw.domain.model.OnboardingAlert;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.repository.TenantRegistryRepository;
@@ -38,12 +39,15 @@ public class SmtpEmailSender implements EmailSender {
     private static final String NEW_PASSKEY_SUBJECT_KEY = "email.new-passkey.subject";
     private static final String ONBOARDING_ALERT_TEMPLATE = "onboarding-alert-email";
     private static final String ONBOARDING_ALERT_SUBJECT_KEY = "email.onboarding-alert.subject";
+    private static final String ACCOUNT_CREATED_TEMPLATE = "account-created-email";
+    private static final String ACCOUNT_CREATED_SUBJECT_KEY = "email.account-created.subject";
     /**
      * Time zone of the dates in the emails. PROVISIONAL (EUD-315 decision P10): {@code ebw.timezone}
      * of the tenant does not exist yet; this is its default in the design (§2.8).
      */
     private static final ZoneId EMAIL_ZONE = ZoneId.of("Europe/Madrid");
     private static final DateTimeFormatter EMAIL_DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final DateTimeFormatter EMAIL_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     /** The only message bundle is English. */
     private static final Locale LOCALE = Locale.ENGLISH;
     private static final String ICONS_PATH = "email/icons/";
@@ -94,6 +98,16 @@ public class SmtpEmailSender implements EmailSender {
                 "maskedEmail", alert.maskedEmail(),
                 "registeredAt", EMAIL_DATE_TIME.format(alert.registeredAt().atZone(EMAIL_ZONE)),
                 "requestedBy", alert.requestedBy()), locale);
+    }
+
+    @Override
+    public Mono<Void> sendAccountCreatedNotice(String email, AccountCreatedNotice notice, Locale locale) {
+        return sendBranded(email, ACCOUNT_CREATED_TEMPLATE, ACCOUNT_CREATED_SUBJECT_KEY, Map.of(
+                "createdAt", EMAIL_DATE_TIME.format(notice.createdAt().atZone(EMAIL_ZONE)),
+                "requestedBy", notice.requestedBy(),
+                "deviceName", notice.deviceName(),
+                "disavowalUrl", notice.disavowalUrl(),
+                "linkExpiresAt", EMAIL_DATE.format(notice.linkExpiresAt().atZone(EMAIL_ZONE))), locale);
     }
 
     /** Resolves the tenant's sender, display name and branding from the request context, then sends. */
