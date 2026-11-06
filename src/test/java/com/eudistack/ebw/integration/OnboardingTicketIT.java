@@ -1,5 +1,6 @@
 package com.eudistack.ebw.integration;
 
+import com.eudistack.ebw.domain.model.AccountCreatedNotice;
 import com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilter;
 import com.eudistack.ebw.support.FakeVerifierServer;
 import com.eudistack.ebw.support.SoftwareAuthenticator;
@@ -11,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.core.publisher.Mono;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -20,8 +22,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 
 /**
  * End-to-end onboarding ticket flow on a running service with PostgreSQL and a simulated tenant
@@ -34,6 +41,8 @@ class OnboardingTicketIT extends IntegrationTestBase {
 
     private static final String RESTRICTED_TENANT = "onboardingb";
     private static final String RESTRICTED_SCHEMA = RESTRICTED_TENANT + "_business_wallet";
+    private static final String DISABLED_TENANT = "onboardingc";
+    private static final String RESTRICTED_ORIGIN = "https://" + RESTRICTED_TENANT + ".eudistack.test";
     private static final String SIGNUP_URL = "https://portal.onboardingb.example/";
     private static final String SECURITY_CONTACT = "security@integrationtest.example";
     private static final String PUBLIC_HOST = TEST_TENANT + ".eudistack.test";
@@ -52,10 +61,14 @@ class OnboardingTicketIT extends IntegrationTestBase {
         provisionSchema(RESTRICTED_SCHEMA);
         configureTenant(RESTRICTED_SCHEMA, Map.of(
                 "ebw.webauthn.rp_id", RESTRICTED_TENANT + ".eudistack.test",
-                "ebw.webauthn.origins", "https://" + RESTRICTED_TENANT + ".eudistack.test",
-                "ebw.onboarding.enabled", "false",
+                "ebw.webauthn.origins", RESTRICTED_ORIGIN,
+                "ebw.onboarding.enabled", "true",
                 "ebw.onboarding.mode", "restricted",
                 "ebw.onboarding.signup_url", SIGNUP_URL));
+        provisionSchema(DISABLED_TENANT + "_business_wallet");
+        configureTenant(DISABLED_TENANT + "_business_wallet", Map.of(
+                "ebw.webauthn.rp_id", DISABLED_TENANT + ".eudistack.test",
+                "ebw.webauthn.origins", "https://" + DISABLED_TENANT + ".eudistack.test"));
     }
 
     @DynamicPropertySource
@@ -216,16 +229,16 @@ class OnboardingTicketIT extends IntegrationTestBase {
 
     @Test
     void requestTicket_tenantWithoutOnboardingTickets_isOnboardingDisabled() {
-        // Arrange: AC-02, the restricted tenant does not enable onboarding tickets
-        var token = VERIFIER_KEYS.token("https://" + RESTRICTED_TENANT + ".eudistack.test/verifier", RESTRICTED_TENANT,
-                "LEARCredentialMachine", List.of(TestSystemTokens.onboardingPower(RESTRICTED_TENANT)),
+        // Arrange: AC-02, a tenant that does not enable onboarding tickets
+        var token = VERIFIER_KEYS.token("https://" + DISABLED_TENANT + ".eudistack.test/verifier", DISABLED_TENANT,
+                "LEARCredentialMachine", List.of(TestSystemTokens.onboardingPower(DISABLED_TENANT)),
                 Instant.now().plusSeconds(60));
 
         // Act + Assert
         webClient.post().uri("/api/v1/onboarding-tickets")
-                .header(TenantDomainWebFilter.HEADER_X_TENANT, RESTRICTED_TENANT)
+                .header(TenantDomainWebFilter.HEADER_X_TENANT, DISABLED_TENANT)
                 .header("X-Forwarded-Proto", "https")
-                .header("X-Forwarded-Host", RESTRICTED_TENANT + ".eudistack.test")
+                .header("X-Forwarded-Host", DISABLED_TENANT + ".eudistack.test")
                 .headers(h -> h.setBearerAuth(token))
                 .bodyValue(Map.of("email", email("disabled")))
                 .exchange()
@@ -434,5 +447,124 @@ class OnboardingTicketIT extends IntegrationTestBase {
         disavow(token).expectStatus().isUnauthorized();
         assertThat(countInTestTenant("user_passkey WHERE user_id = (SELECT id FROM " + TEST_TENANT
                 + "_business_wallet.wallet_user WHERE email = '" + email + "')")).isEqualTo(1);
+    }
+
+    // ------------------------------------------------------------------ passkey registration with a ticket
+
+    /** Ticket of {@code tenant} for {@code email}, requested by its administrator machine. */
+    private String ticketFor(String email, String tenant) {
+        var host = tenant + ".eudistack.test";
+        var token = VERIFIER_KEYS.token("https://" + host + "/verifier", tenant, "LEARCredentialMachine",
+                List.of(TestSystemTokens.onboardingPower(tenant)), Instant.now().plusSeconds(60));
+        var url = (String) webClient.post().uri("/api/v1/onboarding-tickets")
+                .header(TenantDomainWebFilter.HEADER_X_TENANT, tenant)
+                .header("X-Forwarded-Proto", "https")
+                .header("X-Forwarded-Host", host)
+                .headers(h -> h.setBearerAuth(token))
+                .bodyValue(Map.of("email", email, "credentialOffer", OFFER))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(Map.class).returnResult().getResponseBody().get("onboardingUrl");
+        return url.substring(url.lastIndexOf('/') + 1);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String registrationTicketOf(String ticket, String tenant) {
+        var body = redeem(ticket, tenant, null).expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        return (String) body.get("registrationTicket");
+    }
+
+    /** Captures the new-account emails sent by the service. */
+    private List<AccountCreatedNotice> captureNotices() {
+        var notices = new CopyOnWriteArrayList<AccountCreatedNotice>();
+        doAnswer(invocation -> {
+            notices.add(invocation.getArgument(1));
+            return Mono.empty();
+        }).when(emailSender).sendAccountCreatedNotice(anyString(), any(), any());
+        when(emailSender.sendOnboardingAlert(anyString(), any(), any())).thenReturn(Mono.empty());
+        return notices;
+    }
+
+    private static String userOf(String email) {
+        return "(SELECT id FROM " + TEST_TENANT + "_business_wallet.wallet_user WHERE email = '" + email + "')";
+    }
+
+    @Test
+    void onboarding_emailWithoutAccount_createsTheAccountWithThePasskeyAndTheItWasNotMeLinkWorks() {
+        // Arrange: AC-03, then AC-10 with the link of the real email
+        var notices = captureNotices();
+        var email = email("fullonboarding");
+        var registrationTicket = registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT);
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
+
+        // Act
+        var session = authClient().registerPasskey(registrationTicket, authenticator);
+
+        // Assert: account, passkey marked with the pre-registration, pre-registration gone, session open
+        assertThat(session.accessToken()).isNotBlank();
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email)
+                + " AND onboarding_preregistration_id IS NOT NULL")).isEqualTo(1);
+        assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'")).isZero();
+        assertThat(countInTestTenant("onboarding_disavowal WHERE user_id = " + userOf(email)
+                + " AND token_hash IS NOT NULL")).isEqualTo(1);
+        // The passkey carries the user handle of the account: a later sign-in works (decision P2)
+        assertThat(authClient().signIn(authenticator).accessToken()).isNotBlank();
+        // The new-account email went out with the "it was not me" link (provisional, P5)
+        assertThat(notices).hasSize(1);
+        var link = notices.get(0).disavowalUrl();
+        assertThat(link).startsWith("https://" + PUBLIC_HOST + "/no-he-sido-yo/");
+
+        // And the link works
+        disavow(link.substring(link.lastIndexOf('/') + 1)).expectStatus().isNoContent();
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isZero();
+    }
+
+    @Test
+    void onboarding_restrictedTenant_createsTheAccountWithTheTicket() {
+        // Arrange: AC-17, the only way to create an account in restricted mode
+        captureNotices();
+        var email = email("restrictedonboarding");
+        var registrationTicket = registrationTicketOf(ticketFor(email, RESTRICTED_TENANT), RESTRICTED_TENANT);
+        var client = new WalletAuthClient(webClient, capturedOtps,
+                h -> h.set(TenantDomainWebFilter.HEADER_X_TENANT, RESTRICTED_TENANT), RESTRICTED_ORIGIN);
+
+        // Act
+        var session = client.registerPasskey(registrationTicket, new SoftwareAuthenticator(RESTRICTED_ORIGIN));
+
+        // Assert
+        assertThat(session.accessToken()).isNotBlank();
+        assertThat(count(RESTRICTED_SCHEMA, "wallet_user WHERE email = '" + email + "'")).isEqualTo(1);
+    }
+
+    @Test
+    void onboarding_accountOfTheEmailAppearedAfterTheRedemption_isRejected() {
+        // Arrange: EC-04 (decision P7), the account is created by email between the redemption and the passkey
+        var email = email("appeared");
+        var registrationTicket = registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT);
+        authClient().signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+
+        // Act + Assert
+        authClient().registerPasskeySpec(registrationTicket, new SoftwareAuthenticator(TEST_ORIGIN), null)
+                .expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_ticket");
+        assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'")).isZero();
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isEqualTo(1);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void onboarding_ceremonyOfAnotherPreregistration_isRejected() {
+        // Arrange: EC-13 (decision P9), two tickets of emails without account
+        var client = authClient();
+        var first = registrationTicketOf(ticketFor(email("ceremonya"), TEST_TENANT), TEST_TENANT);
+        var second = registrationTicketOf(ticketFor(email("ceremonyb"), TEST_TENANT), TEST_TENANT);
+        var options = client.registrationOptions(first);
+        var credential = new SoftwareAuthenticator(TEST_ORIGIN).register((Map<String, Object>) options.get("publicKey"));
+
+        // Act + Assert
+        client.registerSpec(second, options.get("ceremonyId"), credential, true, null)
+                .expectStatus().isBadRequest()
+                .expectBody().jsonPath("$.type").isEqualTo("registration_failed");
     }
 }
