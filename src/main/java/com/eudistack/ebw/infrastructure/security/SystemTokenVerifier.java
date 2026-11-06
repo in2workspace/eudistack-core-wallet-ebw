@@ -12,6 +12,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
@@ -60,6 +61,8 @@ public class SystemTokenVerifier {
     private final VerifierJwksClient jwksClient;
     private final Clock clock;
 
+    /** The constructor Spring uses: with two constructors it needs to be told which one. */
+    @Autowired
     public SystemTokenVerifier(VerifierJwksClient jwksClient) {
         this(jwksClient, Clock.systemUTC());
     }
