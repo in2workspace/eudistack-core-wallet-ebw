@@ -127,6 +127,58 @@ class SystemTokenVerifierTest {
     }
 
     @Test
+    void verify_sdJwtMachineCredential_isAccepted() {
+        // Arrange: EC-14, an SD-JWT machine credential names its configuration id
+        var token = verifierKeys.token(ISSUER, TENANT, "learcredential.machine.sd.1",
+                List.of(TestSystemTokens.onboardingPower(TENANT)), Instant.now().plusSeconds(60));
+
+        // Act + Assert
+        StepVerifier.create(tokenVerifier.verify(token, TENANT, ISSUER)).expectNextCount(1).verifyComplete();
+    }
+
+    @Test
+    void verify_otherSdJwtCredential_isInsufficientPermission() {
+        expectRejected(verifierKeys.token(ISSUER, TENANT, "learcredential.employee.sd.1",
+                List.of(TestSystemTokens.onboardingPower(TENANT)), Instant.now().plusSeconds(60)),
+                "insufficient_permission");
+    }
+
+    @Test
+    void verify_tenantWithEnvironmentSuffix_isAccepted() {
+        // Arrange: EC-14, the Verifier's client registration of STG names the tenant sandbox-stg
+        var token = verifierKeys.token(ISSUER, "sandbox-stg", "LEARCredentialMachine",
+                List.of(TestSystemTokens.onboardingPower(TENANT)), Instant.now().plusSeconds(60));
+
+        // Act + Assert
+        StepVerifier.create(tokenVerifier.verify(token, TENANT, ISSUER)).expectNextCount(1).verifyComplete();
+    }
+
+    @Test
+    void verify_tenantWithSuffixOfAnotherTenant_isInvalidToken() {
+        expectRejected(verifierKeys.token(ISSUER, "kpmg-stg", "LEARCredentialMachine",
+                List.of(TestSystemTokens.onboardingPower(TENANT)), Instant.now().plusSeconds(60)), "invalid_token");
+    }
+
+    @Test
+    void verify_powerWithTmfAliases_isAccepted() {
+        // Arrange: EC-14, the fields of the power come as their tmf_ aliases
+        var token = verifierKeys.token(ISSUER, TENANT, "LEARCredentialMachine",
+                List.of(Map.of("tmf_type", "Domain", "tmf_domain", TENANT, "tmf_function", "Onboarding",
+                        "tmf_action", List.of("Execute"))), Instant.now().plusSeconds(60));
+
+        // Act + Assert
+        StepVerifier.create(tokenVerifier.verify(token, TENANT, ISSUER)).expectNextCount(1).verifyComplete();
+    }
+
+    @Test
+    void verify_powerWhoseFieldAndAliasDiffer_isInsufficientPermission() {
+        // Arrange: the field says this tenant and its alias another one, so the power is ignored
+        expectRejected(verifierKeys.token(ISSUER, TENANT, "LEARCredentialMachine",
+                List.of(Map.of("domain", TENANT, "tmf_domain", "kpmg", "function", "Onboarding",
+                        "action", "Execute")), Instant.now().plusSeconds(60)), "insufficient_permission");
+    }
+
+    @Test
     void verify_malformedOrMissing_isInvalidToken() {
         expectRejected("not-a-jwt", "invalid_token");
         expectRejected(null, "invalid_token");
