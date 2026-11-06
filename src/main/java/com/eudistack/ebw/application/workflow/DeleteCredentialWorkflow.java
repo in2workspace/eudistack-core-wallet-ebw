@@ -51,15 +51,16 @@ public class DeleteCredentialWorkflow {
                 .flatMap(credential -> {
                     var entityHash = credentialService.computeAuditHash(credential.getCredentialRaw());
 
-                    return auditService.record("credential", credentialId, "DELETED", userId,
+                    // Audited once the deletion has committed, so a rolled-back deletion leaves no DELETED entry.
+                    return transactionRunner.inTransaction(Mono.defer(() ->
+                                    holderKeyMaterial.delete(credential)
+                                            .then(Mono.defer(() -> credentialRepository.deleteById(credentialId)))))
+                            .then(Mono.defer(() -> auditService.record("credential", credentialId, "DELETED", userId,
                                     Map.of("entity_hash", "sha256:" + entityHash,
                                             "credential_type", credential.getCredentialType(),
                                             "issuer", credential.getIssuer(),
                                             "format", credential.getFormat().getValue(),
-                                            "previous_status", credential.getStatus().name()))
-                            .then(transactionRunner.inTransaction(Mono.defer(() ->
-                                    holderKeyMaterial.delete(credential)
-                                            .then(Mono.defer(() -> credentialRepository.deleteById(credentialId))))));
+                                            "previous_status", credential.getStatus().name()))));
                 })
                 .doOnSuccess(v -> log.info("Credential deleted: id={}, userId={}", credentialId, userId))
                 .doOnError(e -> log.error("Failed to delete credential: id={}, userId={}, error={}", credentialId, userId, e.getMessage()));

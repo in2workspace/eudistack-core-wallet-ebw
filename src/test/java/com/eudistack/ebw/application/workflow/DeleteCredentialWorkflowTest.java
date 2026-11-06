@@ -56,7 +56,7 @@ class DeleteCredentialWorkflowTest {
     }
 
     @Test
-    void deleteCredential_ownedCredential_recordsAuditThenDeletes() {
+    void deleteCredential_ownedCredential_deletesThenRecordsAudit() {
         // Arrange
         var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.SUSPENDED);
         when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.just(credential));
@@ -69,14 +69,14 @@ class DeleteCredentialWorkflowTest {
 
         // Assert
         StepVerifier.create(result).verifyComplete();
-        var order = inOrder(auditService, credentialRepository);
+        var order = inOrder(credentialRepository, auditService);
+        order.verify(credentialRepository).deleteById(CREDENTIAL_ID);
         order.verify(auditService).record("credential", CREDENTIAL_ID, "DELETED", USER_ID,
                 Map.of("entity_hash", "sha256:hash",
                         "credential_type", "LEARCredentialEmployee",
                         "issuer", "https://issuer",
                         "format", "dc+sd-jwt",
                         "previous_status", "SUSPENDED"));
-        order.verify(credentialRepository).deleteById(CREDENTIAL_ID);
     }
 
     @Test
@@ -105,7 +105,6 @@ class DeleteCredentialWorkflowTest {
         var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.VALID);
         when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.just(credential));
         when(credentialService.computeAuditHash("raw-credential")).thenReturn("hash");
-        when(auditService.record(any(), any(), any(), any(), any())).thenReturn(Mono.empty());
         when(holderKeyMaterial.delete(credential)).thenReturn(Mono.error(new IllegalStateException("db down")));
 
         // Act
@@ -114,6 +113,7 @@ class DeleteCredentialWorkflowTest {
         // Assert
         StepVerifier.create(result).expectError(IllegalStateException.class).verify();
         verify(credentialRepository, never()).deleteById(any());
+        verifyNoInteractions(auditService);
     }
 
     @Test
