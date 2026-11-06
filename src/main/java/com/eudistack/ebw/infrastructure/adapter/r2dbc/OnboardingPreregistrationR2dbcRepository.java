@@ -32,6 +32,9 @@ public class OnboardingPreregistrationR2dbcRepository implements OnboardingPrere
     private static final String ASSIGN_HANDLE_SQL =
             "UPDATE onboarding_preregistration SET webauthn_user_handle = :handle WHERE id = :id";
 
+    private static final String KEEP_UNTIL_SQL =
+            "UPDATE onboarding_preregistration SET expires_at = GREATEST(expires_at, :until) WHERE id = :id";
+
     private static final String FIND_SQL = "SELECT " + COLUMNS + " FROM onboarding_preregistration WHERE id = :id";
 
     private static final String DELETE_SQL = "DELETE FROM onboarding_preregistration WHERE id = :id";
@@ -75,6 +78,15 @@ public class OnboardingPreregistrationR2dbcRepository implements OnboardingPrere
         return databaseClient.sql(ASSIGN_HANDLE_SQL)
                 .bind("id", id)
                 .bind("handle", webauthnUserHandle)
+                .fetch().rowsUpdated()
+                .then();
+    }
+
+    @Override
+    public Mono<Void> keepUntil(UUID id, Instant until) {
+        return databaseClient.sql(KEEP_UNTIL_SQL)
+                .bind("id", id)
+                .bind("until", until)
                 .fetch().rowsUpdated()
                 .then();
     }

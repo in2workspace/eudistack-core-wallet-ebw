@@ -15,12 +15,14 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 /**
  * V10 and the onboarding repositories against PostgreSQL (EUD-315 task 2): atomic redemption,
@@ -83,6 +85,21 @@ class OnboardingRepositoriesIT extends IntegrationTestBase {
     }
 
     @Test
+    void keepUntil_extendsTheLifetimeButNeverShortensIt() {
+        // Arrange: decision P8, the redemption keeps the pre-registration for its registration ticket
+        var stored = insert(hash(), Duration.ofMinutes(1));
+        var later = stored.expiresAt().plus(Duration.ofMinutes(4));
+
+        // Act
+        block(preregistrationRepository.keepUntil(stored.id(), later));
+        block(preregistrationRepository.keepUntil(stored.id(), stored.expiresAt().minus(Duration.ofMinutes(10))));
+
+        // Assert
+        assertThat(block(preregistrationRepository.findById(stored.id())).expiresAt())
+                .isCloseTo(later, within(1, ChronoUnit.MILLIS));
+    }
+
+    @Test
     void assignUserHandle_thenFind_returnsTheHandle() {
         // Arrange
         var stored = insert(hash(), Duration.ofMinutes(5));
@@ -100,7 +117,7 @@ class OnboardingRepositoriesIT extends IntegrationTestBase {
     void deleteById_deletesTheRowAndItsRegistrationTickets() {
         // Arrange
         var stored = insert(hash(), Duration.ofMinutes(5));
-        var ticket = RegistrationTicket.issueForPreregistration(null, stored.id(), hash(), stored.expiresAt());
+        var ticket = RegistrationTicket.issueForPreregistration(null, stored.id(), hash());
         block(ticketRepository.insert(ticket));
         assertThat(block(ticketRepository.findUsableByTokenHash(ticket.tokenHash())).preregistrationId())
                 .isEqualTo(stored.id());

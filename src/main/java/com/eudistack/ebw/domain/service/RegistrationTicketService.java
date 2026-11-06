@@ -7,6 +7,7 @@ import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
 
@@ -34,6 +35,24 @@ public class RegistrationTicketService {
         var raw = Base64.getUrlEncoder().withoutPadding().encodeToString(randomGenerator.generateBytes(TICKET_BYTES));
         return ticketRepository.insert(RegistrationTicket.issue(userId, hashProvider.sha256(raw)))
                 .thenReturn(raw);
+    }
+
+    /** A raw registration ticket, never stored, and when it expires. */
+    public record IssuedTicket(String raw, Instant expiresAt) {
+        @Override
+        public String toString() {
+            return "IssuedTicket[raw=[redacted], expiresAt=" + expiresAt + "]";
+        }
+    }
+
+    /**
+     * Issues the ticket of a redeemed onboarding ticket, bound to its pre-registration and, if the
+     * email has one, to the account. Emits the raw ticket, which is never stored.
+     */
+    public Mono<IssuedTicket> issueForPreregistration(UUID userId, UUID preregistrationId) {
+        var raw = Base64.getUrlEncoder().withoutPadding().encodeToString(randomGenerator.generateBytes(TICKET_BYTES));
+        var ticket = RegistrationTicket.issueForPreregistration(userId, preregistrationId, hashProvider.sha256(raw));
+        return ticketRepository.insert(ticket).thenReturn(new IssuedTicket(raw, ticket.expiresAt()));
     }
 
     /** Resolves a usable (not consumed, not expired) ticket, or fails with {@link InvalidTicketException}. */

@@ -36,7 +36,7 @@ import org.springframework.web.server.ServerWebInputException;
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {AuthController.class, PasskeyRegistrationController.class,
-        SessionController.class, OnboardingTicketController.class})
+        SessionController.class, OnboardingTicketController.class, OnboardingRedemptionController.class})
 public class AuthProblemExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(AuthProblemExceptionHandler.class);

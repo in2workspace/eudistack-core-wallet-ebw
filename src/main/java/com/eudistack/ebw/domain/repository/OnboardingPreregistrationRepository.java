@@ -5,6 +5,7 @@ import com.eudistack.ebw.domain.model.OnboardingPreregistration;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.UUID;
 
 public interface OnboardingPreregistrationRepository {
@@ -20,6 +21,12 @@ public interface OnboardingPreregistrationRepository {
 
     /** Sets the WebAuthn user handle of the future account (EUD-315 decision P2, provisional). */
     Mono<Void> assignUserHandle(UUID id, byte[] webauthnUserHandle);
+
+    /**
+     * Keeps the pre-registration at least until {@code until}: the registration ticket of its
+     * redemption needs it (EUD-315 decision P8, provisional). Never shortens it.
+     */
+    Mono<Void> keepUntil(UUID id, Instant until);
 
     Mono<OnboardingPreregistration> findById(UUID id);
 
