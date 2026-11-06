@@ -25,6 +25,7 @@ public final class AuthProblems {
     /** System token, or "it was not me" token, not accepted (EUD-315). */
     public static final String INVALID_TOKEN = "invalid_token";
     public static final String INSUFFICIENT_PERMISSION = "insufficient_permission";
+    public static final String ONBOARDING_DISABLED = "onboarding_disabled";
     /** Not in the contract: the Verifier keys cannot be read, so no system token can be checked (EUD-315). */
     public static final String SERVICE_UNAVAILABLE = "service_unavailable";
     /** Not in the contract: cookie endpoint called without {@code X-Wallet-Request: 1}. */

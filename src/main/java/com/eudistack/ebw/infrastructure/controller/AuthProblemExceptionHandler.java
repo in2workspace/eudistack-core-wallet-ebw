@@ -1,9 +1,11 @@
 package com.eudistack.ebw.infrastructure.controller;
 
 import com.eudistack.ebw.domain.model.exception.AuthenticationFailedException;
+import com.eudistack.ebw.domain.model.exception.InvalidOnboardingRequestException;
 import com.eudistack.ebw.domain.model.exception.InvalidOtpException;
 import com.eudistack.ebw.domain.model.exception.InvalidSessionException;
 import com.eudistack.ebw.domain.model.exception.InvalidTicketException;
+import com.eudistack.ebw.domain.model.exception.OnboardingDisabledException;
 import com.eudistack.ebw.domain.model.exception.OtpExpiredException;
 import com.eudistack.ebw.domain.model.exception.PasskeyPrfUnsupportedException;
 import com.eudistack.ebw.domain.model.exception.RateLimitExceededException;
@@ -34,7 +36,7 @@ import org.springframework.web.server.ServerWebInputException;
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {AuthController.class, PasskeyRegistrationController.class,
-        SessionController.class})
+        SessionController.class, OnboardingTicketController.class})
 public class AuthProblemExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(AuthProblemExceptionHandler.class);
@@ -48,6 +50,16 @@ public class AuthProblemExceptionHandler {
     @ExceptionHandler(ServerWebInputException.class)
     public ResponseEntity<ProblemDetail> handleInvalidRequest(ServerWebInputException ex) {
         return problem(HttpStatus.BAD_REQUEST, AuthProblems.INVALID_REQUEST);
+    }
+
+    @ExceptionHandler(InvalidOnboardingRequestException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidOnboardingRequest(InvalidOnboardingRequestException ex) {
+        return problem(HttpStatus.BAD_REQUEST, AuthProblems.INVALID_REQUEST);
+    }
+
+    @ExceptionHandler(OnboardingDisabledException.class)
+    public ResponseEntity<ProblemDetail> handleOnboardingDisabled(OnboardingDisabledException ex) {
+        return problem(HttpStatus.FORBIDDEN, AuthProblems.ONBOARDING_DISABLED);
     }
 
     @ExceptionHandler(InvalidOtpException.class)
