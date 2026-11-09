@@ -583,6 +583,20 @@ class OnboardingTicketIT extends IntegrationTestBase {
     }
 
     @Test
+    void signIn_withTheRegistrationTicketOfAPreregistrationWithoutAccount_isInvalidTicket() {
+        // Arrange: EC-07, the ticket of an email without account only registers the first passkey
+        var registrationTicket = registrationTicketOf(ticketFor(email("signin"), TEST_TENANT), TEST_TENANT);
+
+        // Act + Assert: a 401, never a server error
+        webClient.post().uri("/api/v1/auth/sessions/options")
+                .header(TenantDomainWebFilter.HEADER_X_TENANT, TEST_TENANT)
+                .headers(h -> h.setBearerAuth(registrationTicket))
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_ticket");
+    }
+
+    @Test
     void cleanup_expiredPreregistration_isDeletedWithItsTraceInTheTenantSchema() {
         // Arrange: AC-05, NFR-5, an expired pre-registration with its email
         var id = UUID.randomUUID();
