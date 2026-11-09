@@ -25,10 +25,13 @@ import java.util.concurrent.atomic.AtomicReference;
  * {@code jwks_uri} path is kept, only the origin is swapped).
  *
  * <p>The JWK Set is cached {@link #CACHE_TTL}. {@link #reload()} forces one read when a token
- * carries an unknown {@code kid} (key rotation, ES-04), at most once every
- * {@link #MIN_RELOAD_INTERVAL} so unknown {@code kid}s cannot flood the Verifier. If a read fails,
- * the last JWK Set read is used; with none, the read fails with
- * {@link VerifierUnavailableException} (503, ES-03).
+ * carries an unknown {@code kid} (key rotation, ES-04). If a read fails, the last JWK Set read is
+ * used; with none, the read fails with {@link VerifierUnavailableException} (503, ES-03).
+ *
+ * <p>The Verifier is read at most once every {@link #MIN_RELOAD_INTERVAL}, counted from the last
+ * attempt, successful or not, and concurrent reads share one request. The tokens reach this client
+ * before they are authenticated, so neither unknown {@code kid}s nor a Verifier that is down or slow
+ * let unauthenticated requests multiply the reads.
  */
 @Slf4j
 @Component
@@ -45,6 +48,8 @@ public class VerifierJwksClient {
     private final VerifierProperties properties;
     private final Clock clock;
     private final AtomicReference<Cached> cache = new AtomicReference<>();
+    private final AtomicReference<Instant> lastAttempt = new AtomicReference<>();
+    private final AtomicReference<Mono<JWKSet>> inFlight = new AtomicReference<>();
 
     @Autowired
     public VerifierJwksClient(WebClient.Builder webClientBuilder, VerifierProperties properties) {
@@ -66,19 +71,43 @@ public class VerifierJwksClient {
         return read();
     }
 
-    /** Reads the JWK Set again, unless it was read less than {@link #MIN_RELOAD_INTERVAL} ago. */
+    /** Reads the JWK Set again, unless the Verifier was tried less than {@link #MIN_RELOAD_INTERVAL} ago. */
     public Mono<JWKSet> reload() {
-        var cached = cache.get();
-        if (cached != null && cached.readAt().plus(MIN_RELOAD_INTERVAL).isAfter(clock.instant())) {
-            return Mono.just(cached.keys());
-        }
         return read();
     }
 
+    /**
+     * One read of the Verifier shared by the concurrent callers, unless one was tried less than
+     * {@link #MIN_RELOAD_INTERVAL} ago: then the last JWK Set read, or unavailable without one.
+     */
     private Mono<JWKSet> read() {
         if (!properties.configured()) {
             return Mono.error(new VerifierUnavailableException("ebw.verifier.internal-url is not configured"));
         }
+        var running = inFlight.get();
+        if (running != null) {
+            return running;
+        }
+        var attemptedAt = lastAttempt.get();
+        if (attemptedAt != null && attemptedAt.plus(MIN_RELOAD_INTERVAL).isAfter(clock.instant())) {
+            return lastRead();
+        }
+        var shared = fetch().doFinally(signal -> inFlight.set(null)).cache();
+        if (!inFlight.compareAndSet(null, shared)) {
+            var other = inFlight.get();
+            return other != null ? other : lastRead();
+        }
+        lastAttempt.set(clock.instant());
+        return shared;
+    }
+
+    private Mono<JWKSet> lastRead() {
+        var cached = cache.get();
+        return cached != null ? Mono.just(cached.keys())
+                : Mono.error(new VerifierUnavailableException("The Verifier JWK Set could not be read recently"));
+    }
+
+    private Mono<JWKSet> fetch() {
         return Mono.defer(() -> {
                     var discoveryUrl = UriComponentsBuilder.fromUriString(properties.internalUrl())
                             .pathSegment(".well-known", "openid-configuration")

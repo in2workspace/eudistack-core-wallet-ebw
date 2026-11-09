@@ -7,6 +7,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Clock;
@@ -96,6 +97,50 @@ class VerifierJwksClientTest {
         StepVerifier.create(client.keys())
                 .assertNext(set -> assertThat(set.getKeyByKeyId(keys.kid())).isNotNull())
                 .verifyComplete();
+    }
+
+    @Test
+    void keys_verifierDownWithStaleCopy_triesTheVerifierAtMostOncePerInterval() {
+        // Arrange: unauthenticated requests must not multiply the reads of a Verifier that is down
+        StepVerifier.create(client.keys()).expectNextCount(1).verifyComplete();
+        verifier.setAvailable(false);
+        now.set(now.get().plus(VerifierJwksClient.CACHE_TTL).plusSeconds(1));
+
+        // Act
+        for (int i = 0; i < 3; i++) {
+            StepVerifier.create(client.keys()).expectNextCount(1).verifyComplete();
+            StepVerifier.create(client.reload()).expectNextCount(1).verifyComplete();
+        }
+
+        // Assert: one read at start, one failed attempt for the six calls
+        assertThat(verifier.discoveryReads()).isEqualTo(2);
+        now.set(now.get().plus(VerifierJwksClient.MIN_RELOAD_INTERVAL).plusSeconds(1));
+        StepVerifier.create(client.keys()).expectNextCount(1).verifyComplete();
+        assertThat(verifier.discoveryReads()).isEqualTo(3);
+    }
+
+    @Test
+    void keys_verifierDownWithoutCopy_failsWithoutTryingAgainWithinTheInterval() {
+        // Arrange
+        verifier.setAvailable(false);
+
+        // Act + Assert
+        StepVerifier.create(client.keys()).expectError(VerifierUnavailableException.class).verify();
+        StepVerifier.create(client.keys()).expectError(VerifierUnavailableException.class).verify();
+        StepVerifier.create(client.reload()).expectError(VerifierUnavailableException.class).verify();
+        assertThat(verifier.discoveryReads()).isEqualTo(1);
+    }
+
+    @Test
+    void keys_concurrentReads_shareOneRequest() {
+        // Act
+        StepVerifier.create(Mono.zip(client.keys(), client.keys(), client.reload()))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        // Assert
+        assertThat(verifier.discoveryReads()).isEqualTo(1);
+        assertThat(verifier.jwksReads()).isEqualTo(1);
     }
 
     @Test

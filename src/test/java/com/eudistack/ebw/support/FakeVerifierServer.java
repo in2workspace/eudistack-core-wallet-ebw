@@ -20,6 +20,7 @@ public final class FakeVerifierServer implements AutoCloseable {
     private final HttpServer server;
     private final AtomicReference<JWKSet> jwks;
     private final AtomicInteger jwksReads = new AtomicInteger();
+    private final AtomicInteger discoveryReads = new AtomicInteger();
     private volatile boolean available = true;
 
     public FakeVerifierServer(JWKSet initialJwks) {
@@ -29,9 +30,11 @@ public final class FakeVerifierServer implements AutoCloseable {
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
-        server.createContext("/verifier/.well-known/openid-configuration", exchange -> respond(exchange,
-                "{\"issuer\":\"https://public.example/verifier\","
-                        + "\"jwks_uri\":\"https://public.example/verifier/oidc/jwks\"}"));
+        server.createContext("/verifier/.well-known/openid-configuration", exchange -> {
+            discoveryReads.incrementAndGet();
+            respond(exchange, "{\"issuer\":\"https://public.example/verifier\","
+                    + "\"jwks_uri\":\"https://public.example/verifier/oidc/jwks\"}");
+        });
         server.createContext("/verifier/oidc/jwks", exchange -> {
             jwksReads.incrementAndGet();
             respond(exchange, jwks.get().toString());
@@ -54,6 +57,11 @@ public final class FakeVerifierServer implements AutoCloseable {
 
     public int jwksReads() {
         return jwksReads.get();
+    }
+
+    /** Requests to the discovery: every attempt to read the JWK Set, also while unavailable. */
+    public int discoveryReads() {
+        return discoveryReads.get();
     }
 
     private void respond(HttpExchange exchange, String body) throws IOException {
