@@ -30,6 +30,7 @@ public class PasskeyPrfKeyManagerExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(PasskeyPrfKeyManagerExceptionHandler.class);
 
     private static final String TYPE_BASE = "urn:eudistack:error:keymanager:passkey-prf:";
+    private static final String UNSUPPORTED_CUSTODY_MODE_TYPE = "urn:eudistack:error:keymanager:unsupported-custody-mode";
 
     @ExceptionHandler(WebExchangeBindException.class)
     public ResponseEntity<ProblemDetail> handleValidation(WebExchangeBindException ex) {
@@ -43,7 +44,10 @@ public class PasskeyPrfKeyManagerExceptionHandler {
 
     @ExceptionHandler(TenantWalletProfileUnsupportedException.class)
     public ResponseEntity<ProblemDetail> handleUnsupportedCustodyMode(TenantWalletProfileUnsupportedException ex) {
-        return problem(HttpStatus.CONFLICT, "unsupported-custody-mode");
+        // The same type as the key endpoints (KeyManagerExceptionHandler): one error, one type.
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
+        problem.setType(URI.create(UNSUPPORTED_CUSTODY_MODE_TYPE));
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
     }
 
     @ExceptionHandler(TenantUnknownException.class)

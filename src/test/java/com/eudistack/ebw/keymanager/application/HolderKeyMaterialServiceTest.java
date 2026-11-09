@@ -53,10 +53,13 @@ class HolderKeyMaterialServiceTest {
     private static final UUID PASSKEY = UUID.randomUUID();
     private static final UUID OTHER_PASSKEY = UUID.randomUUID();
     private static final HolderKeyId KEY_ID = HolderKeyId.generate();
-    private static final Map<String, Object> KEY_A = Map.of("kty", "EC", "crv", "P-256", "x", "xa", "y", "ya");
+    // 32 bytes, base64url: the size of a P-256 coordinate
+    private static final String COORD_A = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    private static final String COORD_B = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
+    private static final Map<String, Object> KEY_A = Map.of("kty", "EC", "crv", "P-256", "x", COORD_A, "y", COORD_B);
     private static final Map<String, Object> KEY_A_WITH_EXTRA_MEMBERS =
-            Map.of("kty", "EC", "crv", "P-256", "x", "xa", "y", "ya", "kid", "k1", "alg", "ES256");
-    private static final Map<String, Object> KEY_B = Map.of("kty", "EC", "crv", "P-256", "x", "xb", "y", "yb");
+            Map.of("kty", "EC", "crv", "P-256", "x", COORD_A, "y", COORD_B, "kid", "k1", "alg", "ES256");
+    private static final Map<String, Object> KEY_B = Map.of("kty", "EC", "crv", "P-256", "x", COORD_B, "y", COORD_A);
 
     @Mock private HolderKeyReadPort holderKeyReadPort;
     @Mock private HolderKeyWritePort holderKeyWritePort;
@@ -217,6 +220,20 @@ class HolderKeyMaterialServiceTest {
         }
 
         @Test
+        void verify_appKeyCarriesThePrivateMember_failsWithHolderKeyMismatch() {
+            // Arrange
+            when(prfSaltPort.findBy(USER.toString(), "app-credential-1"))
+                    .thenReturn(Mono.just(new PrfSalt("app-credential-1", new byte[32], PASSKEY.toString(), null)));
+            var withPrivateMember = Map.<String, Object>of("kty", "EC", "crv", "P-256", "x", COORD_A, "y", COORD_B, "d", COORD_A);
+
+            // Act
+            var result = service.verify(passkeyBinding(KEY_A, withPrivateMember));
+
+            // Assert
+            StepVerifier.create(result).expectError(HolderKeyMismatchException.class).verify();
+        }
+
+        @Test
         void verify_appSendsNoPublicKey_failsWithHolderKeyMismatch() {
             // Arrange
             var binding = passkeyBinding(KEY_A, null);
@@ -245,6 +262,57 @@ class HolderKeyMaterialServiceTest {
 
             // Assert
             StepVerifier.create(result).verifyComplete();
+        }
+
+        @Test
+        void keepPublicKey_keyCarriesThePrivateMember_failsWithHolderKeyMismatchAndStoresNothing() {
+            // Arrange
+            var withPrivateMember = Map.<String, Object>of("kty", "EC", "crv", "P-256", "x", COORD_A, "y", COORD_B, "d", COORD_A);
+
+            // Act
+            var result = service.keepPublicKey(passkeyBinding(KEY_A, withPrivateMember));
+
+            // Assert
+            StepVerifier.create(result).expectError(HolderKeyMismatchException.class).verify();
+            verify(prfSaltPort, never()).setPublicJwk(any(), any(), any(), any());
+        }
+
+        @Test
+        void keepPublicKey_keyHasExtraMembers_storesOnlyKtyCrvXAndY() {
+            // Arrange
+            when(prfSaltPort.setPublicJwk(USER.toString(), "app-credential-1", PASSKEY.toString(), KEY_A))
+                    .thenReturn(Mono.just(true));
+
+            // Act
+            var result = service.keepPublicKey(passkeyBinding(KEY_A, KEY_A_WITH_EXTRA_MEMBERS));
+
+            // Assert
+            StepVerifier.create(result).verifyComplete();
+            verify(prfSaltPort).setPublicJwk(USER.toString(), "app-credential-1", PASSKEY.toString(), KEY_A);
+        }
+
+        @Test
+        void keepPublicKey_keyIsNotP256_failsWithHolderKeyMismatch() {
+            // Arrange
+            var otherCurve = Map.<String, Object>of("kty", "EC", "crv", "P-384", "x", COORD_A, "y", COORD_B);
+
+            // Act
+            var result = service.keepPublicKey(passkeyBinding(KEY_A, otherCurve));
+
+            // Assert
+            StepVerifier.create(result).expectError(HolderKeyMismatchException.class).verify();
+        }
+
+        @Test
+        void keepPublicKey_coordinateIsNotThirtyTwoBytes_failsWithHolderKeyMismatch() {
+            // Arrange
+            var shortCoordinate = Map.<String, Object>of("kty", "EC", "crv", "P-256", "x", "xa", "y", COORD_B);
+
+            // Act
+            var result = service.keepPublicKey(passkeyBinding(KEY_A, shortCoordinate));
+
+            // Assert
+            StepVerifier.create(result).expectError(HolderKeyMismatchException.class).verify();
         }
 
         @Test

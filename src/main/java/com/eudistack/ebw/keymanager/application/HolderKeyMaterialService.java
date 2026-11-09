@@ -16,6 +16,7 @@ import reactor.core.publisher.Mono;
 import reactor.util.context.ContextView;
 
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -28,6 +29,8 @@ import java.util.function.Supplier;
  * log or an audit event.</p>
  */
 public class HolderKeyMaterialService implements HolderKeyMaterialPort {
+
+    private static final int COORDINATE_BYTES = 32;
 
     private final HolderKeyReadPort holderKeyReadPort;
     private final HolderKeyWritePort holderKeyWritePort;
@@ -57,8 +60,8 @@ public class HolderKeyMaterialService implements HolderKeyMaterialPort {
         if (binding.mode() != CustodyMode.PASSKEY) {
             return Mono.empty();
         }
-        return prfSaltPort.setPublicJwk(binding.userId().toString(), binding.holderKeyId(),
-                        binding.passkeyId().toString(), binding.holderPublicJwk())
+        return Mono.defer(() -> prfSaltPort.setPublicJwk(binding.userId().toString(), binding.holderKeyId(),
+                        binding.passkeyId().toString(), publicKeyOf(binding.holderPublicJwk())))
                 .filter(Boolean::booleanValue)
                 .switchIfEmpty(Mono.error(new HolderKeyMismatchException("The holder key has no salt to keep its public key")))
                 .then();
@@ -93,7 +96,7 @@ public class HolderKeyMaterialService implements HolderKeyMaterialPort {
         return prfSaltPort.findBy(binding.userId().toString(), binding.holderKeyId())
                 .filter(salt -> salt.isOwnedBy(binding.passkeyId().toString()))
                 .switchIfEmpty(Mono.error(new HolderKeyMismatchException("The holder key has no salt of this passkey")))
-                .thenReturn(binding.holderPublicJwk());
+                .map(salt -> publicKeyOf(binding.holderPublicJwk()));
     }
 
     private Mono<Void> deleteServerKey(String holderId, String keyIdValue) {
@@ -126,6 +129,31 @@ public class HolderKeyMaterialService implements HolderKeyMaterialPort {
 
     private static String tenantOf(ContextView ctx) {
         return ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
+    }
+
+    /**
+     * The public key the Wallet App derived, reduced to {@code kty}, {@code crv}, {@code x} and {@code y}.
+     * It must be an EC P-256 public key: one that carries the private member {@code d}, or has coordinates
+     * that are not 32 bytes, is rejected, and any other member is dropped, so nothing else is stored.
+     */
+    private static Map<String, Object> publicKeyOf(Map<String, Object> jwk) {
+        if (jwk == null || jwk.containsKey("d")
+                || !"EC".equals(jwk.get("kty")) || !"P-256".equals(jwk.get("crv"))
+                || !isCoordinate(jwk.get("x")) || !isCoordinate(jwk.get("y"))) {
+            throw new HolderKeyMismatchException("The holder public key is not an EC P-256 public key");
+        }
+        return Map.of("kty", "EC", "crv", "P-256", "x", jwk.get("x"), "y", jwk.get("y"));
+    }
+
+    private static boolean isCoordinate(Object value) {
+        if (!(value instanceof String text)) {
+            return false;
+        }
+        try {
+            return Base64.getUrlDecoder().decode(text).length == COORDINATE_BYTES;
+        } catch (IllegalArgumentException _) {
+            return false;
+        }
     }
 
     private static boolean sameKey(Map<String, Object> cnfJwk, Map<String, Object> holderJwk) {

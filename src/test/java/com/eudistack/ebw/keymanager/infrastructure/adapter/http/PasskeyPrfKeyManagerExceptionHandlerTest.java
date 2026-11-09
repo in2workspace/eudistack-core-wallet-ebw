@@ -32,8 +32,6 @@ class PasskeyPrfKeyManagerExceptionHandlerTest {
         return Stream.of(
                 Arguments.of(call(h -> h.handleInvalidSession(new InvalidSessionException())),
                         HttpStatus.UNAUTHORIZED, "invalid-session"),
-                Arguments.of(call(h -> h.handleUnsupportedCustodyMode(new TenantWalletProfileUnsupportedException("sandbox"))),
-                        HttpStatus.CONFLICT, "unsupported-custody-mode"),
                 Arguments.of(call(h -> h.handlePrfSaltNotFound(new PrfSaltNotFoundException("cred-1"))),
                         HttpStatus.NOT_FOUND, "not-found"),
                 Arguments.of(call(h -> h.handleGeneral(new IllegalStateException("boom"))),
@@ -55,6 +53,20 @@ class PasskeyPrfKeyManagerExceptionHandlerTest {
         // Assert
         assertThat(response.getStatusCode()).isEqualTo(status);
         assertThat(response.getBody().getType()).isEqualTo(URI.create(TYPE_BASE + type));
+    }
+
+    @Test
+    void unsupportedCustodyMode_usesTheSameTypeAsTheKeyEndpoints() {
+        // Arrange
+        var exception = new TenantWalletProfileUnsupportedException("sandbox");
+
+        // Act
+        var response = handler.handleUnsupportedCustodyMode(exception);
+
+        // Assert
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().getType())
+                .isEqualTo(URI.create("urn:eudistack:error:keymanager:unsupported-custody-mode"));
     }
 
     @Test

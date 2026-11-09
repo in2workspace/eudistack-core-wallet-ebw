@@ -1,12 +1,13 @@
 package com.eudistack.ebw.keymanager.infrastructure.configuration;
 
 import com.eudistack.ebw.keymanager.application.*;
+import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
 import com.eudistack.ebw.keymanager.domain.model.SigningType;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyReadPort;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditLogAdapter;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditCloudWatchAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.PasskeyPrfKeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.PasskeyPrfSaltController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerController;
@@ -25,6 +26,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.r2dbc.core.DatabaseClient;
+import reactor.core.publisher.Mono;
 
 import java.util.Map;
 
@@ -62,10 +64,23 @@ public class KeyManagerConfiguration {
         return new HolderKeyR2dbcAdapter(repository, objectMapper, databaseClient);
     }
 
-    /** The key events are recorded as structured log lines until they go through the audit API. */
+    /**
+     * The only {@link KeyAuditPort}: CloudWatch when {@code keymanager.audit.enabled=true} (which then
+     * requires {@code keymanager.audit.log-group-name}), a no-op otherwise. One bean instead of two
+     * conditional ones, so every injection point resolves to a single candidate.
+     */
     @Bean
-    KeyAuditPort keyAuditPort() {
-        return new KeyAuditLogAdapter();
+    KeyAuditPort keyAuditPort(
+            @Value("${keymanager.audit.enabled:false}") boolean auditEnabled,
+            @Value("${keymanager.audit.log-group-name:}") String logGroupName,
+            ObjectMapper objectMapper) {
+        if (!auditEnabled) {
+            return (KeyAuditEvent event) -> Mono.empty();
+        }
+        if (logGroupName.isBlank()) {
+            throw new IllegalStateException("keymanager.audit.enabled=true requires keymanager.audit.log-group-name");
+        }
+        return new KeyAuditCloudWatchAdapter(logGroupName, objectMapper);
     }
 
     @Bean

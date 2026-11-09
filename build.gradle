@@ -68,6 +68,7 @@ dependencies {
     implementation 'com.nimbusds:nimbus-jose-jwt:10.9.1'
 
     // --- AWS SDK v2 ---
+    implementation 'software.amazon.awssdk:cloudwatchlogs:2.31.78'
 
     // --- WebAuthn Relying Party (EUD-308, design AD-1) ---
     implementation 'com.webauthn4j:webauthn4j-core:0.31.11.RELEASE'
@@ -106,6 +107,7 @@ dependencies {
     testImplementation 'org.springframework.security:spring-security-test'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.0'
     testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:localstack'
     testImplementation 'org.testcontainers:postgresql'
     testImplementation 'org.testcontainers:r2dbc'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
