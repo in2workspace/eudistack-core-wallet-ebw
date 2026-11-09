@@ -24,8 +24,9 @@ import java.time.Instant;
  * refresh tokens of the sessions that ended more than {@link #ENDED_SESSION_RETENTION} ago, and the
  * expired onboarding pre-registrations and used or expired "it was not me" tokens
  * ({@link ExpireOnboardingWorkflow}, EUD-315). If the
- * expiry step fails, the tenant's deletions wait for the next pass, so no lapsed session is
- * deleted before it is audited.
+ * expiry step fails, the tenant's session and WebAuthn deletions wait for the next pass, so no
+ * lapsed session is deleted before it is audited. The onboarding data runs on its own: no failure of
+ * the session steps keeps the emails of expired pre-registrations from being deleted (NFR-5).
  */
 @Slf4j
 @Component
@@ -68,15 +69,8 @@ public class WebAuthnHousekeepingJob {
         var cutoff = now.minus(RETENTION);
         var sessionCutoff = now.minus(ENDED_SESSION_RETENTION);
         return tenantDirectory.activeTenants()
-                .concatMap(tenant -> expireSessionsWorkflow.expireLapsedSessions()
-                        .doOnNext(expired -> log.debug("Expired {} lapsed sessions in tenant '{}'", expired, tenant))
-                        .then(Mono.defer(() -> deleteExpiredRows(cutoff, sessionCutoff)))
-                        .doOnNext(deleted -> log.debug("Deleted {} expired WebAuthn rows in tenant '{}'",
-                                deleted, tenant))
-                        .onErrorResume(e -> {
-                            log.warn("WebAuthn housekeeping failed for tenant '{}': {}", tenant, e.getMessage());
-                            return Mono.just(0L);
-                        })
+                .concatMap(tenant -> sessionHousekeeping(tenant, cutoff, sessionCutoff)
+                        .flatMap(deleted -> onboardingHousekeeping(tenant).map(onboarding -> deleted + onboarding))
                         .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, tenant)))
                 .reduce(0L, Long::sum)
                 .onErrorResume(e -> {
@@ -85,11 +79,35 @@ public class WebAuthnHousekeepingJob {
                 });
     }
 
+    /** Lapsed sessions first, then the WebAuthn rows; a failure is logged and counts 0. */
+    private Mono<Long> sessionHousekeeping(String tenant, Instant cutoff, Instant sessionCutoff) {
+        return expireSessionsWorkflow.expireLapsedSessions()
+                .doOnNext(expired -> log.debug("Expired {} lapsed sessions in tenant '{}'", expired, tenant))
+                .then(Mono.defer(() -> deleteExpiredRows(cutoff, sessionCutoff)))
+                .doOnNext(deleted -> log.debug("Deleted {} expired WebAuthn rows in tenant '{}'", deleted, tenant))
+                .onErrorResume(e -> {
+                    log.warn("WebAuthn housekeeping failed for tenant '{}': {}", tenant, e.getMessage());
+                    return Mono.just(0L);
+                });
+    }
+
     /** Runs after the expiry step, so no lapsed session is deleted before it is audited. */
     private Mono<Long> deleteExpiredRows(Instant cutoff, Instant sessionCutoff) {
         return ceremonyRepository.deleteCreatedBefore(cutoff)
                 .zipWith(ticketRepository.deleteCreatedBefore(cutoff), Long::sum)
-                .zipWith(refreshTokenRepository.deleteSessionsEndedBefore(sessionCutoff), Long::sum)
-                .zipWith(expireOnboardingWorkflow.expire(), Long::sum);
+                .zipWith(refreshTokenRepository.deleteSessionsEndedBefore(sessionCutoff), Long::sum);
+    }
+
+    /**
+     * Onboarding ticket data, independent of the session steps: the emails of the expired
+     * pre-registrations are deleted even if those fail (NFR-5).
+     */
+    private Mono<Long> onboardingHousekeeping(String tenant) {
+        return expireOnboardingWorkflow.expire()
+                .doOnNext(deleted -> log.debug("Deleted {} expired onboarding rows in tenant '{}'", deleted, tenant))
+                .onErrorResume(e -> {
+                    log.warn("Onboarding housekeeping failed for tenant '{}': {}", tenant, e.getMessage());
+                    return Mono.just(0L);
+                });
     }
 }

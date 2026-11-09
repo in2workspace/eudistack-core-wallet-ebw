@@ -1,6 +1,8 @@
 package com.eudistack.ebw.integration;
 
+import com.eudistack.ebw.application.workflow.ExpireOnboardingWorkflow;
 import com.eudistack.ebw.domain.model.AccountCreatedNotice;
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilter;
 import com.eudistack.ebw.support.FakeVerifierServer;
 import com.eudistack.ebw.support.SoftwareAuthenticator;
@@ -8,6 +10,7 @@ import com.eudistack.ebw.support.TestSystemTokens;
 import com.eudistack.ebw.support.WalletAuthClient;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -21,6 +24,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -55,6 +59,8 @@ class OnboardingTicketIT extends IntegrationTestBase {
 
     private static final TestSystemTokens VERIFIER_KEYS = new TestSystemTokens();
     private static final FakeVerifierServer VERIFIER = new FakeVerifierServer(VERIFIER_KEYS.publicJwks());
+
+    @Autowired private ExpireOnboardingWorkflow expireOnboardingWorkflow;
 
     static {
         configureTenant(TEST_TENANT + "_business_wallet", Map.of(
@@ -574,5 +580,26 @@ class OnboardingTicketIT extends IntegrationTestBase {
         client.registerSpec(second, options.get("ceremonyId"), credential, true, null)
                 .expectStatus().isBadRequest()
                 .expectBody().jsonPath("$.type").isEqualTo("registration_failed");
+    }
+
+    @Test
+    void cleanup_expiredPreregistration_isDeletedWithItsTraceInTheTenantSchema() {
+        // Arrange: AC-05, NFR-5, an expired pre-registration with its email
+        var id = UUID.randomUUID();
+        var email = email("expired");
+        sql("INSERT INTO onboarding_preregistration (id, token_hash, email, requested_by, expires_at)"
+                + " VALUES ('" + id + "', '" + id.toString().replace("-", "") + "', '" + email + "',"
+                + " 'portal-machine.example.org', now() - interval '1 minute')");
+
+        // Act: the hourly cleanup step, in one transaction in the tenant schema
+        expireOnboardingWorkflow.expire()
+                .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TEST_TENANT))
+                .block();
+
+        // Assert
+        assertThat(countInTestTenant("onboarding_preregistration WHERE id = '" + id + "'")).isZero();
+        assertThat(countInTestTenant("audit_log WHERE entity_id = '" + id + "'"
+                + " AND action = 'PREREGISTRATION_EXPIRED'")).isEqualTo(1);
+        assertThat(countInTestTenant("audit_log WHERE metadata LIKE '%" + email + "%'")).isZero();
     }
 }

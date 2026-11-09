@@ -160,4 +160,44 @@ class WebAuthnHousekeepingJobTest {
         verify(ceremonyRepository, never()).deleteCreatedBefore(any());
         verify(refreshTokenRepository, never()).deleteSessionsEndedBefore(any());
     }
+
+    @Test
+    void cleanup_sessionExpiryFails_stillExpiresTheOnboardingData() {
+        // Arrange: NFR-5, the emails of expired pre-registrations never wait for the session steps
+        when(tenantDirectory.activeTenants()).thenReturn(Flux.just("sandbox"));
+        when(expireSessionsWorkflow.expireLapsedSessions()).thenReturn(Mono.error(new IllegalStateException("audit down")));
+        when(expireOnboardingWorkflow.expire()).thenReturn(Mono.just(3L));
+
+        // Act + Assert
+        StepVerifier.create(job.cleanup()).expectNext(3L).verifyComplete();
+        verify(expireOnboardingWorkflow).expire();
+    }
+
+    @Test
+    void cleanup_aWebAuthnDeletionFails_stillExpiresTheOnboardingData() {
+        // Arrange
+        when(tenantDirectory.activeTenants()).thenReturn(Flux.just("sandbox"));
+        when(expireSessionsWorkflow.expireLapsedSessions()).thenReturn(Mono.just(0L));
+        when(ceremonyRepository.deleteCreatedBefore(any())).thenReturn(Mono.error(new IllegalStateException("db")));
+        when(ticketRepository.deleteCreatedBefore(any())).thenReturn(Mono.just(0L));
+        when(refreshTokenRepository.deleteSessionsEndedBefore(any())).thenReturn(Mono.just(0L));
+        when(expireOnboardingWorkflow.expire()).thenReturn(Mono.just(2L));
+
+        // Act + Assert
+        StepVerifier.create(job.cleanup()).expectNext(2L).verifyComplete();
+    }
+
+    @Test
+    void cleanup_onboardingFails_keepsTheSessionDeletions() {
+        // Arrange
+        when(tenantDirectory.activeTenants()).thenReturn(Flux.just("sandbox"));
+        when(expireSessionsWorkflow.expireLapsedSessions()).thenReturn(Mono.just(0L));
+        when(ceremonyRepository.deleteCreatedBefore(any())).thenReturn(Mono.just(1L));
+        when(ticketRepository.deleteCreatedBefore(any())).thenReturn(Mono.just(1L));
+        when(refreshTokenRepository.deleteSessionsEndedBefore(any())).thenReturn(Mono.just(1L));
+        when(expireOnboardingWorkflow.expire()).thenReturn(Mono.error(new IllegalStateException("db")));
+
+        // Act + Assert
+        StepVerifier.create(job.cleanup()).expectNext(3L).verifyComplete();
+    }
 }

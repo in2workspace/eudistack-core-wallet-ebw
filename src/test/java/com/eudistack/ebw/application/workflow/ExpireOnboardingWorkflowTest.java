@@ -4,6 +4,7 @@ import com.eudistack.ebw.domain.model.ExpiredPreregistration;
 import com.eudistack.ebw.domain.repository.OnboardingDisavowalRepository;
 import com.eudistack.ebw.domain.repository.OnboardingPreregistrationRepository;
 import com.eudistack.ebw.domain.service.AuditService;
+import com.eudistack.ebw.domain.spi.TransactionRunner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,21 +26,60 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Unit tests for {@link ExpireOnboardingWorkflow} (AC-05, EC-12, FR-25). */
+/** Unit tests for {@link ExpireOnboardingWorkflow} (AC-05, EC-12, FR-25, NFR-5). */
 @ExtendWith(MockitoExtension.class)
 class ExpireOnboardingWorkflowTest {
 
     @Mock private OnboardingPreregistrationRepository preregistrationRepository;
     @Mock private OnboardingDisavowalRepository disavowalRepository;
     @Mock private AuditService auditService;
+    @Mock private TransactionRunner transactionRunner;
 
     private ExpireOnboardingWorkflow workflow;
 
     @BeforeEach
     void setUp() {
-        workflow = new ExpireOnboardingWorkflow(preregistrationRepository, disavowalRepository, auditService);
+        workflow = new ExpireOnboardingWorkflow(preregistrationRepository, disavowalRepository, auditService,
+                transactionRunner);
         lenient().when(auditService.record(anyString(), any(), anyString(), any(), any())).thenReturn(Mono.empty());
         lenient().when(disavowalRepository.deleteConsumedOrExpired()).thenReturn(Mono.just(0L));
+        lenient().when(transactionRunner.inTransaction(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    }
+
+    @Test
+    void expire_preregistrationsAndTheirTraces_runInOneTransaction() {
+        // Arrange: AC-05, no pre-registration is deleted without its trace
+        when(preregistrationRepository.deleteExpired()).thenReturn(Flux.empty());
+
+        // Act
+        StepVerifier.create(workflow.expire()).expectNext(0L).verifyComplete();
+
+        // Assert
+        verify(transactionRunner).inTransaction(any());
+    }
+
+    @Test
+    void expire_traceFails_countsNoPreregistrationAndStillDeletesTheDisavowalTokens() {
+        // Arrange: the transaction rolls the deletion back; the next pass tries again
+        var expired = new ExpiredPreregistration(UUID.randomUUID(), "portal-machine.example.org", false);
+        when(preregistrationRepository.deleteExpired()).thenReturn(Flux.just(expired));
+        when(auditService.record(anyString(), any(), anyString(), any(), any()))
+                .thenReturn(Mono.error(new IllegalStateException("audit down")));
+        when(disavowalRepository.deleteConsumedOrExpired()).thenReturn(Mono.just(2L));
+
+        // Act + Assert
+        StepVerifier.create(workflow.expire()).expectNext(2L).verifyComplete();
+    }
+
+    @Test
+    void expire_disavowalDeletionFails_stillCountsThePreregistrations() {
+        // Arrange
+        var expired = new ExpiredPreregistration(UUID.randomUUID(), "portal-machine.example.org", true);
+        when(preregistrationRepository.deleteExpired()).thenReturn(Flux.just(expired));
+        when(disavowalRepository.deleteConsumedOrExpired()).thenReturn(Mono.error(new IllegalStateException("db")));
+
+        // Act + Assert
+        StepVerifier.create(workflow.expire()).expectNext(1L).verifyComplete();
     }
 
     @Test
