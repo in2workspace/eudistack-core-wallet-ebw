@@ -583,6 +583,21 @@ class OnboardingTicketIT extends IntegrationTestBase {
     }
 
     @Test
+    void systemToken_atAnEndpointThatRequiresASession_isUnauthorized() {
+        // Arrange: ES-05, a valid system token of a tenant administrator machine
+        var systemToken = adminToken();
+
+        // Act + Assert: the session filter does not accept it
+        webClient.get().uri("/api/v1/auth/passkeys")
+                .header(TenantDomainWebFilter.HEADER_X_TENANT, TEST_TENANT)
+                .header("X-Forwarded-Proto", "https")
+                .header("X-Forwarded-Host", PUBLIC_HOST)
+                .headers(h -> h.setBearerAuth(systemToken))
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
     void signIn_withTheRegistrationTicketOfAPreregistrationWithoutAccount_isInvalidTicket() {
         // Arrange: EC-07, the ticket of an email without account only registers the first passkey
         var registrationTicket = registrationTicketOf(ticketFor(email("signin"), TEST_TENANT), TEST_TENANT);
