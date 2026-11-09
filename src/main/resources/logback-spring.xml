@@ -27,6 +27,7 @@
             <level>INFO</level>
         </filter>
         <captureMdcAttributes>*</captureMdcAttributes>
+        <!-- Also carries the masked exception: without it, exceptions do not reach OpenObserve -->
         <captureKeyValuePairAttributes>true</captureKeyValuePairAttributes>
         <captureLoggerContext>true</captureLoggerContext>
     </appender>
