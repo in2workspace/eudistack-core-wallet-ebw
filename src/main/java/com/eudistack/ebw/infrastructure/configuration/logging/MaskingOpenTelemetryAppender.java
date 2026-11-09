@@ -1,9 +1,14 @@
 package com.eudistack.ebw.infrastructure.configuration.logging;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.IThrowableProxy;
+import ch.qos.logback.classic.spi.ThrowableProxyUtil;
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender;
+import org.slf4j.event.KeyValuePair;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -16,7 +21,7 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
 
     @Override
     protected void append(ILoggingEvent event) {
-        super.append(mask(event));
+        super.append(new ExportedLoggingEvent(mask(event)));
     }
 
     /** Package-private for direct testing without spinning up the OTel SDK. */
@@ -24,21 +29,24 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
         return new MaskedLoggingEvent(event);
     }
 
-    /** Masks the rendered message and every MDC value; forwards everything else unchanged. */
+    /** Masks the message, the MDC, the key-value pairs and the exception; forwards everything else. */
     private static final class MaskedLoggingEvent extends DelegatingLoggingEvent {
+
+        private final IThrowableProxy throwableProxy;
 
         private MaskedLoggingEvent(ILoggingEvent delegate) {
             super(delegate);
+            this.throwableProxy = MaskedThrowableProxy.of(delegate.getThrowableProxy());
         }
 
         @Override
         public String getFormattedMessage() {
-            return MaskingPatternLayout.mask(super.getFormattedMessage());
+            return MaskingPatternLayout.mask(MaskingPatternLayout.truncate(super.getFormattedMessage()));
         }
 
         @Override
         public String getMessage() {
-            return MaskingPatternLayout.mask(super.getMessage());
+            return MaskingPatternLayout.mask(MaskingPatternLayout.truncate(super.getMessage()));
         }
 
         // Emptied so no downstream consumer re-renders the unmasked original from
@@ -56,6 +64,31 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
         @Override
         public Map<String, String> getMdc() {
             return maskValues(super.getMdc());
+        }
+
+        @Override
+        public IThrowableProxy getThrowableProxy() {
+            return throwableProxy;
+        }
+
+        // A number can be an OTP: it is masked by its key, and keeps its type only if nothing changed
+        @Override
+        public List<KeyValuePair> getKeyValuePairs() {
+            List<KeyValuePair> source = super.getKeyValuePairs();
+            if (source == null) {
+                return List.of();
+            }
+            return source.stream().map(MaskedLoggingEvent::maskPair).toList();
+        }
+
+        private static KeyValuePair maskPair(KeyValuePair pair) {
+            if (pair.value == null) {
+                return pair;
+            }
+            String text = pair.value.toString();
+            String masked = maskMdcValue(pair.key, text);
+            boolean keepsType = (pair.value instanceof Number || pair.value instanceof Boolean) && masked.equals(text);
+            return new KeyValuePair(pair.key, keepsType ? pair.value : masked);
         }
 
         private static Map<String, String> maskValues(Map<String, String> source) {
@@ -79,6 +112,33 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
             String prefix = key + "=";
             String maskedLine = MaskingPatternLayout.mask(prefix + value);
             return maskedLine.startsWith(prefix) ? maskedLine.substring(prefix.length()) : maskedLine;
+        }
+    }
+
+    /**
+     * The OpenTelemetry appender skips the masked exception, so it travels as key-value pairs under
+     * the attribute names the appender would have used. They need captureKeyValuePairAttributes.
+     */
+    private static final class ExportedLoggingEvent extends DelegatingLoggingEvent {
+
+        private ExportedLoggingEvent(ILoggingEvent masked) {
+            super(masked);
+        }
+
+        @Override
+        public List<KeyValuePair> getKeyValuePairs() {
+            List<KeyValuePair> pairs = super.getKeyValuePairs();
+            IThrowableProxy exception = getThrowableProxy();
+            if (exception == null) {
+                return pairs;
+            }
+            List<KeyValuePair> exported = new ArrayList<>(pairs);
+            exported.add(new KeyValuePair("exception.type", exception.getClassName()));
+            if (exception.getMessage() != null) {
+                exported.add(new KeyValuePair("exception.message", exception.getMessage()));
+            }
+            exported.add(new KeyValuePair("exception.stacktrace", ThrowableProxyUtil.asString(exception)));
+            return exported;
         }
     }
 }
