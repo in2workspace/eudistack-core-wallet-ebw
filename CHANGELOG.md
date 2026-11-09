@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (EUD-26)
+
+- **URL-encoded emails (`%40`) are masked in the logs**, as they reach the DEBUG logs in query strings.
+- **Exceptions and key-value pairs are masked on their way to OpenObserve.** The message, causes and suppressed exceptions now travel masked in `exception.type`, `exception.message` and `exception.stacktrace`, which depend on `captureKeyValuePairAttributes`.
+- **More values are masked**: keys with a prefix or in camelCase (`db_password`, `jwtSecret`, `vp_token`), `pre-authorized_code`, `txCode`, `pin`, `Authorization: Basic`, the disclosures and key binding JWT of an SD-JWT, unsigned JWTs and the whole of a quoted value with spaces. Numeric key-value pairs are masked by their key. Messages over 16 KB are truncated before masking. The email, JWT and `code` rules stay linear on long inputs.
+- **The service reports as `wallet-ebw`** (was `eudistack-core-wallet-ebw`) in traces, metrics and logs, the name set by the observability convention. OpenObserve filters or dashboards on the previous name must use the new one.
+
 ### Added (EUD-208)
 
 - **EUD-208 — Traces, metrics and logs exported to OpenObserve over OTLP/gRPC**, as `eudistack-core-issuer` and `eudistack-core-verifier` already do (OTel Collector → OpenObserve), following the observability guide in `eudistack-platform-dev` (`docs/_shared/guides/`, steps 2–7, WebFlux track). Traces use Boot's native `management.otlp.tracing.transport: grpc`; metrics go through `OtlpGrpcMetricsSender` plugged into the OTLP meter registry (`OtlpGrpcMetricsConfig`), with `application` and `component=wallet-ebw` as common tags (`MicrometerMetricsConfig`, `ObservationConfig`); INFO+ logs go through an `OTLP` Logback appender (`MaskingOpenTelemetryAppender`, installed by `OpenTelemetryAppenderInitializer`). All three use the collector's gRPC endpoint `OTEL_COLLECTOR_GRPC_URL` (default `http://127.0.0.1:4317`, replacing the OTLP/HTTP `:4318` trace endpoint) and are **off by default**, so local runs and tests never export: `MANAGEMENT_OTLP_TRACING_EXPORT_ENABLED`, `MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED`, `MANAGEMENT_OTLP_LOGGING_EXPORT_ENABLED` (and `MANAGEMENT_OTLP_LOGGING_TRANSPORT`, default `grpc`). Sampling comes from `OTEL_SAMPLING_PROBABILITY` (default `1.0`) and the service name from `OTEL_SERVICE_NAME` (`spring.application.name`, default `eudistack-core-wallet-ebw`). `ReactorContextPropagationConfig` enables Reactor's automatic context propagation, so `traceId`/`spanId` reach the MDC inside reactive operators; `CustomObservationHandler` logs every observation's lifecycle while its logger is at DEBUG.
