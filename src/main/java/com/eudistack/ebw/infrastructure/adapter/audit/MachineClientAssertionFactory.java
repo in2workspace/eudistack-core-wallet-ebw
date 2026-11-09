@@ -15,7 +15,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -57,6 +56,7 @@ final class MachineClientAssertionFactory {
         }
     }
 
+    /** The time claims are NumericDate values, seconds since the epoch, written straight from {@code java.time}. */
     private JWTClaimsSet presentationClaims(Instant now) {
         Map<String, Object> presentation = Map.of(
                 "@context", List.of("https://www.w3.org/2018/credentials/v1"),
@@ -65,8 +65,8 @@ final class MachineClientAssertionFactory {
         return new JWTClaimsSet.Builder()
                 .issuer(clientId)
                 .subject(clientId)
-                .issueTime(Date.from(now))
-                .expirationTime(Date.from(now.plus(PRESENTATION_LIFETIME)))
+                .claim("iat", now.getEpochSecond())
+                .claim("exp", now.plus(PRESENTATION_LIFETIME).getEpochSecond())
                 .jwtID(UUID.randomUUID().toString())
                 .claim("vp", presentation)
                 .build();
@@ -77,8 +77,8 @@ final class MachineClientAssertionFactory {
                 .issuer(clientId)
                 .subject(clientId)
                 .audience(assertionAudience)
-                .issueTime(Date.from(now))
-                .expirationTime(Date.from(now.plus(ASSERTION_LIFETIME)))
+                .claim("iat", now.getEpochSecond())
+                .claim("exp", now.plus(ASSERTION_LIFETIME).getEpochSecond())
                 .jwtID(UUID.randomUUID().toString())
                 .claim("vp_token", vpToken)
                 .build();
