@@ -268,8 +268,8 @@ class OnboardingTicketIT extends IntegrationTestBase {
 
         // Assert
         assertThat(body).containsEntry("hasPasskeys", false).containsEntry("sessionOfAccount", false)
-                .containsEntry("credentialOffer", OFFER).containsKey("registrationTicket");
-        assertThat(body).containsEntry("expiresIn", 300);
+                .containsEntry("credentialOffer", OFFER).containsKey("registrationTicket")
+                .containsEntry("expiresIn", 300);
         assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isZero();
         assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'"
                 + " AND webauthn_user_handle IS NOT NULL AND redeemed_at IS NOT NULL")).isEqualTo(1);

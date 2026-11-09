@@ -4,7 +4,6 @@ import com.eudistack.ebw.domain.model.RegistrationTicket;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.DatabaseClientStub;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
