@@ -14,6 +14,10 @@ import java.util.UUID;
 @Repository
 public class OnboardingDisavowalR2dbcRepository implements OnboardingDisavowalRepository {
 
+    private static final String TOKEN_HASH = "tokenHash";
+    private static final String EXPIRES_AT = "expiresAt";
+    private static final String PASSKEY_ID = "passkeyId";
+
     private static final String INSERT_SQL = """
             INSERT INTO onboarding_disavowal (id, token_hash, user_id, passkey_id, requested_by, registered_at,
                                               expires_at, created_at)
@@ -53,21 +57,21 @@ public class OnboardingDisavowalR2dbcRepository implements OnboardingDisavowalRe
                 .bind("registeredAt", disavowal.registeredAt())
                 .bind("createdAt", disavowal.createdAt());
         spec = disavowal.tokenHash() == null
-                ? spec.bindNull("tokenHash", String.class)
-                : spec.bind("tokenHash", disavowal.tokenHash());
+                ? spec.bindNull(TOKEN_HASH, String.class)
+                : spec.bind(TOKEN_HASH, disavowal.tokenHash());
         spec = disavowal.expiresAt() == null
-                ? spec.bindNull("expiresAt", Instant.class)
-                : spec.bind("expiresAt", disavowal.expiresAt());
+                ? spec.bindNull(EXPIRES_AT, Instant.class)
+                : spec.bind(EXPIRES_AT, disavowal.expiresAt());
         spec = disavowal.passkeyId() == null
-                ? spec.bindNull("passkeyId", UUID.class)
-                : spec.bind("passkeyId", disavowal.passkeyId());
+                ? spec.bindNull(PASSKEY_ID, UUID.class)
+                : spec.bind(PASSKEY_ID, disavowal.passkeyId());
         return spec.fetch().rowsUpdated().thenReturn(disavowal);
     }
 
     @Override
     public Mono<OnboardingDisavowal> consume(String tokenHash) {
         return databaseClient.sql(CONSUME_SQL)
-                .bind("tokenHash", tokenHash)
+                .bind(TOKEN_HASH, tokenHash)
                 .map((row, metadata) -> toDisavowal(row))
                 .one();
     }
@@ -75,9 +79,9 @@ public class OnboardingDisavowalR2dbcRepository implements OnboardingDisavowalRe
     @Override
     public Mono<OnboardingDisavowal> assignToken(UUID passkeyId, String tokenHash, Instant expiresAt) {
         return databaseClient.sql(ASSIGN_TOKEN_SQL)
-                .bind("passkeyId", passkeyId)
-                .bind("tokenHash", tokenHash)
-                .bind("expiresAt", expiresAt)
+                .bind(PASSKEY_ID, passkeyId)
+                .bind(TOKEN_HASH, tokenHash)
+                .bind(EXPIRES_AT, expiresAt)
                 .map((row, metadata) -> toDisavowal(row))
                 .one();
     }

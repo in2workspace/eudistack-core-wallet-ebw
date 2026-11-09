@@ -19,7 +19,6 @@ import reactor.core.publisher.Mono;
 import java.text.ParseException;
 import java.time.Clock;
 import java.util.Collection;
-import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -109,7 +108,7 @@ public class SystemTokenVerifier {
 
     private SystemCaller authorize(JWTClaimsSet claims, String tenant) {
         var expiration = claims.getExpirationTime();
-        if (expiration == null || !expiration.after(Date.from(clock.instant()))) {
+        if (expiration == null || !expiration.toInstant().isAfter(clock.instant())) {
             throw SystemTokenRejectedException.invalidToken("expired");
         }
         var expectedTenant = stripEnvSuffix(tenant);

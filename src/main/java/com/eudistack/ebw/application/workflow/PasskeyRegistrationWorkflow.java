@@ -35,6 +35,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -92,7 +93,27 @@ public class PasskeyRegistrationWorkflow {
     private record Stored(IssuedSession session, UserPasskey passkey, boolean hadPasskeys) {}
 
     /** Who the passkey is for: the account, or the one an onboarding pre-registration will create. */
-    private record Target(UUID userId, byte[] userHandle, String email) {}
+    private record Target(UUID userId, byte[] userHandle, String email) {
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof Target(var otherUserId, var otherHandle, var otherEmail)
+                    && Objects.equals(userId, otherUserId)
+                    && Arrays.equals(userHandle, otherHandle)
+                    && Objects.equals(email, otherEmail);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * Objects.hash(userId, email) + Arrays.hashCode(userHandle);
+        }
+
+        /** Never prints the email: it is personal data. */
+        @Override
+        public String toString() {
+            return "Target[userId=" + userId + ", email=[redacted]]";
+        }
+    }
 
     /** Account of an onboarding registration, and whether this registration created it. */
     private record OnboardingAccount(WalletUser user, boolean created) {}

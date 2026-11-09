@@ -127,16 +127,21 @@ public class SmtpEmailSender implements EmailSender {
                             .defaultIfEmpty(tenant);
             return Mono.zip(tenantConfigService.getStringOrDefault("ebw.mail_from", defaultMailFrom), displayName)
                     .flatMap(tuple -> Mono.fromCallable(() -> {
-                        send(email, template, subjectKey, variables, tuple.getT1(), tuple.getT2(),
-                                emailBrandingResolver.resolve(tenant), messageLocale);
+                        send(email, template, subjectKey, variables,
+                                new TenantSender(tuple.getT1(), tuple.getT2(), emailBrandingResolver.resolve(tenant)),
+                                messageLocale);
                         return null;
                     }).subscribeOn(Schedulers.boundedElastic()));
         }).then();
     }
 
+    /** Who the email is sent as: the tenant's sender address, display name and branding. */
+    private record TenantSender(String from, String displayName, EmailBranding branding) {}
+
     private void send(String email, String template, String subjectKey, Map<String, Object> variables,
-                      String from, String tenantDisplayName, EmailBranding branding, Locale locale)
-            throws MessagingException {
+                      TenantSender sender, Locale locale) throws MessagingException {
+        var branding = sender.branding();
+        var tenantDisplayName = sender.displayName();
         var context = new Context(locale);
         variables.forEach(context::setVariable);
         context.setVariable("branding", branding);
@@ -149,7 +154,7 @@ public class SmtpEmailSender implements EmailSender {
 
         var mimeMessage = mailSender.createMimeMessage();
         var helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
-        helper.setFrom(from);
+        helper.setFrom(sender.from());
         helper.setTo(email);
         helper.setSubject(subject);
         // Inline parts must follow setText: otherwise the image becomes the first part of
