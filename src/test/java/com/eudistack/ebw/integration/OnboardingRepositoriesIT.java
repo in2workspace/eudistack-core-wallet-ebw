@@ -69,7 +69,7 @@ class OnboardingRepositoriesIT extends IntegrationTestBase {
         assertThat(first.email()).isEqualTo(stored.email());
         assertThat(second).isNull();
         assertThat(query("SELECT token_hash FROM onboarding_preregistration WHERE id = '" + stored.id() + "'"))
-                .singleElement().satisfies(row -> assertThat(row.get("token_hash")).isEqualTo(tokenHash));
+                .singleElement().satisfies(row -> assertThat(row).containsEntry("token_hash", tokenHash));
     }
 
     @Test

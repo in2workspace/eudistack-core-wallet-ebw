@@ -32,7 +32,6 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -93,8 +92,8 @@ class CreateOnboardingTicketWorkflowTest {
         assertThat(stored.credentialOffer()).isEqualTo(OFFER);
         assertThat(stored.requestedBy()).isEqualTo("portal");
         assertThat(stored.expiresAt()).isBetween(Instant.now().plusSeconds(290), Instant.now().plusSeconds(301));
-        verify(auditService).record(eq("onboarding_preregistration"), eq(stored.id()),
-                eq(AuthAuditEvents.PREREGISTRATION_CREATED), eq(null), eq(Map.of("requested_by", "portal")));
+        verify(auditService).record("onboarding_preregistration", stored.id(),
+                AuthAuditEvents.PREREGISTRATION_CREATED, null, Map.of("requested_by", "portal"));
     }
 
     @Test

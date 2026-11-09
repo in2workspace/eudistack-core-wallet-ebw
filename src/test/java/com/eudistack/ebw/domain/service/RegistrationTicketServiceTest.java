@@ -92,6 +92,32 @@ class RegistrationTicketServiceTest {
     }
 
     @Test
+    void issueForPreregistration_storesOnlyTheHashBoundToThePreregistrationAndEmitsTheRawTicket() {
+        // Arrange
+        var preregistrationId = UUID.randomUUID();
+        var bytes = new byte[32];
+        Arrays.fill(bytes, (byte) 3);
+        var raw = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        when(randomGenerator.generateBytes(32)).thenReturn(bytes);
+        when(hashProvider.sha256(raw)).thenReturn("stored-hash");
+        when(ticketRepository.insert(any())).thenAnswer(call -> Mono.just(call.getArgument(0)));
+
+        // Act
+        var issued = service.issueForPreregistration(null, preregistrationId).block();
+
+        // Assert
+        var stored = ArgumentCaptor.forClass(RegistrationTicket.class);
+        verify(ticketRepository).insert(stored.capture());
+        assertThat(stored.getValue().userId()).isNull();
+        assertThat(stored.getValue().preregistrationId()).isEqualTo(preregistrationId);
+        assertThat(stored.getValue().tokenHash()).isEqualTo("stored-hash");
+        assertThat(issued).isNotNull();
+        assertThat(issued.raw()).isEqualTo(raw);
+        assertThat(issued.expiresAt()).isEqualTo(stored.getValue().expiresAt());
+        assertThat(issued.toString()).doesNotContain(raw);
+    }
+
+    @Test
     void resolve_usableTicket_emitsItLookedUpByHash() {
         // Arrange
         var usable = ticket();

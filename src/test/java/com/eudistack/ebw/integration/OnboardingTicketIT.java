@@ -29,6 +29,9 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 
 /**
  * End-to-end onboarding ticket flow on a running service with PostgreSQL and a simulated tenant
@@ -191,7 +194,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
         // Assert
         var url = (String) body.get("onboardingUrl");
         assertThat(url).matches("https://" + PUBLIC_HOST.replace(".", "\\.") + "/t/[A-Za-z0-9_-]{22}");
-        assertThat(body.get("expiresIn")).isEqualTo(300);
+        assertThat(body).containsEntry("expiresIn", 300);
         var ticket = url.substring(url.lastIndexOf('/') + 1);
         assertThat(ticket).hasSize(22);
         assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'")).isEqualTo(1);
@@ -266,7 +269,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
         // Assert
         assertThat(body).containsEntry("hasPasskeys", false).containsEntry("sessionOfAccount", false)
                 .containsEntry("credentialOffer", OFFER).containsKey("registrationTicket");
-        assertThat(body.get("expiresIn")).isEqualTo(300);
+        assertThat(body).containsEntry("expiresIn", 300);
         assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isZero();
         assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'"
                 + " AND webauthn_user_handle IS NOT NULL AND redeemed_at IS NOT NULL")).isEqualTo(1);
@@ -422,8 +425,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
         // Arrange: AC-10
         var email = email("notme");
         var token = disavowalTokenFor(email, "now() + interval '7 days'");
-        org.mockito.Mockito.when(emailSender.sendOnboardingAlert(org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(reactor.core.publisher.Mono.empty());
+        when(emailSender.sendOnboardingAlert(anyString(), any(), any())).thenReturn(Mono.empty());
 
         // Act
         disavow(token).expectStatus().isNoContent();
@@ -435,9 +437,9 @@ class OnboardingTicketIT extends IntegrationTestBase {
         assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isEqualTo(1);
         assertThat(countInTestTenant("audit_log WHERE action = 'ONBOARDING_DISAVOWED' AND actor_id = " + user))
                 .isEqualTo(1);
-        org.mockito.Mockito.verify(emailSender).sendOnboardingAlert(org.mockito.ArgumentMatchers.eq(SECURITY_CONTACT),
-                org.mockito.ArgumentMatchers.argThat(alert -> alert.maskedEmail().startsWith("n***@")
-                        && !alert.maskedEmail().contains("notme")), org.mockito.ArgumentMatchers.any());
+        verify(emailSender).sendOnboardingAlert(eq(SECURITY_CONTACT),
+                argThat(alert -> alert.maskedEmail().startsWith("n***@") && !alert.maskedEmail().contains("notme")),
+                any());
 
         // A second time, the link is no longer valid
         disavow(token).expectStatus().isUnauthorized().expectBody().jsonPath("$.type").isEqualTo("invalid_token");
