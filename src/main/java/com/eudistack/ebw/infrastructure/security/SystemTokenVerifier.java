@@ -48,6 +48,7 @@ public class SystemTokenVerifier {
 
     static final String MACHINE_CREDENTIAL_TYPE = "LEARCredentialMachine";
     static final String MACHINE_CONFIGURATION_PREFIX = "learcredential.machine.";
+    static final String ORGANIZATION_POWER_TYPE = "organization";
     static final String ONBOARDING_FUNCTION = "Onboarding";
     static final String EXECUTE_ACTION = "Execute";
     private static final List<String> ENV_SUFFIXES = List.of("-stg", "-dev", "-pre");
@@ -152,15 +153,14 @@ public class SystemTokenVerifier {
     }
 
     /**
-     * Tenant administrator: a power with {@code function = Onboarding}, the action {@code Execute}
-     * and {@code domain} equal to the tenant ignoring case, as the Issuer's
-     * {@code PolicyContextFactory.resolveTenantAdmin}, without its {@code admin_organization_id} check.
+     * Tenant administrator (design AD-9): a power {@code organization} · tenant · {@code Onboarding}
+     * · {@code Execute}, the {@code tenant_admin} user type of the Issuer's authorization matrix
+     * ({@code authorization-matrix.yaml}, {@code AuthorizationMatrix.PowerPattern.isHeldBy}):
+     * {@code type} and {@code function} compared exactly, {@code action} a value or a list that
+     * holds {@code Execute}, and {@code domain} equal to the tenant ignoring case. The same power
+     * with {@code type: domain} is an organization administrator, not a tenant administrator.
      * Each field is read from itself or, when absent, from its {@code tmf_} alias; a power whose
      * field and alias differ is ignored, as the Issuer's {@code JwtCallerProvider} does.
-     *
-     * <p>PROVISIONAL (EUD-315 decision P1, pending Tech Lead): design AD-9 also requires
-     * {@code type = organization}; {@code type} is not checked, as in the Issuer (the test machine
-     * credentials carry {@code type: Domain}).
      */
     static boolean hasTenantAdministratorPower(Object powerClaim, String tenant) {
         if (!(powerClaim instanceof Collection<?> powers)) {
@@ -170,7 +170,8 @@ public class SystemTokenVerifier {
                 .filter(Map.class::isInstance)
                 .map(power -> (Map<?, ?>) power)
                 .filter(power -> !hasConflictingAlias(power))
-                .anyMatch(power -> ONBOARDING_FUNCTION.equals(field(power, "function"))
+                .anyMatch(power -> ORGANIZATION_POWER_TYPE.equals(field(power, "type"))
+                        && ONBOARDING_FUNCTION.equals(field(power, "function"))
                         && hasAction(field(power, "action"))
                         && field(power, "domain") instanceof String domain
                         && domain.equalsIgnoreCase(tenant));

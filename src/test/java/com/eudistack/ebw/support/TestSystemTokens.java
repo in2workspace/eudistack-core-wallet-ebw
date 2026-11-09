@@ -46,9 +46,10 @@ public final class TestSystemTokens {
         return key.getKeyID();
     }
 
-    /** Tenant administrator power of {@code domain}: Onboarding · Execute. */
+    /** Tenant administrator power of {@code domain} (AD-9): organization · domain · Onboarding · Execute. */
     public static Map<String, Object> onboardingPower(String domain) {
-        return Map.of("type", "Domain", "domain", domain, "function", "Onboarding", "action", List.of("Execute"));
+        return Map.of("type", "organization", "domain", domain, "function", "Onboarding",
+                "action", List.of("Execute"));
     }
 
     /** Valid system token of a tenant administrator machine. */

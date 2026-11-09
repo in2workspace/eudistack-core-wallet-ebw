@@ -218,6 +218,12 @@ class OnboardingTicketIT extends IntegrationTestBase {
                         List.of(Map.of("type", "Domain", "domain", TEST_TENANT, "function", "ProductOffering",
                                 "action", List.of("Create"))), future),
                 Map.of("email", email)).expectStatus().isForbidden();
+        // AD-9: the tenant's Onboarding · Execute with type domain is an organization administrator
+        requestTicket(VERIFIER_KEYS.token(ISSUER, TEST_TENANT, "LEARCredentialMachine",
+                        List.of(Map.of("type", "domain", "domain", TEST_TENANT, "function", "Onboarding",
+                                "action", List.of("Execute"))), future),
+                Map.of("email", email)).expectStatus().isForbidden()
+                .expectBody().jsonPath("$.type").isEqualTo("insufficient_permission");
         requestTicket(VERIFIER_KEYS.token(ISSUER, TEST_TENANT, "LEARCredentialMachine",
                         List.of(TestSystemTokens.onboardingPower("kpmg")), future),
                 Map.of("email", email)).expectStatus().isForbidden();

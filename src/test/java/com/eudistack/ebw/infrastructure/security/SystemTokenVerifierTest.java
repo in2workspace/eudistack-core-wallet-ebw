@@ -22,7 +22,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Unit tests for {@link SystemTokenVerifier} (AC-02, ES-04, ES-05, decision P1). */
+/** Unit tests for {@link SystemTokenVerifier} (AC-02, ES-04, ES-05, EC-14, design AD-9). */
 @ExtendWith(MockitoExtension.class)
 class SystemTokenVerifierTest {
 
@@ -120,6 +120,29 @@ class SystemTokenVerifierTest {
     }
 
     @Test
+    void verify_organizationAdministratorPower_isInsufficientPermission() {
+        // Arrange: AD-9, the same power with type domain is an organization administrator (Issuer matrix)
+        expectRejected(verifierKeys.token(ISSUER, TENANT, "LEARCredentialMachine",
+                List.of(Map.of("type", "domain", "domain", TENANT, "function", "Onboarding",
+                        "action", List.of("Execute"))), Instant.now().plusSeconds(60)), "insufficient_permission");
+    }
+
+    @Test
+    void verify_powerTypeWithOtherCase_isInsufficientPermission() {
+        // Arrange: type is compared exactly, as in the Issuer
+        expectRejected(verifierKeys.token(ISSUER, TENANT, "LEARCredentialMachine",
+                List.of(Map.of("type", "Organization", "domain", TENANT, "function", "Onboarding",
+                        "action", "Execute")), Instant.now().plusSeconds(60)), "insufficient_permission");
+    }
+
+    @Test
+    void verify_powerWithoutType_isInsufficientPermission() {
+        expectRejected(verifierKeys.token(ISSUER, TENANT, "LEARCredentialMachine",
+                List.of(Map.of("domain", TENANT, "function", "Onboarding", "action", "Execute")),
+                Instant.now().plusSeconds(60)), "insufficient_permission");
+    }
+
+    @Test
     void verify_administratorOfAnotherTenant_isInsufficientPermission() {
         expectRejected(verifierKeys.token(ISSUER, TENANT, "LEARCredentialMachine",
                 List.of(TestSystemTokens.onboardingPower("kpmg")), Instant.now().plusSeconds(60)),
@@ -163,7 +186,7 @@ class SystemTokenVerifierTest {
     void verify_powerWithTmfAliases_isAccepted() {
         // Arrange: EC-14, the fields of the power come as their tmf_ aliases
         var token = verifierKeys.token(ISSUER, TENANT, "LEARCredentialMachine",
-                List.of(Map.of("tmf_type", "Domain", "tmf_domain", TENANT, "tmf_function", "Onboarding",
+                List.of(Map.of("tmf_type", "organization", "tmf_domain", TENANT, "tmf_function", "Onboarding",
                         "tmf_action", List.of("Execute"))), Instant.now().plusSeconds(60));
 
         // Act + Assert
@@ -174,8 +197,9 @@ class SystemTokenVerifierTest {
     void verify_powerWhoseFieldAndAliasDiffer_isInsufficientPermission() {
         // Arrange: the field says this tenant and its alias another one, so the power is ignored
         expectRejected(verifierKeys.token(ISSUER, TENANT, "LEARCredentialMachine",
-                List.of(Map.of("domain", TENANT, "tmf_domain", "kpmg", "function", "Onboarding",
-                        "action", "Execute")), Instant.now().plusSeconds(60)), "insufficient_permission");
+                List.of(Map.of("type", "organization", "domain", TENANT, "tmf_domain", "kpmg",
+                        "function", "Onboarding", "action", "Execute")), Instant.now().plusSeconds(60)),
+                "insufficient_permission");
     }
 
     @Test
