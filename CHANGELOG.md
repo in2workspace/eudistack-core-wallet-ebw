@@ -76,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deleting an attestation deletes its key material** in the same transaction (its `holder_key` row or its `passkey_prf_salt` row); `ebw_app_role` gets DELETE on both tables.
 - **`/keys/generate` only accepts ES256** (400 otherwise), and an operation that belongs to the other custody mode answers 409 `unsupported-custody-mode` instead of 403.
 - **`hsm` and `qtsp` are no longer key managers**: they leave the enum, the resolver and the `key_manager` CHECK.
-- **Key audit is meant to be enabled in DEV and STG** (`KEYMANAGER_AUDIT_ENABLED=true` and the log group `/eudistack/audit/wallet-ebw/<env>`, in `eudistack-platform-iac`); the events go to CloudWatch with their hash chain. They will move to the audit API in a later change.
+- **Key audit is meant to be enabled in DEV and STG** (`KEYMANAGER_AUDIT_ENABLED=true` and the log group `/eudistack/audit/wallet-ebw/<env>`); the events go to CloudWatch with their hash chain. The log group, its short CloudWatch retention and the subscription that moves the events to S3 Glacier for the long retention belong to the infrastructure: the service no longer sets the retention of the group. They will move to the audit API in a later change.
 
 ### Removed
 

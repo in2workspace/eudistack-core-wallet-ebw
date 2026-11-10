@@ -8,7 +8,7 @@ import reactor.core.publisher.Mono;
  *
  * <p>Implementations are expected to be fire-and-forget with best-effort delivery;
  * callers should not block on audit emission for latency-sensitive operations.
- * Retention and signing requirements are handled by the adapter implementation.</p>
+ * Integrity (hash chain) is handled by the adapter; the retention of the stored events belongs to the infrastructure.</p>
  *
  * <p>Spec: ADR-062 (hash chain audit batches), ADR-069 (audit log platform model),
  * FR-61 (audit Dominio D2), EUDISTACK-119 AD-119-3.</p>

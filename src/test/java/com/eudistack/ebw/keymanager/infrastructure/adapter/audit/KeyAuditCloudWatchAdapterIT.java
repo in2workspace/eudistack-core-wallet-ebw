@@ -6,8 +6,6 @@ import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.localstack.LocalStackContainer;
@@ -20,7 +18,7 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.cloudwatchlogs.CloudWatchLogsAsyncClient;
 import software.amazon.awssdk.services.cloudwatchlogs.model.CreateLogGroupRequest;
 import software.amazon.awssdk.services.cloudwatchlogs.model.CreateLogStreamRequest;
-import software.amazon.awssdk.services.cloudwatchlogs.model.DeleteRetentionPolicyRequest;
+import software.amazon.awssdk.services.cloudwatchlogs.model.PutRetentionPolicyRequest;
 import software.amazon.awssdk.services.cloudwatchlogs.model.DescribeLogGroupsRequest;
 import software.amazon.awssdk.services.cloudwatchlogs.model.ResourceAlreadyExistsException;
 import software.amazon.awssdk.services.cloudwatchlogs.model.GetLogEventsRequest;
@@ -222,11 +220,17 @@ class KeyAuditCloudWatchAdapterIT {
     }
 
     // -------------------------------------------------------------------------
-    // CA-2 — 7-year log retention set on constructor (compliance requirement)
+    // The retention of the log group belongs to the infrastructure (short in CloudWatch, then S3
+    // Glacier through the subscription): the service must never change it.
     // -------------------------------------------------------------------------
 
     @Test
-    void constructor_setsSevenYearRetentionOnLogGroup() {
+    void constructor_doesNotChangeTheRetentionOfTheLogGroup() {
+        logsClient.putRetentionPolicy(PutRetentionPolicyRequest.builder()
+                .logGroupName(LOG_GROUP)
+                .retentionInDays(14)
+                .build()).join();
+
         KeyAuditCloudWatchAdapter adapter = new KeyAuditCloudWatchAdapter(
                 LOG_GROUP, objectMapper, logsClient, logStreamName);
 
@@ -244,67 +248,10 @@ class KeyAuditCloudWatchAdapterIT {
                     .orElse(null);
 
             assertThat(retentionDays)
-                    .as("CA-2: audit log group must have at least 7-year (2557 days) retention")
-                    .isEqualTo(2557);
+                    .as("the retention set by the infrastructure must be left as it is")
+                    .isEqualTo(14);
         } finally {
             adapter.destroy();
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // CA-2 — retention applied even when the stream pre-exists (GAP-4)
-    // -------------------------------------------------------------------------
-
-    @Nested
-    @DisplayName("when log stream already exists without retention policy")
-    class WhenLogStreamAlreadyExists {
-
-        @BeforeEach
-        @DisplayName("remove retention so the log group simulates a legacy state")
-        void deleteRetentionPolicy() {
-            // Outer @BeforeEach has already created the stream; remove the retention
-            // policy so that ensureLogStream() is forced to re-apply it from scratch.
-            try {
-                logsClient.deleteRetentionPolicy(
-                        DeleteRetentionPolicyRequest.builder()
-                                .logGroupName(LOG_GROUP)
-                                .build()).join();
-            } catch (Exception ignored) {
-                // Retention may not exist yet — that is exactly the state we want.
-            }
-        }
-
-        @Test
-        @DisplayName("ensureLogStream_whenStreamExistsWithoutRetention_appliesSevenYearRetention")
-        void ensureLogStream_whenStreamExistsWithoutRetention_appliesSevenYearRetention() {
-            // Arrange: stream exists (created in outer @BeforeEach), retention removed in
-            // inner @BeforeEach — simulates a legacy or restart scenario.
-
-            // Act: constructor calls ensureLogStream(); stream creation fails silently
-            // (already exists), but the second independent try-catch still applies retention.
-            KeyAuditCloudWatchAdapter adapter = new KeyAuditCloudWatchAdapter(
-                    LOG_GROUP, objectMapper, logsClient, logStreamName);
-
-            try {
-                // Assert: CA-2 retention must be present even though stream pre-existed.
-                Integer retentionDays = logsClient.describeLogGroups(
-                        DescribeLogGroupsRequest.builder()
-                                .logGroupNamePrefix(LOG_GROUP)
-                                .build())
-                        .join()
-                        .logGroups()
-                        .stream()
-                        .filter(lg -> lg.logGroupName().equals(LOG_GROUP))
-                        .findFirst()
-                        .map(lg -> lg.retentionInDays())
-                        .orElse(null);
-
-                assertThat(retentionDays)
-                        .as("CA-2: adapter must enforce 7-year (2557-day) retention even when stream already exists")
-                        .isEqualTo(2557);
-            } finally {
-                adapter.destroy();
-            }
         }
     }
 }

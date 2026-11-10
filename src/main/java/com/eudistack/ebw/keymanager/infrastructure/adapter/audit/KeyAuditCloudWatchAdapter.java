@@ -17,7 +17,6 @@ import software.amazon.awssdk.services.cloudwatchlogs.model.CloudWatchLogsExcept
 import software.amazon.awssdk.services.cloudwatchlogs.model.CreateLogStreamRequest;
 import software.amazon.awssdk.services.cloudwatchlogs.model.InputLogEvent;
 import software.amazon.awssdk.services.cloudwatchlogs.model.PutLogEventsRequest;
-import software.amazon.awssdk.services.cloudwatchlogs.model.PutRetentionPolicyRequest;
 import software.amazon.awssdk.services.cloudwatchlogs.model.ResourceAlreadyExistsException;
 
 import java.security.MessageDigest;
@@ -155,20 +154,10 @@ public class KeyAuditCloudWatchAdapter implements KeyAuditPort, DisposableBean {
                     .build()));
             log.info("keymanager.audit.stream_created group={} stream={}", logGroupName, logStreamName);
         } catch (ResourceAlreadyExistsException e) {
-            log.debug("Log stream already exists, applying retention policy");
+            log.debug("Log stream already exists");
         } catch (SdkException e) {
             log.error("keymanager.audit.stream_create_failed group={} stream={}: {}",
                     logGroupName, logStreamName, e.getMessage());
-        }
-        // CA-2 compliance: ensure ≥ 7-year retention on the log group (idempotent call)
-        try {
-            joinAndRethrowSdkException(logsClient.putRetentionPolicy(PutRetentionPolicyRequest.builder()
-                    .logGroupName(logGroupName)
-                    .retentionInDays(2557)
-                    .build()));
-            log.info("keymanager.audit.retention_set group={} days=2557", logGroupName);
-        } catch (SdkException e) {
-            log.error("keymanager.audit.retention_set_failed group={}: {}", logGroupName, e.getMessage());
         }
     }
 

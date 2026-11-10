@@ -22,7 +22,6 @@ import software.amazon.awssdk.services.cloudwatchlogs.model.CreateLogStreamRespo
 import software.amazon.awssdk.services.cloudwatchlogs.model.PutLogEventsRequest;
 import software.amazon.awssdk.services.cloudwatchlogs.model.PutLogEventsResponse;
 import software.amazon.awssdk.services.cloudwatchlogs.model.PutRetentionPolicyRequest;
-import software.amazon.awssdk.services.cloudwatchlogs.model.PutRetentionPolicyResponse;
 import software.amazon.awssdk.services.cloudwatchlogs.model.ResourceAlreadyExistsException;
 
 import java.nio.charset.StandardCharsets;
@@ -63,8 +62,6 @@ class KeyAuditCloudWatchAdapterTest {
         logsClient = mock(CloudWatchLogsAsyncClient.class);
         when(logsClient.createLogStream(any(CreateLogStreamRequest.class)))
                 .thenReturn(CompletableFuture.completedFuture(CreateLogStreamResponse.builder().build()));
-        when(logsClient.putRetentionPolicy(any(PutRetentionPolicyRequest.class)))
-                .thenReturn(CompletableFuture.completedFuture(PutRetentionPolicyResponse.builder().build()));
         when(logsClient.putLogEvents(any(PutLogEventsRequest.class)))
                 .thenReturn(CompletableFuture.completedFuture(PutLogEventsResponse.builder().build()));
     }
@@ -77,22 +74,21 @@ class KeyAuditCloudWatchAdapterTest {
     }
 
     @Test
-    void constructor_createsTheStreamAndSetsSevenYearRetention() {
+    void constructor_createsTheStreamAndLeavesTheRetentionToTheInfrastructure() {
         // Act
         adapter = newAdapter();
 
-        // Assert
+        // Assert: the retention of the group is set by the infrastructure (short in CloudWatch, then
+        // S3 Glacier through the subscription), never by the service
         var stream = ArgumentCaptor.forClass(CreateLogStreamRequest.class);
         verify(logsClient).createLogStream(stream.capture());
         assertThat(stream.getValue().logGroupName()).isEqualTo(GROUP);
         assertThat(stream.getValue().logStreamName()).isEqualTo(STREAM);
-        var retention = ArgumentCaptor.forClass(PutRetentionPolicyRequest.class);
-        verify(logsClient).putRetentionPolicy(retention.capture());
-        assertThat(retention.getValue().retentionInDays()).isEqualTo(2557);
+        verify(logsClient, never()).putRetentionPolicy(any(PutRetentionPolicyRequest.class));
     }
 
     @Test
-    void constructor_streamAlreadyExists_stillAppliesRetention() {
+    void constructor_streamAlreadyExists_doesNotFailStartup() {
         // Arrange
         when(logsClient.createLogStream(any(CreateLogStreamRequest.class)))
                 .thenReturn(CompletableFuture.failedFuture(
@@ -102,7 +98,8 @@ class KeyAuditCloudWatchAdapterTest {
         adapter = newAdapter();
 
         // Assert
-        verify(logsClient).putRetentionPolicy(any(PutRetentionPolicyRequest.class));
+        verify(logsClient).createLogStream(any(CreateLogStreamRequest.class));
+        verify(logsClient, never()).putRetentionPolicy(any(PutRetentionPolicyRequest.class));
     }
 
     @Test
@@ -110,14 +107,12 @@ class KeyAuditCloudWatchAdapterTest {
         // Arrange
         when(logsClient.createLogStream(any(CreateLogStreamRequest.class)))
                 .thenReturn(CompletableFuture.failedFuture(SdkClientException.create("no credentials")));
-        when(logsClient.putRetentionPolicy(any(PutRetentionPolicyRequest.class)))
-                .thenReturn(CompletableFuture.failedFuture(SdkClientException.create("no credentials")));
 
         // Act
         adapter = newAdapter();
 
         // Assert
-        verify(logsClient).putRetentionPolicy(any(PutRetentionPolicyRequest.class));
+        verify(logsClient).createLogStream(any(CreateLogStreamRequest.class));
     }
 
     @Test
