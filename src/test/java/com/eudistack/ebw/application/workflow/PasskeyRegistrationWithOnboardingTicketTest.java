@@ -183,12 +183,13 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         assertThat(row.getValue().expiresAt()).isNull();
         assertThat(row.getValue().requestedBy()).isEqualTo("portal-machine.example.org");
         assertThat(row.getValue().passkeyId()).isNotNull();
+        assertThat(row.getValue().accountCreated()).isTrue();
         // Provisional (P5): the new-account email goes right after the registration
         verify(onboardingNotice).notify(row.getValue().passkeyId(), "Passkey");
     }
 
     @Test
-    void register_accountWithoutPasskeys_recognizesItWithoutDisavowalRow() {
+    void register_accountWithoutPasskeys_recognizesItAndKeepsTheDisavowalRowAndEmailsTheNotice() {
         // Arrange: EC-01, the ticket names the account (an email sign-up abandoned before the passkey)
         var account = WalletUser.create(EMAIL, new byte[WalletUser.USER_HANDLE_LENGTH]);
         ticket = RegistrationTicket.issueForPreregistration(account.getId(), preregistration.id(), "rt-hash");
@@ -203,8 +204,12 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         // Act + Assert
         StepVerifier.create(workflow.register(command(ceremony.id(), null))).expectNext(session).verifyComplete();
         verify(userRepository, never()).save(any());
-        verify(disavowalRepository, never()).insert(any());
-        verify(onboardingNotice, never()).notify(any(), any());
+        var row = ArgumentCaptor.forClass(OnboardingDisavowal.class);
+        verify(disavowalRepository).insert(row.capture());
+        assertThat(row.getValue().accountCreated()).isFalse();
+        assertThat(row.getValue().userId()).isEqualTo(account.getId());
+        // P17: the account that already existed is warned too
+        verify(onboardingNotice).notify(eq(row.getValue().passkeyId()), any());
         verify(preregistrationRepository).deleteById(preregistration.id());
     }
 

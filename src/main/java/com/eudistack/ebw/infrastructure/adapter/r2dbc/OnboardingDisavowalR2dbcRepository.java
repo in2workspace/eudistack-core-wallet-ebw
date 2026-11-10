@@ -20,22 +20,23 @@ public class OnboardingDisavowalR2dbcRepository implements OnboardingDisavowalRe
 
     private static final String INSERT_SQL = """
             INSERT INTO onboarding_disavowal (id, token_hash, user_id, passkey_id, requested_by, registered_at,
-                                              expires_at, created_at)
-            VALUES (:id, :tokenHash, :userId, :passkeyId, :requestedBy, :registeredAt, :expiresAt, :createdAt)
+                                              account_created, expires_at, created_at)
+            VALUES (:id, :tokenHash, :userId, :passkeyId, :requestedBy, :registeredAt, :accountCreated, :expiresAt,
+                    :createdAt)
             """;
 
     private static final String CONSUME_SQL = """
             UPDATE onboarding_disavowal SET consumed_at = now()
              WHERE token_hash = :tokenHash AND consumed_at IS NULL AND expires_at > now()
-            RETURNING id, token_hash, user_id, passkey_id, requested_by, registered_at, expires_at, consumed_at,
-                      created_at
+            RETURNING id, token_hash, user_id, passkey_id, requested_by, registered_at, account_created, expires_at,
+                      consumed_at, created_at
             """;
 
     private static final String ASSIGN_TOKEN_SQL = """
             UPDATE onboarding_disavowal SET token_hash = :tokenHash, expires_at = :expiresAt
              WHERE passkey_id = :passkeyId AND token_hash IS NULL
-            RETURNING id, token_hash, user_id, passkey_id, requested_by, registered_at, expires_at, consumed_at,
-                      created_at
+            RETURNING id, token_hash, user_id, passkey_id, requested_by, registered_at, account_created, expires_at,
+                      consumed_at, created_at
             """;
 
     /** Also the rows whose email was never sent, once they could no longer be used anyway. */
@@ -55,6 +56,7 @@ public class OnboardingDisavowalR2dbcRepository implements OnboardingDisavowalRe
                 .bind("userId", disavowal.userId())
                 .bind("requestedBy", disavowal.requestedBy())
                 .bind("registeredAt", disavowal.registeredAt())
+                .bind("accountCreated", disavowal.accountCreated())
                 .bind("createdAt", disavowal.createdAt());
         spec = disavowal.tokenHash() == null
                 ? spec.bindNull(TOKEN_HASH, String.class)
@@ -99,6 +101,7 @@ public class OnboardingDisavowalR2dbcRepository implements OnboardingDisavowalRe
                 row.get("passkey_id", UUID.class),
                 row.get("requested_by", String.class),
                 row.get("registered_at", Instant.class),
+                Boolean.TRUE.equals(row.get("account_created", Boolean.class)),
                 row.get("expires_at", Instant.class),
                 row.get("consumed_at", Instant.class),
                 row.get("created_at", Instant.class));

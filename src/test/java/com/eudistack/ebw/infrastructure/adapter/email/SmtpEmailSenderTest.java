@@ -125,7 +125,7 @@ class SmtpEmailSenderTest {
         // Arrange: FR-32, the alert never carries the holder's full email
         when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
         var alert = new OnboardingAlert(OnboardingAlert.mask("ana.garcia@cgcom.es"),
-                Instant.parse("2026-10-30T09:42:00Z"));
+                Instant.parse("2026-10-30T09:42:00Z"), true);
 
         // Act
         StepVerifier.create(sender.sendOnboardingAlert("security@cgcom.es", alert, Locale.ENGLISH)
@@ -146,11 +146,61 @@ class SmtpEmailSenderTest {
     }
 
     @Test
+    void sendOnboardingAlert_accountThatAlreadyExisted_saysAPasskeyWasAdded() throws Exception {
+        // Arrange: EC-01, P17 (provisional texts)
+        when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
+        var alert = new OnboardingAlert(OnboardingAlert.mask("ana.garcia@cgcom.es"),
+                Instant.parse("2026-10-30T09:42:00Z"), false);
+
+        // Act
+        StepVerifier.create(sender.sendOnboardingAlert("security@cgcom.es", alert, Locale.ENGLISH)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "cgcom")))
+                .verifyComplete();
+
+        // Assert
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).isEqualTo("Wallet passkey not recognized — CGCOM");
+        assertThat(htmlOf(message))
+                .contains("The holder of a***@cgcom.es has said they did not add the new passkey to their wallet.")
+                .contains("Added: 30/10/2026 10:42")
+                .doesNotContain("did not create their wallet")
+                .doesNotContain("ana.garcia");
+    }
+
+    @Test
+    void sendAccountCreatedNotice_accountThatAlreadyExisted_saysAPasskeyWasAdded() throws Exception {
+        // Arrange: EC-01, P17 (provisional texts)
+        when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
+        var notice = new AccountCreatedNotice(Instant.parse("2026-10-30T09:42:00Z"),
+                "iPhone · Safari", "https://cgcom.eudistack.net/no-he-sido-yo#tok", Instant.parse("2026-11-06T09:42:00Z"),
+                false);
+
+        // Act
+        StepVerifier.create(sender.sendAccountCreatedNotice("ana@cgcom.es", notice, Locale.ENGLISH)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "cgcom")))
+                .verifyComplete();
+
+        // Assert
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).isEqualTo("A passkey has been added to your CGCOM wallet");
+        assertThat(htmlOf(message))
+                .contains("On 30/10/2026 10:42 a passkey was added to your wallet on the device «iPhone · Safari».")
+                .contains("A passkey has been added to your wallet")
+                .contains("href=\"https://cgcom.eudistack.net/no-he-sido-yo#tok\"")
+                .doesNotContain("your wallet was created");
+    }
+
+    @Test
     void sendAccountCreatedNotice_holder_getsTheDateTheDeviceAndTheLinkWithoutTheSystem() throws Exception {
         // Arrange: FR-29
         when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
         var notice = new AccountCreatedNotice(Instant.parse("2026-10-30T09:42:00Z"),
-                "iPhone · Safari", "https://cgcom.eudistack.net/no-he-sido-yo#tok", Instant.parse("2026-11-06T09:42:00Z"));
+                "iPhone · Safari", "https://cgcom.eudistack.net/no-he-sido-yo#tok", Instant.parse("2026-11-06T09:42:00Z"),
+                true);
 
         // Act
         StepVerifier.create(sender.sendAccountCreatedNotice("ana@cgcom.es", notice, Locale.ENGLISH)

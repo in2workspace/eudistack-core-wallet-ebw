@@ -21,8 +21,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * New-account email of an account created with an onboarding ticket, with the single-use "it was
- * not me" link (design §2.6, FR-29). The token is generated here, when the email is sent, and
+ * Email of a passkey registered with an onboarding ticket, for a new account and for one that already
+ * existed (decision P17), with the single-use "it was not me" link (design §2.6, FR-29). The token is generated here, when the email is sent, and
  * given to the row the registration left without one (decision P6): only its SHA-256 is stored,
  * and the conditional update makes the email go out once. Best effort: a failure is traced as
  * {@code ONBOARDING_NOTICE_FAILED} and never undoes the onboarding; the email is not retried.
@@ -95,7 +95,7 @@ public class NotifyOnboardingAccountCreatedWorkflow {
                 .flatMap(tuple -> emailSender.sendAccountCreatedNotice(tuple.getT1().getEmail(),
                         new AccountCreatedNotice(disavowal.registeredAt(), deviceName,
                                 "https://" + tuple.getT2().rpId() + DISAVOWAL_PATH + token,
-                                disavowal.expiresAt()),
+                                disavowal.expiresAt(), disavowal.accountCreated()),
                         NOTICE_LOCALE))
                 .timeout(NOTICE_TIMEOUT);
     }

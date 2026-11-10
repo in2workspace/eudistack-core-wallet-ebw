@@ -68,10 +68,8 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
         bytes[0] = 9;
         expectedToken = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         var pending = OnboardingDisavowal.pending(account.getId(), passkeyId, "portal-machine.cgcom.es",
-                Instant.parse("2026-10-30T09:42:00Z"));
-        withToken = new OnboardingDisavowal(pending.id(), "hash", pending.userId(), pending.passkeyId(),
-                pending.requestedBy(), pending.registeredAt(), Instant.now().plus(Duration.ofDays(7)), null,
-                pending.createdAt());
+                Instant.parse("2026-10-30T09:42:00Z"), true);
+        withToken = withToken(pending, true);
         lenient().when(randomGenerator.generateBytes(32)).thenReturn(bytes);
         lenient().when(hashProvider.sha256(expectedToken)).thenReturn("hash");
         lenient().when(disavowalRepository.assignToken(eq(passkeyId), eq("hash"), any())).thenReturn(Mono.just(withToken));
@@ -79,6 +77,12 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
         lenient().when(authSettings.relyingParty()).thenReturn(Mono.just(RP));
         lenient().when(emailSender.sendAccountCreatedNotice(anyString(), any(), any())).thenReturn(Mono.empty());
         lenient().when(auditService.record(anyString(), any(), anyString(), any(), any())).thenReturn(Mono.empty());
+    }
+
+    private static OnboardingDisavowal withToken(OnboardingDisavowal pending, boolean accountCreated) {
+        return new OnboardingDisavowal(pending.id(), "hash", pending.userId(), pending.passkeyId(),
+                pending.requestedBy(), pending.registeredAt(), accountCreated, Instant.now().plus(Duration.ofDays(7)),
+                null, pending.createdAt());
     }
 
     @Test
@@ -97,8 +101,26 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
                 .isEqualTo("https://cgcom.eudistack.net/no-he-sido-yo#" + expectedToken);
         assertThat(notice.getValue().deviceName()).isEqualTo("iPhone · Safari");
         assertThat(notice.getValue().createdAt()).isEqualTo(Instant.parse("2026-10-30T09:42:00Z"));
+        assertThat(notice.getValue().accountCreated()).isTrue();
         verify(auditService).record("onboarding_disavowal", withToken.id(), AuthAuditEvents.ONBOARDING_NOTICE_SENT,
                 account.getId(), Map.of());
+    }
+
+    @Test
+    void notify_rowOfAnAccountThatAlreadyExisted_emailsTheNoticeMarkedAsNotCreated() {
+        // Arrange: EC-01, P17
+        var recognized = OnboardingDisavowal.pending(account.getId(), passkeyId, "portal-machine.cgcom.es",
+                Instant.parse("2026-10-30T09:42:00Z"), false);
+        when(disavowalRepository.assignToken(eq(passkeyId), eq("hash"), any()))
+                .thenReturn(Mono.just(withToken(recognized, false)));
+
+        // Act
+        StepVerifier.create(workflow.notify(passkeyId, "iPhone · Safari")).verifyComplete();
+
+        // Assert
+        var notice = ArgumentCaptor.forClass(AccountCreatedNotice.class);
+        verify(emailSender).sendAccountCreatedNotice(eq("ana@cgcom.es"), notice.capture(), any());
+        assertThat(notice.getValue().accountCreated()).isFalse();
     }
 
     @Test

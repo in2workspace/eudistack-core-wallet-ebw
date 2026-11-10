@@ -2,6 +2,7 @@ package com.eudistack.ebw.integration;
 
 import com.eudistack.ebw.application.workflow.ExpireOnboardingWorkflow;
 import com.eudistack.ebw.domain.model.AccountCreatedNotice;
+import com.eudistack.ebw.domain.model.OnboardingAlert;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.infrastructure.configuration.TenantDomainWebFilter;
 import com.eudistack.ebw.support.FakeVerifierServer;
@@ -436,9 +437,9 @@ class OnboardingTicketIT extends IntegrationTestBase {
         var schema = TEST_TENANT + "_business_wallet";
         try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(), "test", "test")) {
             var inserted = conn.createStatement().executeUpdate("INSERT INTO " + schema + ".onboarding_disavowal"
-                    + " (id, token_hash, user_id, passkey_id, requested_by, registered_at, expires_at)"
+                    + " (id, token_hash, user_id, passkey_id, requested_by, registered_at, account_created, expires_at)"
                     + " SELECT gen_random_uuid(), '" + sha256(token) + "', u.id, p.id, 'portal-machine.example.org',"
-                    + " now(), " + expiresAt + " FROM " + schema + ".wallet_user u JOIN " + schema + ".user_passkey p"
+                    + " now(), true, " + expiresAt + " FROM " + schema + ".wallet_user u JOIN " + schema + ".user_passkey p"
                     + " ON p.user_id = u.id WHERE u.email = '" + email + "'");
             assertThat(inserted).isEqualTo(1);
         } catch (SQLException e) {
@@ -524,6 +525,77 @@ class OnboardingTicketIT extends IntegrationTestBase {
         }).when(emailSender).sendAccountCreatedNotice(anyString(), any(), any());
         when(emailSender.sendOnboardingAlert(anyString(), any(), any())).thenReturn(Mono.empty());
         return notices;
+    }
+
+    /** Captures the alerts to the security contact; call after {@link #captureNotices()}, which stubs them. */
+    private List<OnboardingAlert> captureAlerts() {
+        var alerts = new CopyOnWriteArrayList<OnboardingAlert>();
+        doAnswer(invocation -> {
+            alerts.add(invocation.getArgument(1));
+            return Mono.empty();
+        }).when(emailSender).sendOnboardingAlert(anyString(), any(), any());
+        return alerts;
+    }
+
+    /** An account of the test tenant that never registered a passkey, like an email sign-up left half way. */
+    private static void accountWithoutPasskeys(String email) {
+        sql("INSERT INTO wallet_user (id, email) VALUES ('" + UUID.randomUUID() + "', '" + email + "')");
+    }
+
+    private static String tokenOf(AccountCreatedNotice notice) {
+        return notice.disavowalUrl().substring(notice.disavowalUrl().indexOf('#') + 1);
+    }
+
+    @Test
+    void onboarding_accountWithoutPasskeys_isRecognizedAndGetsTheAddedNoticeThatTheItWasNotMeLinkAnswers() {
+        // Arrange: EC-01 and P17, the account exists without passkeys: no new account, but the same warning
+        var notices = captureNotices();
+        var alerts = captureAlerts();
+        var email = email("recognized");
+        accountWithoutPasskeys(email);
+        var registrationTicket = registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT);
+
+        // Act
+        var session = authClient().registerPasskey(registrationTicket, new SoftwareAuthenticator(TEST_ORIGIN));
+
+        // Assert: the account is the same, the passkey is its first one, and the row and the email say "not created"
+        assertThat(session.accessToken()).isNotBlank();
+        assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isEqualTo(1);
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isEqualTo(1);
+        assertThat(countInTestTenant("onboarding_disavowal WHERE user_id = " + userOf(email)
+                + " AND account_created = false AND token_hash IS NOT NULL")).isEqualTo(1);
+        assertThat(notices).hasSize(1);
+        assertThat(notices.get(0).accountCreated()).isFalse();
+
+        // And "it was not me" removes that passkey and alerts the security contact with the "added" variant
+        disavow(tokenOf(notices.get(0))).expectStatus().isNoContent();
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isZero();
+        assertThat(alerts).hasSize(1);
+        assertThat(alerts.get(0).accountCreated()).isFalse();
+    }
+
+    @Test
+    void onboarding_secondTicketAfterADisavowal_sendsANewNoticeWithANewLink() {
+        // Arrange: EC-01, the account is left without passkeys by the first "it was not me"
+        var notices = captureNotices();
+        var email = email("again");
+        authClient().registerPasskey(registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT),
+                new SoftwareAuthenticator(TEST_ORIGIN));
+        disavow(tokenOf(notices.get(0))).expectStatus().isNoContent();
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isZero();
+
+        // Act
+        authClient().registerPasskey(registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT),
+                new SoftwareAuthenticator(TEST_ORIGIN));
+
+        // Assert: a second notice for the account that already existed, with its own link that works
+        assertThat(notices).hasSize(2);
+        assertThat(notices.get(0).accountCreated()).isTrue();
+        assertThat(notices.get(1).accountCreated()).isFalse();
+        assertThat(tokenOf(notices.get(1))).isNotEqualTo(tokenOf(notices.get(0)));
+        assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isEqualTo(1);
+        disavow(tokenOf(notices.get(1))).expectStatus().isNoContent();
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isZero();
     }
 
     private static String userOf(String email) {

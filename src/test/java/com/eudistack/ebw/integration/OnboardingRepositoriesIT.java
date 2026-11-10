@@ -169,7 +169,7 @@ class OnboardingRepositoriesIT extends IntegrationTestBase {
                 + "@example.com')");
         var tokenHash = hash();
         block(disavowalRepository.insert(OnboardingDisavowal.issue(tokenHash, userId, null, "system-a",
-                Instant.now())));
+                Instant.now(), false)));
 
         // Act
         var first = block(disavowalRepository.consume(tokenHash));
@@ -179,6 +179,7 @@ class OnboardingRepositoriesIT extends IntegrationTestBase {
         // Assert
         assertThat(first).isNotNull();
         assertThat(first.userId()).isEqualTo(userId);
+        assertThat(first.accountCreated()).isFalse();
         assertThat(first.consumedAt()).isNotNull();
         assertThat(first.expiresAt()).isAfter(Instant.now().plus(Duration.ofDays(6)));
         assertThat(second).isNull();

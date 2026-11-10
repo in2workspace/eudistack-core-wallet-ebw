@@ -98,7 +98,7 @@ public class DisavowOnboardingWorkflow {
                         : userRepository.findById(disavowal.userId())
                                 .flatMap(user -> emailSender.sendOnboardingAlert(settings.securityContact(),
                                         new OnboardingAlert(OnboardingAlert.mask(user.getEmail()),
-                                                disavowal.registeredAt()),
+                                                disavowal.registeredAt(), disavowal.accountCreated()),
                                         ALERT_LOCALE))
                                 .timeout(ALERT_TIMEOUT))
                 .onErrorResume(e -> {

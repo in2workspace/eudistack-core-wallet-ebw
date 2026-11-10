@@ -39,8 +39,10 @@ public class SmtpEmailSender implements EmailSender {
     private static final String NEW_PASSKEY_SUBJECT_KEY = "email.new-passkey.subject";
     private static final String ONBOARDING_ALERT_TEMPLATE = "onboarding-alert-email";
     private static final String ONBOARDING_ALERT_SUBJECT_KEY = "email.onboarding-alert.subject";
+    private static final String ONBOARDING_ALERT_ADDED_SUBJECT_KEY = "email.onboarding-alert.added.subject";
     private static final String ACCOUNT_CREATED_TEMPLATE = "account-created-email";
     private static final String ACCOUNT_CREATED_SUBJECT_KEY = "email.account-created.subject";
+    private static final String ACCOUNT_CREATED_ADDED_SUBJECT_KEY = "email.account-created.added.subject";
     /**
      * Time zone of the dates in the emails. PROVISIONAL (EUD-315 decision P10): {@code ebw.timezone}
      * of the tenant does not exist yet; this is its default in the design (§2.8).
@@ -94,18 +96,22 @@ public class SmtpEmailSender implements EmailSender {
 
     @Override
     public Mono<Void> sendOnboardingAlert(String securityContact, OnboardingAlert alert, Locale locale) {
-        return sendBranded(securityContact, ONBOARDING_ALERT_TEMPLATE, ONBOARDING_ALERT_SUBJECT_KEY, Map.of(
+        var subjectKey = alert.accountCreated() ? ONBOARDING_ALERT_SUBJECT_KEY : ONBOARDING_ALERT_ADDED_SUBJECT_KEY;
+        return sendBranded(securityContact, ONBOARDING_ALERT_TEMPLATE, subjectKey, Map.of(
                 "maskedEmail", alert.maskedEmail(),
-                "registeredAt", EMAIL_DATE_TIME.format(alert.registeredAt().atZone(EMAIL_ZONE))), locale);
+                "registeredAt", EMAIL_DATE_TIME.format(alert.registeredAt().atZone(EMAIL_ZONE)),
+                "accountCreated", alert.accountCreated()), locale);
     }
 
     @Override
     public Mono<Void> sendAccountCreatedNotice(String email, AccountCreatedNotice notice, Locale locale) {
-        return sendBranded(email, ACCOUNT_CREATED_TEMPLATE, ACCOUNT_CREATED_SUBJECT_KEY, Map.of(
+        var subjectKey = notice.accountCreated() ? ACCOUNT_CREATED_SUBJECT_KEY : ACCOUNT_CREATED_ADDED_SUBJECT_KEY;
+        return sendBranded(email, ACCOUNT_CREATED_TEMPLATE, subjectKey, Map.of(
                 "createdAt", EMAIL_DATE_TIME.format(notice.createdAt().atZone(EMAIL_ZONE)),
                 "deviceName", notice.deviceName(),
                 "disavowalUrl", notice.disavowalUrl(),
-                "linkExpiresAt", EMAIL_DATE.format(notice.linkExpiresAt().atZone(EMAIL_ZONE))), locale);
+                "linkExpiresAt", EMAIL_DATE.format(notice.linkExpiresAt().atZone(EMAIL_ZONE)),
+                "accountCreated", notice.accountCreated()), locale);
     }
 
     /** Resolves the tenant's sender, display name and branding from the request context, then sends. */

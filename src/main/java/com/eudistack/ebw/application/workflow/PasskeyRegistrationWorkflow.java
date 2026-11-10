@@ -53,8 +53,8 @@ import java.util.UUID;
  * <p>With a registration ticket of an onboarding pre-registration (EUD-315, design §2.6), the same
  * transaction creates the account with the WebAuthn user handle the options already sent (decision
  * P2), or recognizes the account the ticket names if it still has no passkey; marks the passkey with
- * the pre-registration, deletes it and, for a new account, keeps the "it was not me" row without
- * token (decision P6). An onboarding ticket never adds a passkey to an account that has one: the
+ * the pre-registration, deletes it and keeps the "it was not me" row without token (decision P6),
+ * for a new account and for one that already existed (decision P17). An onboarding ticket never adds a passkey to an account that has one: the
  * account is locked and checked inside the transaction (FR-28, decision P7). If the account of the
  * email appeared after the redemption, the passkey would carry another user handle and could never
  * sign in, so the registration is rejected too. Every registration ceremony is bound to the ticket
@@ -118,8 +118,8 @@ public class PasskeyRegistrationWorkflow {
     /** Account of an onboarding registration, and whether this registration created it. */
     private record OnboardingAccount(WalletUser user, boolean created) {}
 
-    /** What an onboarding registration stored, for the new-account email after the commit. */
-    private record OnboardingStored(IssuedSession session, UserPasskey passkey, boolean created) {}
+    /** What an onboarding registration stored, for the email after the commit. */
+    private record OnboardingStored(IssuedSession session, UserPasskey passkey) {}
 
     /** The onboarding ticket cannot register this passkey (decision P7); answered as {@code invalid_ticket}. */
     private static final class OnboardingAccountConflictException extends RuntimeException {
@@ -243,19 +243,18 @@ public class PasskeyRegistrationWorkflow {
                                         preregistration))))
                 .doOnError(RegistrationFailedException.class,
                         e -> AuthRejectionLog.log(log, REJECTION_SUBJECT, e.getReason()))
-                // PROVISIONAL (decision P5): the new-account email goes after the commit, until the device
+                // PROVISIONAL (decision P5): the email goes after the commit, until the device
                 // registration of EUD-15 sends it. Best effort: it never fails the registration.
-                .flatMap(stored -> stored.created()
-                        ? onboardingNotice.notify(stored.passkey().getId(), stored.passkey().getDisplayName())
-                                .thenReturn(stored.session())
-                        : Mono.just(stored.session()))
+                .flatMap(stored -> onboardingNotice.notify(stored.passkey().getId(),
+                                stored.passkey().getDisplayName())
+                        .thenReturn(stored.session()))
                 .onErrorResume(OnboardingAccountConflictException.class,
                         e -> preregistrationRepository.deleteById(preregistration.id())
                                 .then(auditOnboardingRejection(preregistration, e.reason))
                                 .then(Mono.error(new InvalidTicketException())));
     }
 
-    /** Inside the transaction: passkey, mark, session, pre-registration deleted, "it was not me" row. */
+    /** Inside the transaction: passkey, mark, session, pre-registration deleted, "it was not me" row (EC-01, P17). */
     private Mono<OnboardingStored> storeOnboardingPasskey(RegisterPasskeyCommand command, OnboardingAccount account,
                                                        VerifiedPasskeyRegistration verified, boolean prfSupported,
                                                        OnboardingPreregistration preregistration) {
@@ -264,12 +263,10 @@ public class PasskeyRegistrationWorkflow {
                         .then(sessionOpener.open(account.user(), passkey.getId(), command.replacedRefreshToken(),
                                 "registration"))
                         .flatMap(session -> preregistrationRepository.deleteById(preregistration.id())
-                                .then(account.created()
-                                        ? disavowalRepository.insert(OnboardingDisavowal.pending(
-                                                account.user().getId(), passkey.getId(),
-                                                preregistration.requestedBy(), passkey.getCreatedAt())).then()
-                                        : Mono.<Void>empty())
-                                .thenReturn(new OnboardingStored(session, passkey, account.created()))));
+                                .then(disavowalRepository.insert(OnboardingDisavowal.pending(
+                                        account.user().getId(), passkey.getId(), preregistration.requestedBy(),
+                                        passkey.getCreatedAt(), account.created())))
+                                .thenReturn(new OnboardingStored(session, passkey))));
     }
 
     /**

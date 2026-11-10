@@ -8,9 +8,11 @@ import java.time.Instant;
  * system that requested the ticket (EUD-315 decision P12): the audit trail keeps it.
  *
  * @param maskedEmail  first letter and domain of the holder's email ({@code a***@example.org})
- * @param registeredAt when the account was created with the ticket
+ * @param registeredAt   when the passkey was registered with the ticket
+ * @param accountCreated {@code true} if the ticket created the account, {@code false} if it already
+ *                       existed (EUD-315 decision P17, provisional texts)
  */
-public record OnboardingAlert(String maskedEmail, Instant registeredAt) {
+public record OnboardingAlert(String maskedEmail, Instant registeredAt, boolean accountCreated) {
 
     /** Keeps the first letter and the domain: the tenant can find the case without the full email. */
     public static String mask(String email) {

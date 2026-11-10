@@ -43,20 +43,21 @@ class OnboardingDisavowalR2dbcRepositoryTest {
         when(db.row.get("passkey_id", UUID.class)).thenReturn(PASSKEY_ID);
         when(db.row.get("requested_by", String.class)).thenReturn("verifier");
         when(db.row.get("registered_at", Instant.class)).thenReturn(REGISTERED_AT);
+        when(db.row.get("account_created", Boolean.class)).thenReturn(true);
         when(db.row.get("expires_at", Instant.class)).thenReturn(EXPIRES_AT);
         when(db.row.get("consumed_at", Instant.class)).thenReturn(CONSUMED_AT);
         when(db.row.get("created_at", Instant.class)).thenReturn(CREATED_AT);
     }
 
     private static OnboardingDisavowal expected() {
-        return new OnboardingDisavowal(ID, "hash", USER_ID, PASSKEY_ID, "verifier", REGISTERED_AT, EXPIRES_AT,
-                CONSUMED_AT, CREATED_AT);
+        return new OnboardingDisavowal(ID, "hash", USER_ID, PASSKEY_ID, "verifier", REGISTERED_AT, true,
+                EXPIRES_AT, CONSUMED_AT, CREATED_AT);
     }
 
     @Test
     void insert_issuedDisavowal_bindsEveryColumnAndEmitsIt() {
         // Arrange
-        var disavowal = OnboardingDisavowal.issue("hash", USER_ID, PASSKEY_ID, "verifier", REGISTERED_AT);
+        var disavowal = OnboardingDisavowal.issue("hash", USER_ID, PASSKEY_ID, "verifier", REGISTERED_AT, true);
 
         // Act & Assert
         StepVerifier.create(repository.insert(disavowal)).expectNext(disavowal).verifyComplete();
@@ -68,6 +69,7 @@ class OnboardingDisavowalR2dbcRepositoryTest {
                 .containsEntry("passkeyId", PASSKEY_ID)
                 .containsEntry("requestedBy", "verifier")
                 .containsEntry("registeredAt", REGISTERED_AT)
+                .containsEntry("accountCreated", true)
                 .containsEntry("expiresAt", disavowal.expiresAt())
                 .containsEntry("createdAt", disavowal.createdAt());
     }
@@ -75,11 +77,12 @@ class OnboardingDisavowalR2dbcRepositoryTest {
     @Test
     void insert_pendingDisavowalWithoutPasskey_bindsTheMissingColumnsAsNull() {
         // Arrange
-        var disavowal = OnboardingDisavowal.pending(USER_ID, null, "verifier", REGISTERED_AT);
+        var disavowal = OnboardingDisavowal.pending(USER_ID, null, "verifier", REGISTERED_AT, false);
 
         // Act & Assert
         StepVerifier.create(repository.insert(disavowal)).expectNext(disavowal).verifyComplete();
         assertThat(db.bindings)
+                .containsEntry("accountCreated", false)
                 .containsEntry("tokenHash", null)
                 .containsEntry("expiresAt", null)
                 .containsEntry("passkeyId", null);

@@ -6,7 +6,8 @@
 --     SHA-256 of the ticket is stored. Physically deleted when the account is created,
 --     when the redemption finds an account with passkeys, or by the hourly cleanup.
 --   - onboarding_disavowal: single-use "it was not me" token of the new-account email,
---     7 days. Only its SHA-256 is stored.
+--     7 days. Only its SHA-256 is stored. One row per passkey registered with an
+--     onboarding ticket, for a new account and for one that already existed.
 --   - registration_ticket: may belong to a pre-registration instead of an account
 --     (the account is created when the passkey is registered).
 --   - user_passkey.onboarding_preregistration_id: passkey registered with an
@@ -42,6 +43,8 @@ CREATE INDEX idx_onboarding_preregistration_expires_at ON onboarding_preregistra
 -- -----------------------------------------------------------------------------
 -- onboarding_disavowal
 -- passkey_id: SET NULL if the holder removes the passkey before using the link.
+-- account_created: whether the ticket created the account or the account already existed without
+-- passkeys; the email and the alert choose their text with it (EUD-315 decision P17, provisional).
 -- -----------------------------------------------------------------------------
 -- token_hash and expires_at are set when the new-account email is sent, which may be after the
 -- registration (EUD-315 decision P6, provisional): only the hash is stored, so the raw token can
@@ -53,6 +56,7 @@ CREATE TABLE onboarding_disavowal (
     passkey_id    UUID         REFERENCES user_passkey (id) ON DELETE SET NULL,
     requested_by  VARCHAR(255) NOT NULL,
     registered_at TIMESTAMPTZ  NOT NULL,
+    account_created BOOLEAN    NOT NULL,
     expires_at    TIMESTAMPTZ,
     consumed_at   TIMESTAMPTZ,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),

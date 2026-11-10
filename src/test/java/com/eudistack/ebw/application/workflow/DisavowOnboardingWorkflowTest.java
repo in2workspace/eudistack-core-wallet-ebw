@@ -71,7 +71,7 @@ class DisavowOnboardingWorkflowTest {
         account = WalletUser.create(EMAIL, new byte[WalletUser.USER_HANDLE_LENGTH]);
         passkeyId = UUID.randomUUID();
         disavowal = OnboardingDisavowal.issue(HASH, account.getId(), passkeyId, "portal-machine.cgcom.es",
-                Instant.parse("2026-10-30T09:42:00Z"));
+                Instant.parse("2026-10-30T09:42:00Z"), true);
         lenient().when(transactionRunner.inTransaction(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(hashProvider.sha256(TOKEN)).thenReturn(HASH);
         lenient().when(disavowalRepository.consume(HASH)).thenReturn(Mono.just(disavowal));
@@ -104,6 +104,24 @@ class DisavowOnboardingWorkflowTest {
         verify(emailSender).sendOnboardingAlert(eq(CONTACT), alert.capture(), any());
         assertThat(alert.getValue().maskedEmail()).isEqualTo("a***@cgcom.es");
         assertThat(alert.getValue().registeredAt()).isEqualTo(disavowal.registeredAt());
+        assertThat(alert.getValue().accountCreated()).isTrue();
+    }
+
+    @Test
+    void disavow_accountThatAlreadyExisted_alertsTheTenantWithTheAddedPasskeyVariant() {
+        // Arrange: EC-01, P17
+        var recognized = OnboardingDisavowal.issue(HASH, account.getId(), passkeyId, "portal-machine.cgcom.es",
+                Instant.parse("2026-10-30T09:42:00Z"), false);
+        when(disavowalRepository.consume(HASH)).thenReturn(Mono.just(recognized));
+
+        // Act
+        StepVerifier.create(workflow.disavow(TOKEN)).verifyComplete();
+
+        // Assert: the same undo, the alert says a passkey was added
+        verify(passkeyRepository).deleteById(passkeyId);
+        var alert = ArgumentCaptor.forClass(OnboardingAlert.class);
+        verify(emailSender).sendOnboardingAlert(eq(CONTACT), alert.capture(), any());
+        assertThat(alert.getValue().accountCreated()).isFalse();
     }
 
     @Test
