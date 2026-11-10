@@ -66,6 +66,25 @@ class SystemTokenWebFilterTest {
     }
 
     @Test
+    void filter_routeWithPathParameter_isStillVerified() {
+        // Arrange: Spring routes ";x=1" to the controller, so the filter must match it too (security F4)
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest
+                .post("http://internal:8080/business-wallet/api/v1/onboarding-tickets;x=1")
+                .contextPath("/business-wallet")
+                .header("X-Forwarded-Proto", "https")
+                .header("X-Forwarded-Host", "sandbox.stg.eudistack.net"));
+        when(tokenVerifier.verify(null, "sandbox", "https://sandbox.stg.eudistack.net/verifier"))
+                .thenReturn(Mono.error(SystemTokenRejectedException.invalidToken("missing")));
+
+        // Act
+        StepVerifier.create(run(exchange)).verifyComplete();
+
+        // Assert
+        assertThat(chainCalls).hasValue(0);
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
     void filter_validToken_storesTheCallerAndContinues() {
         // Arrange
         var exchange = onboardingTickets();

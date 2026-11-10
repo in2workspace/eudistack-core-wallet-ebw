@@ -16,6 +16,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 import reactor.core.publisher.Mono;
 
 /**
@@ -39,6 +41,11 @@ public class SystemTokenWebFilter implements WebFilter, Ordered {
 
     public static final String SYSTEM_CALLER_ATTRIBUTE = SystemTokenWebFilter.class.getName() + ".caller";
     static final String ONBOARDING_TICKETS_PATH = "/api/v1/onboarding-tickets"; // NOSONAR java:S1075
+    /**
+     * Matched as the handler mappings match it: a plain string comparison would let through the
+     * variants Spring still routes to the controller (path parameters such as {@code ;x=1}).
+     */
+    private static final PathPattern ONBOARDING_TICKETS = PathPatternParser.defaultInstance.parse(ONBOARDING_TICKETS_PATH);
     /** After the Spring Security chain (-100) and the tenant filter (-200). */
     static final int ORDER = -50;
     private static final String BEARER_PREFIX = "Bearer ";
@@ -69,7 +76,7 @@ public class SystemTokenWebFilter implements WebFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         var request = exchange.getRequest();
         if (!HttpMethod.POST.equals(request.getMethod())
-                || !ONBOARDING_TICKETS_PATH.equals(request.getPath().pathWithinApplication().value())) {
+                || !ONBOARDING_TICKETS.matches(request.getPath().pathWithinApplication())) {
             return chain.filter(exchange);
         }
         return Mono.deferContextual(ctx -> tokenVerifier.verify(bearer(request),
