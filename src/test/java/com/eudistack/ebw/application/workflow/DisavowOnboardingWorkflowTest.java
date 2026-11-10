@@ -104,7 +104,6 @@ class DisavowOnboardingWorkflowTest {
         verify(emailSender).sendOnboardingAlert(eq(CONTACT), alert.capture(), any());
         assertThat(alert.getValue().maskedEmail()).isEqualTo("a***@cgcom.es");
         assertThat(alert.getValue().registeredAt()).isEqualTo(disavowal.registeredAt());
-        assertThat(alert.getValue().requestedBy()).isEqualTo("portal-machine.cgcom.es");
     }
 
     @Test

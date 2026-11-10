@@ -15,9 +15,8 @@
                     <td align="center" style="padding: 12px 40px 32px 40px; font-family: 'Blinker', Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.5; color: #000000; text-align: center;">
                         <p style="margin: 0 0 16px 0; font-size: 20px; font-weight: 700;" th:text="#{email.onboarding-alert.header}">Wallet onboarding not recognized</p>
                         <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400;" th:text="#{email.onboarding-alert.body(${maskedEmail})}">The holder of a***@example.org has said they did not create their wallet.</p>
-                        <p style="margin: 0; font-size: 14px; font-weight: 400;" th:text="#{email.onboarding-alert.registered(${registeredAt})}">Created: 30/10/2026 10:42</p>
-                        <p style="margin: 0 0 24px 0; font-size: 14px; font-weight: 400;" th:text="#{email.onboarding-alert.system(${requestedBy})}">System that requested the onboarding: portal</p>
-                        <p style="margin: 0; font-size: 14px; font-weight: 400; color: #000000;" th:text="#{email.onboarding-alert.actions}">Their sessions have been ended and the passkey of that onboarding removed. Review how that system identified the person.</p>
+                        <p style="margin: 0 0 24px 0; font-size: 14px; font-weight: 400;" th:text="#{email.onboarding-alert.registered(${registeredAt})}">Created: 30/10/2026 10:42</p>
+                        <p style="margin: 0; font-size: 14px; font-weight: 400; color: #000000;" th:text="#{email.onboarding-alert.actions}">Their sessions have been ended and the passkey of that onboarding removed. Review how the system that requested it identified the person.</p>
                     </td>
                 </tr>
 

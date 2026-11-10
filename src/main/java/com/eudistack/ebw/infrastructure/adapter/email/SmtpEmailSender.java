@@ -96,15 +96,13 @@ public class SmtpEmailSender implements EmailSender {
     public Mono<Void> sendOnboardingAlert(String securityContact, OnboardingAlert alert, Locale locale) {
         return sendBranded(securityContact, ONBOARDING_ALERT_TEMPLATE, ONBOARDING_ALERT_SUBJECT_KEY, Map.of(
                 "maskedEmail", alert.maskedEmail(),
-                "registeredAt", EMAIL_DATE_TIME.format(alert.registeredAt().atZone(EMAIL_ZONE)),
-                "requestedBy", alert.requestedBy()), locale);
+                "registeredAt", EMAIL_DATE_TIME.format(alert.registeredAt().atZone(EMAIL_ZONE))), locale);
     }
 
     @Override
     public Mono<Void> sendAccountCreatedNotice(String email, AccountCreatedNotice notice, Locale locale) {
         return sendBranded(email, ACCOUNT_CREATED_TEMPLATE, ACCOUNT_CREATED_SUBJECT_KEY, Map.of(
                 "createdAt", EMAIL_DATE_TIME.format(notice.createdAt().atZone(EMAIL_ZONE)),
-                "requestedBy", notice.requestedBy(),
                 "deviceName", notice.deviceName(),
                 "disavowalUrl", notice.disavowalUrl(),
                 "linkExpiresAt", EMAIL_DATE.format(notice.linkExpiresAt().atZone(EMAIL_ZONE))), locale);

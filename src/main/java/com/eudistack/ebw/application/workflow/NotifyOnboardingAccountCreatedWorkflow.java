@@ -93,7 +93,7 @@ public class NotifyOnboardingAccountCreatedWorkflow {
     private Mono<Void> send(OnboardingDisavowal disavowal, String token, String deviceName) {
         return Mono.zip(userRepository.findById(disavowal.userId()), authSettings.relyingParty())
                 .flatMap(tuple -> emailSender.sendAccountCreatedNotice(tuple.getT1().getEmail(),
-                        new AccountCreatedNotice(disavowal.registeredAt(), disavowal.requestedBy(), deviceName,
+                        new AccountCreatedNotice(disavowal.registeredAt(), deviceName,
                                 "https://" + tuple.getT2().rpId() + DISAVOWAL_PATH + token,
                                 disavowal.expiresAt()),
                         NOTICE_LOCALE))

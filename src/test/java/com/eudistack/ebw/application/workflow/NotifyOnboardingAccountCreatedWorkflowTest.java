@@ -95,7 +95,6 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
         verify(emailSender).sendAccountCreatedNotice(eq("ana@cgcom.es"), notice.capture(), any());
         assertThat(notice.getValue().disavowalUrl())
                 .isEqualTo("https://cgcom.eudistack.net/no-he-sido-yo#" + expectedToken);
-        assertThat(notice.getValue().requestedBy()).isEqualTo("portal-machine.cgcom.es");
         assertThat(notice.getValue().deviceName()).isEqualTo("iPhone · Safari");
         assertThat(notice.getValue().createdAt()).isEqualTo(Instant.parse("2026-10-30T09:42:00Z"));
         verify(auditService).record("onboarding_disavowal", withToken.id(), AuthAuditEvents.ONBOARDING_NOTICE_SENT,
