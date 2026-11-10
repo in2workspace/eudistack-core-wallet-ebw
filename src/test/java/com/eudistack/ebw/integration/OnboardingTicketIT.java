@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
@@ -387,6 +388,31 @@ class OnboardingTicketIT extends IntegrationTestBase {
         assertThat(count(RESTRICTED_SCHEMA, "wallet_user WHERE email = '" + email + "'")).isZero();
         assertThat(count(RESTRICTED_SCHEMA, "audit_log WHERE action = 'ONBOARDING_WITHOUT_TICKET_REJECTED'"))
                 .isPositive();
+        // AC-19: the trace never carries the email
+        assertThat(count(RESTRICTED_SCHEMA, "audit_log WHERE metadata LIKE '%" + email + "%'")).isZero();
+    }
+
+    @Test
+    void requestCode_restrictedMode_answersTheSameWithAndWithoutAccount() {
+        // Arrange: AC-16, an account created with a ticket and an email without account
+        captureNotices();
+        setupEmailCapture();
+        var client = new WalletAuthClient(webClient, capturedOtps,
+                h -> h.set(TenantDomainWebFilter.HEADER_X_TENANT, RESTRICTED_TENANT), RESTRICTED_ORIGIN);
+        var withAccount = email("restrictedwith");
+        client.registerPasskey(registrationTicketOf(ticketFor(withAccount, RESTRICTED_TENANT), RESTRICTED_TENANT),
+                new SoftwareAuthenticator(RESTRICTED_ORIGIN));
+        var withoutAccount = email("restrictedwithout");
+
+        // Act
+        var answerWith = client.requestCode(withAccount).expectStatus().isAccepted()
+                .expectBody(String.class).returnResult().getResponseBody();
+        var answerWithout = client.requestCode(withoutAccount).expectStatus().isAccepted()
+                .expectBody(String.class).returnResult().getResponseBody();
+
+        // Assert: same status and body, and the code goes out in both cases
+        assertThat(answerWith).isEqualTo(answerWithout);
+        assertThat(capturedOtps).containsKeys(withAccount, withoutAccount);
     }
 
     // ------------------------------------------------------------------ "it was not me"
@@ -580,6 +606,127 @@ class OnboardingTicketIT extends IntegrationTestBase {
         client.registerSpec(second, options.get("ceremonyId"), credential, true, null)
                 .expectStatus().isBadRequest()
                 .expectBody().jsonPath("$.type").isEqualTo("registration_failed");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void onboarding_twoConcurrentRegistrationsOfTheSameEmail_onlyOneRegistersThePasskey() {
+        // Arrange: EC-04, two tickets of the same email without account, both redeemed
+        captureNotices();
+        var email = email("concurrentreg");
+        var client = authClient();
+        var registrations = new ArrayList<Supplier<HttpStatus>>();
+        for (int i = 0; i < 2; i++) {
+            var registrationTicket = registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT);
+            var options = client.registrationOptions(registrationTicket);
+            var credential = new SoftwareAuthenticator(TEST_ORIGIN).register((Map<String, Object>) options.get("publicKey"));
+            registrations.add(() -> HttpStatus.valueOf(client.registerSpec(registrationTicket, options.get("ceremonyId"),
+                    credential, true, null).returnResult(Void.class).getStatus().value()));
+        }
+
+        // Act
+        var running = registrations.stream().map(CompletableFuture::supplyAsync).toList();
+        var results = running.stream().map(CompletableFuture::join).toList();
+
+        // Assert: one account with one passkey
+        assertThat(results).containsExactlyInAnyOrder(HttpStatus.CREATED, HttpStatus.UNAUTHORIZED);
+        assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isEqualTo(1);
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isEqualTo(1);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void onboarding_passkeyCustodyWithoutPrf_createsNothingAndAnotherAuthenticatorCanRetry() {
+        // Arrange: EC-11, a ticket of an email without account in a tenant with passkey custody
+        captureNotices();
+        var email = email("noprf");
+        var client = authClient();
+        var registrationTicket = registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT);
+
+        PasskeyRegistrationIT.withPasskeyCustody(() -> {
+            // Act: an authenticator without PRF
+            var options = client.registrationOptions(registrationTicket);
+            var credential = new SoftwareAuthenticator(TEST_ORIGIN).withPrfEnabled(false)
+                    .register((Map<String, Object>) options.get("publicKey"));
+            client.registerSpec(registrationTicket, options.get("ceremonyId"), credential, false, null)
+                    .expectStatus().isEqualTo(422)
+                    .expectBody().jsonPath("$.type").isEqualTo("passkey_prf_unsupported");
+
+            // Assert: no account nor passkey, and the same registration ticket still works with another one
+            assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isZero();
+            client.registerPasskeySpec(registrationTicket, new SoftwareAuthenticator(TEST_ORIGIN), null)
+                    .expectStatus().isCreated();
+        });
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isEqualTo(1);
+    }
+
+    @Test
+    void onboarding_mailUnavailable_completesTheOnboardingAndTracesTheFailure() {
+        // Arrange: ES-06, the new-account email cannot be sent
+        when(emailSender.sendAccountCreatedNotice(anyString(), any(), any()))
+                .thenReturn(Mono.error(new IllegalStateException("smtp down")));
+        var email = email("noticedown");
+        var registrationTicket = registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT);
+
+        // Act
+        var session = authClient().registerPasskey(registrationTicket, new SoftwareAuthenticator(TEST_ORIGIN));
+
+        // Assert: the onboarding and its session stand
+        assertThat(session.accessToken()).isNotBlank();
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isEqualTo(1);
+        assertThat(countInTestTenant("audit_log WHERE action = 'ONBOARDING_NOTICE_FAILED' AND actor_id = "
+                + userOf(email))).isEqualTo(1);
+    }
+
+    @Test
+    void disavow_mailUnavailable_stillEndsTheSessionsAndRemovesThePasskey() {
+        // Arrange: ES-06, the alert to the security contact cannot be sent
+        var email = email("alertdown");
+        var token = disavowalTokenFor(email, "now() + interval '7 days'");
+        when(emailSender.sendOnboardingAlert(anyString(), any(), any()))
+                .thenReturn(Mono.error(new IllegalStateException("smtp down")));
+
+        // Act
+        disavow(token).expectStatus().isNoContent();
+
+        // Assert
+        var user = userOf(email);
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + user)).isZero();
+        assertThat(countInTestTenant("refresh_token WHERE user_id = " + user + " AND revoked = false")).isZero();
+        assertThat(countInTestTenant("audit_log WHERE action = 'ONBOARDING_DISAVOWED' AND actor_id = " + user))
+                .isEqualTo(1);
+        assertThat(countInTestTenant("audit_log WHERE action = 'ONBOARDING_ALERT_FAILED' AND actor_id = " + user))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void auditTrail_ofAWholeOnboarding_hasItsEventsWithoutSecretsNorTheEmail() {
+        // Arrange: AC-19, from the ticket to "it was not me", with a rejected redemption on the way
+        var since = query("SELECT now() AS t").get(0).get("t");
+        var notices = captureNotices();
+        var email = email("trail");
+        var ticket = ticketFor(email, TEST_TENANT);
+        redeem("A".repeat(22), TEST_TENANT, null).expectStatus().isUnauthorized();
+        var registrationTicket = registrationTicketOf(ticket, TEST_TENANT);
+        var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
+        authClient().registerPasskey(registrationTicket, authenticator);
+        var link = notices.get(0).disavowalUrl();
+        var disavowalToken = link.substring(link.lastIndexOf('/') + 1);
+
+        // Act
+        disavow(disavowalToken).expectStatus().isNoContent();
+
+        // Assert: the events of the trail
+        var ofThisRun = "audit_log WHERE created_at >= '" + since + "'";
+        for (var event : List.of("PREREGISTRATION_CREATED", "ONBOARDING_TICKET_REJECTED", "ONBOARDING_TICKET_REDEEMED",
+                "ACCOUNT_CREATED", "PASSKEY_REGISTERED", "ONBOARDING_NOTICE_SENT", "ONBOARDING_DISAVOWED")) {
+            assertThat(countInTestTenant(ofThisRun + " AND action = '" + event + "'")).as(event).isPositive();
+        }
+        // and none carries the email, a ticket, the token or the passkey beyond its identifier
+        for (var secret : List.of(email, ticket, registrationTicket, disavowalToken,
+                authenticator.credentialIdBase64Url())) {
+            assertThat(countInTestTenant(ofThisRun + " AND metadata LIKE '%" + secret + "%'")).isZero();
+        }
     }
 
     @Test
