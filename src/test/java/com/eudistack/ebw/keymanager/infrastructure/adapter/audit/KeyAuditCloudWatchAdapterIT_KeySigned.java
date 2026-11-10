@@ -128,19 +128,18 @@ class KeyAuditCloudWatchAdapterIT_KeySigned {
             Map<String, Object> e = events.get(0);
 
             // Signing event fields
-            assertThat(e.get("event_type")).isEqualTo("key.signed");
-            assertThat(e.get("tenant_id")).isEqualTo(tenantId);
-            assertThat(e.get("holder_id")).isEqualTo(holderId);
-            assertThat(e.get("signing_type")).isEqualTo("KB_JWT");
-            assertThat(e.get("purpose")).isEqualTo("PRESENTATION");
-            assertThat(e.get("consumer_origin")).isEqualTo("OID4VP_RESPONDER");
-            assertThat(e.get("jkt")).isEqualTo(jkt);
+            assertThat(e).containsEntry("event_type", "key.signed");
+            assertThat(e).containsEntry("tenant_id", tenantId);
+            assertThat(e).containsEntry("holder_id", holderId);
+            assertThat(e).containsEntry("signing_type", "KB_JWT");
+            assertThat(e).containsEntry("purpose", "PRESENTATION");
+            assertThat(e).containsEntry("consumer_origin", "OID4VP_RESPONDER");
+            assertThat(e).containsEntry("jkt", jkt);
 
             // B2: keyId must be present and match the value set on the event (AC-08)
-            assertThat(e.get("key_id"))
-                    .as("key_id must be present and non-blank in KEY_SIGNED audit event")
-                    .isNotNull()
-                    .isEqualTo(keyId);
+            assertThat(e)
+                    .as("key_id must be present and match the value set on the event in KEY_SIGNED audit event")
+                    .containsEntry("key_id", keyId);
 
             // No signing material (NFR-S-407-05)
             assertThat(message).doesNotContain("payload");
@@ -185,7 +184,7 @@ class KeyAuditCloudWatchAdapterIT_KeySigned {
             assertThat(events).hasSize(1);
 
             Map<String, Object> e = events.get(0);
-            assertThat(e.get("event_type")).isEqualTo("key.generated");
+            assertThat(e).containsEntry("event_type", "key.generated");
             assertThat(e.get("signing_type")).isNull();
             assertThat(e.get("purpose")).isNull();
             assertThat(e.get("consumer_origin")).isNull();
