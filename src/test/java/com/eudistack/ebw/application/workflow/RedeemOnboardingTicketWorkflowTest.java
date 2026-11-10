@@ -1,13 +1,15 @@
 package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.domain.model.OnboardingPreregistration;
-import com.eudistack.ebw.domain.model.RegistrationTicket;
+import com.eudistack.ebw.domain.model.OnboardingMode;
+import com.eudistack.ebw.domain.model.OnboardingSettings;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.exception.InvalidTicketException;
 import com.eudistack.ebw.domain.repository.OnboardingPreregistrationRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.domain.service.AuditService;
+import com.eudistack.ebw.domain.service.OnboardingSettingsService;
 import com.eudistack.ebw.domain.service.RegistrationTicketService;
 import com.eudistack.ebw.domain.service.RegistrationTicketService.IssuedTicket;
 import com.eudistack.ebw.domain.spi.HashProvider;
@@ -50,6 +52,7 @@ class RedeemOnboardingTicketWorkflowTest {
     @Mock private WalletUserRepository userRepository;
     @Mock private UserPasskeyRepository passkeyRepository;
     @Mock private RegistrationTicketService ticketService;
+    @Mock private OnboardingSettingsService onboardingSettings;
     @Mock private HashProvider hashProvider;
     @Mock private SecureRandomGenerator randomGenerator;
     @Mock private AuditService auditService;
@@ -62,21 +65,41 @@ class RedeemOnboardingTicketWorkflowTest {
     @BeforeEach
     void setUp() {
         workflow = new RedeemOnboardingTicketWorkflow(preregistrationRepository, userRepository, passkeyRepository,
-                ticketService, hashProvider, randomGenerator, auditService);
+                ticketService, onboardingSettings, hashProvider, randomGenerator, auditService);
         preregistration = OnboardingPreregistration.create(HASH, EMAIL, OFFER, "portal-machine.example.org",
                 Duration.ofMinutes(5));
         account = WalletUser.create(EMAIL, new byte[WalletUser.USER_HANDLE_LENGTH]);
-        ticketExpiry = Instant.now().plus(RegistrationTicket.TTL);
+        ticketExpiry = Instant.now().plus(OnboardingSettings.DEFAULT_REGISTRATION_TTL);
+        lenient().when(onboardingSettings.current()).thenReturn(Mono.just(settings(
+                OnboardingSettings.DEFAULT_REGISTRATION_TTL)));
         lenient().when(hashProvider.sha256(TICKET)).thenReturn(HASH);
         lenient().when(preregistrationRepository.redeem(HASH)).thenReturn(Mono.just(preregistration));
         lenient().when(preregistrationRepository.deleteById(any())).thenReturn(Mono.just(true));
         lenient().when(preregistrationRepository.keepUntil(any(), any())).thenReturn(Mono.empty());
         lenient().when(preregistrationRepository.assignUserHandle(any(), any())).thenReturn(Mono.empty());
-        lenient().when(ticketService.issueForPreregistration(any(), any()))
+        lenient().when(ticketService.issueForPreregistration(any(), any(), any()))
                 .thenReturn(Mono.just(new IssuedTicket("rt_raw", ticketExpiry)));
         lenient().when(randomGenerator.generateBytes(WalletUser.USER_HANDLE_LENGTH))
                 .thenReturn(new byte[WalletUser.USER_HANDLE_LENGTH]);
         lenient().when(auditService.record(anyString(), any(), anyString(), any(), any())).thenReturn(Mono.empty());
+    }
+
+    private static OnboardingSettings settings(Duration registrationTtl) {
+        return new OnboardingSettings(true, Duration.ofMinutes(5), registrationTtl, null, OnboardingMode.OPEN, null);
+    }
+
+    @Test
+    void redeem_registrationTtlOfTheTenant_isTheLifeOfTheRegistrationTicketAndOfThePreregistration() {
+        // Arrange: EC-03, NFR-5 (P8) - 10 minutes from the redemption, whatever is left of the QR ticket
+        when(onboardingSettings.current()).thenReturn(Mono.just(settings(Duration.ofMinutes(10))));
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.empty());
+        when(ticketService.issueForPreregistration(any(), any(), eq(Duration.ofMinutes(10))))
+                .thenReturn(Mono.just(new IssuedTicket("rt_raw", ticketExpiry)));
+
+        // Act + Assert
+        StepVerifier.create(workflow.redeem(TICKET, null)).expectNextCount(1).verifyComplete();
+        verify(ticketService).issueForPreregistration(isNull(), eq(preregistration.id()), eq(Duration.ofMinutes(10)));
+        verify(preregistrationRepository).keepUntil(preregistration.id(), ticketExpiry);
     }
 
     @Test
@@ -90,12 +113,13 @@ class RedeemOnboardingTicketWorkflowTest {
                     assertThat(redemption.hasPasskeys()).isFalse();
                     assertThat(redemption.sessionOfAccount()).isFalse();
                     assertThat(redemption.registrationTicket()).isEqualTo("rt_raw");
-                    assertThat(redemption.expiresIn()).isBetween(299L, 300L);
+                    assertThat(redemption.expiresIn()).isBetween(1799L, 1800L);
                     assertThat(redemption.credentialOffer()).isEqualTo(OFFER);
                 })
                 .verifyComplete();
         verify(preregistrationRepository).assignUserHandle(eq(preregistration.id()), any());
-        verify(ticketService).issueForPreregistration(isNull(), eq(preregistration.id()));
+        verify(ticketService).issueForPreregistration(isNull(), eq(preregistration.id()),
+                eq(OnboardingSettings.DEFAULT_REGISTRATION_TTL));
         verify(userRepository, never()).save(any());
         verify(preregistrationRepository, never()).deleteById(any());
     }
@@ -122,7 +146,8 @@ class RedeemOnboardingTicketWorkflowTest {
         StepVerifier.create(workflow.redeem(TICKET, null))
                 .assertNext(redemption -> assertThat(redemption.registrationTicket()).isEqualTo("rt_raw"))
                 .verifyComplete();
-        verify(ticketService).issueForPreregistration(account.getId(), preregistration.id());
+        verify(ticketService).issueForPreregistration(account.getId(), preregistration.id(),
+                OnboardingSettings.DEFAULT_REGISTRATION_TTL);
         verify(preregistrationRepository, never()).assignUserHandle(any(), any());
     }
 
@@ -152,7 +177,7 @@ class RedeemOnboardingTicketWorkflowTest {
         // Act + Assert
         StepVerifier.create(workflow.redeem(TICKET, null)).expectError(InvalidTicketException.class).verify();
         verify(preregistrationRepository).deleteById(preregistration.id());
-        verify(ticketService, never()).issueForPreregistration(any(), any());
+        verify(ticketService, never()).issueForPreregistration(any(), any(), any());
         verify(auditService).record("onboarding_preregistration", preregistration.id(),
                 AuthAuditEvents.ONBOARDING_TICKET_REJECTED, null, Map.of("reason", "ambiguous_account"));
     }
@@ -174,7 +199,7 @@ class RedeemOnboardingTicketWorkflowTest {
                 })
                 .verifyComplete();
         verify(preregistrationRepository).deleteById(preregistration.id());
-        verify(ticketService, never()).issueForPreregistration(any(), any());
+        verify(ticketService, never()).issueForPreregistration(any(), any(), any());
     }
 
     @Test

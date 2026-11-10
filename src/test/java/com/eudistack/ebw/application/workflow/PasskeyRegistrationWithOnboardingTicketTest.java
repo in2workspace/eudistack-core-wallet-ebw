@@ -94,7 +94,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         Arrays.fill(handle, (byte) 7);
         preregistration = withHandle(OnboardingPreregistration.create("h", EMAIL, null, "portal-machine.example.org",
                 Duration.ofMinutes(5)), handle);
-        ticket = RegistrationTicket.issueForPreregistration(null, preregistration.id(), "rt-hash");
+        ticket = RegistrationTicket.issueForPreregistration(null, preregistration.id(), "rt-hash", RegistrationTicket.TTL);
         ceremony = WebAuthnCeremony.startRegistration(new byte[32], null, ticket.id());
         verified = new VerifiedPasskeyRegistration("cred-1", new byte[] {1}, null, 0, List.of("internal"), true, true,
                 true, "none");
@@ -211,7 +211,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     void register_accountWithoutPasskeys_recognizesItAndKeepsTheDisavowalRowAndEmailsTheNotice() {
         // Arrange: EC-01, the ticket names the account (an email sign-up abandoned before the passkey)
         var account = WalletUser.create(EMAIL, new byte[WalletUser.USER_HANDLE_LENGTH]);
-        ticket = RegistrationTicket.issueForPreregistration(account.getId(), preregistration.id(), "rt-hash");
+        ticket = RegistrationTicket.issueForPreregistration(account.getId(), preregistration.id(), "rt-hash", RegistrationTicket.TTL);
         ceremony = WebAuthnCeremony.startRegistration(new byte[32], account.getId(), ticket.id());
         when(ticketService.resolve("raw")).thenReturn(Mono.just(ticket));
         when(ceremonyRepository.consume(ceremony.id(), CeremonyType.REGISTRATION)).thenReturn(Mono.just(ceremony));
@@ -236,7 +236,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     void register_accountThatGotAPasskeyAfterTheRedemption_isRejectedAndThePreregistrationDeleted() {
         // Arrange: decision P7, FR-28 - the ticket never adds a passkey to an account that has one
         var account = WalletUser.create(EMAIL, new byte[WalletUser.USER_HANDLE_LENGTH]);
-        ticket = RegistrationTicket.issueForPreregistration(account.getId(), preregistration.id(), "rt-hash");
+        ticket = RegistrationTicket.issueForPreregistration(account.getId(), preregistration.id(), "rt-hash", RegistrationTicket.TTL);
         ceremony = WebAuthnCeremony.startRegistration(new byte[32], account.getId(), ticket.id());
         when(ticketService.resolve("raw")).thenReturn(Mono.just(ticket));
         when(ceremonyRepository.consume(ceremony.id(), CeremonyType.REGISTRATION)).thenReturn(Mono.just(ceremony));
@@ -351,7 +351,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     void startRegistration_accountOfTheTicket_listsItsPasskeys() {
         // Arrange: EC-01, the account exists without passkeys
         var account = WalletUser.create(EMAIL, new byte[WalletUser.USER_HANDLE_LENGTH]);
-        ticket = RegistrationTicket.issueForPreregistration(account.getId(), preregistration.id(), "rt-hash");
+        ticket = RegistrationTicket.issueForPreregistration(account.getId(), preregistration.id(), "rt-hash", RegistrationTicket.TTL);
         when(ticketService.resolve("raw")).thenReturn(Mono.just(ticket));
         when(userRepository.findById(account.getId())).thenReturn(Mono.just(account));
         when(passkeyRepository.findByUserId(account.getId())).thenReturn(Flux.empty());

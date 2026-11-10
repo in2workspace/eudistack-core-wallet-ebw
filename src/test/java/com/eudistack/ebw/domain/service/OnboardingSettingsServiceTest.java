@@ -47,6 +47,7 @@ class OnboardingSettingsServiceTest {
                 .assertNext(settings -> {
                     assertThat(settings.enabled()).isFalse();
                     assertThat(settings.ttl()).isEqualTo(Duration.ofMinutes(5));
+                    assertThat(settings.registrationTtl()).isEqualTo(Duration.ofMinutes(30));
                     assertThat(settings.securityContact()).isNull();
                     assertThat(settings.mode()).isEqualTo(OnboardingMode.OPEN);
                     assertThat(settings.signupUrl()).isNull();
@@ -59,6 +60,7 @@ class OnboardingSettingsServiceTest {
         // Arrange
         config(OnboardingSettingsService.ENABLED, "TRUE");
         config(OnboardingSettingsService.TTL, "PT2M");
+        config(OnboardingSettingsService.REGISTRATION_TTL, "PT1H");
         config(OnboardingSettingsService.SECURITY_CONTACT, " security@example.org ");
         config(OnboardingSettingsService.MODE, "restricted");
         config(OnboardingSettingsService.SIGNUP_URL, "https://portal.example.org/alta");
@@ -66,7 +68,7 @@ class OnboardingSettingsServiceTest {
         // Act + Assert
         StepVerifier.create(service.current())
                 .assertNext(settings -> assertThat(settings).isEqualTo(new OnboardingSettings(true,
-                        Duration.ofMinutes(2), "security@example.org", OnboardingMode.RESTRICTED,
+                        Duration.ofMinutes(2), Duration.ofHours(1), "security@example.org", OnboardingMode.RESTRICTED,
                         "https://portal.example.org/alta")))
                 .verifyComplete();
     }
@@ -80,6 +82,19 @@ class OnboardingSettingsServiceTest {
         // Act + Assert
         StepVerifier.create(service.current())
                 .assertNext(settings -> assertThat(settings.ttl()).isEqualTo(Duration.parse(expected)))
+                .verifyComplete();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"PT10M,PT10M", "PT24H,PT24H", "P1D,P1D", "PT24H1S,PT30M", "PT0S,PT30M", "-PT1M,PT30M",
+            "1800,PT30M", "nonsense,PT30M"})
+    void current_registrationTtl_isAtMostOneDayElseDefault(String raw, String expected) {
+        // Arrange: P8, provisional figure
+        config(OnboardingSettingsService.REGISTRATION_TTL, raw);
+
+        // Act + Assert
+        StepVerifier.create(service.current())
+                .assertNext(settings -> assertThat(settings.registrationTtl()).isEqualTo(Duration.parse(expected)))
                 .verifyComplete();
     }
 

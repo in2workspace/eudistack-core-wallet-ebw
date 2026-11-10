@@ -33,16 +33,16 @@ public record RegistrationTicket(
     }
 
     /**
-     * Ticket of a redeemed onboarding ticket, valid {@link #TTL} from the redemption, like the one of
-     * {@code verify-email}. The redemption keeps its pre-registration until then.
+     * Ticket of a redeemed onboarding ticket, valid {@code ttl} from the redemption
+     * ({@code ebw.onboarding.registration_ttl}). The redemption keeps its pre-registration until then.
      *
-     * <p>PROVISIONAL (EUD-315 decision P8, pending Tech Lead): design §2.6 makes it expire with the
-     * pre-registration, which can leave seconds to create the passkey. This is the only place that
-     * decides it.
+     * <p>PROVISIONAL (EUD-315 decision P8, figure pending the Tech Lead): design §2.6 makes it expire
+     * with the pre-registration, which can leave seconds to create the passkey.
      */
-    public static RegistrationTicket issueForPreregistration(UUID userId, UUID preregistrationId, String tokenHash) {
+    public static RegistrationTicket issueForPreregistration(UUID userId, UUID preregistrationId, String tokenHash,
+                                                             Duration ttl) {
         var now = Instant.now();
-        return new RegistrationTicket(UUID.randomUUID(), userId, preregistrationId, tokenHash, now.plus(TTL), null,
+        return new RegistrationTicket(UUID.randomUUID(), userId, preregistrationId, tokenHash, now.plus(ttl), null,
                 now);
     }
 }

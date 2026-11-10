@@ -7,6 +7,7 @@ import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
@@ -47,11 +48,12 @@ public class RegistrationTicketService {
 
     /**
      * Issues the ticket of a redeemed onboarding ticket, bound to its pre-registration and, if the
-     * email has one, to the account. Emits the raw ticket, which is never stored.
+     * email has one, to the account, valid {@code ttl} from now. Emits the raw ticket, which is never stored.
      */
-    public Mono<IssuedTicket> issueForPreregistration(UUID userId, UUID preregistrationId) {
+    public Mono<IssuedTicket> issueForPreregistration(UUID userId, UUID preregistrationId, Duration ttl) {
         var raw = Base64.getUrlEncoder().withoutPadding().encodeToString(randomGenerator.generateBytes(TICKET_BYTES));
-        var ticket = RegistrationTicket.issueForPreregistration(userId, preregistrationId, hashProvider.sha256(raw));
+        var ticket = RegistrationTicket.issueForPreregistration(userId, preregistrationId, hashProvider.sha256(raw),
+                ttl);
         return ticketRepository.insert(ticket).thenReturn(new IssuedTicket(raw, ticket.expiresAt()));
     }
 

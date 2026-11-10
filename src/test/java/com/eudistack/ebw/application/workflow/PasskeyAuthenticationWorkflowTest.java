@@ -252,7 +252,7 @@ class PasskeyAuthenticationWorkflowTest {
     @Test
     void startAuthentication_ticketOfAPreregistrationWithoutAccount_isInvalidTicket() {
         // Arrange: EC-07, the registration ticket of an onboarding pre-registration names no account
-        var ticket = RegistrationTicket.issueForPreregistration(null, UUID.randomUUID(), "hash");
+        var ticket = RegistrationTicket.issueForPreregistration(null, UUID.randomUUID(), "hash", RegistrationTicket.TTL);
         when(ticketService.resolve("raw")).thenReturn(Mono.just(ticket));
 
         // Act + Assert
@@ -263,7 +263,7 @@ class PasskeyAuthenticationWorkflowTest {
     @Test
     void openSession_ticketOfAPreregistrationWithoutAccount_isInvalidTicket() {
         // Arrange
-        var ticket = RegistrationTicket.issueForPreregistration(null, UUID.randomUUID(), "hash");
+        var ticket = RegistrationTicket.issueForPreregistration(null, UUID.randomUUID(), "hash", RegistrationTicket.TTL);
         when(ticketService.resolve("raw")).thenReturn(Mono.just(ticket));
 
         // Act + Assert

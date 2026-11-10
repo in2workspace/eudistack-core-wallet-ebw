@@ -49,7 +49,7 @@ class RegistrationTicketR2dbcRepositoryTest {
     @Test
     void insert_ticketOfPreregistrationWithoutAccount_bindsTheAccountAsNull() {
         // Arrange
-        var ticket = RegistrationTicket.issueForPreregistration(null, PREREGISTRATION_ID, "hash");
+        var ticket = RegistrationTicket.issueForPreregistration(null, PREREGISTRATION_ID, "hash", RegistrationTicket.TTL);
 
         // Act & Assert
         StepVerifier.create(repository.insert(ticket)).expectNext(ticket).verifyComplete();

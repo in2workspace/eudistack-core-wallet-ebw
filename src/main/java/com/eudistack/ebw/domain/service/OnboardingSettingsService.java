@@ -19,6 +19,9 @@ import java.time.format.DateTimeParseException;
  *   <li>{@value #ENABLED}: {@code true} to accept onboarding ticket requests; default {@code false}.</li>
  *   <li>{@value #TTL}: ISO-8601 lifetime of a pre-registration, default {@code PT5M}, at most
  *       {@code PT10M}; an invalid or out-of-range value falls back to the default.</li>
+ *   <li>{@value #REGISTRATION_TTL}: ISO-8601 time to create the passkey after the redemption, default
+ *       {@code PT30M} (provisional, EUD-315 decision P8), at most {@code PT24H}; an invalid or
+ *       out-of-range value falls back to the default.</li>
  *   <li>{@value #SECURITY_CONTACT}: email warned when an account holder disavows an onboarding.</li>
  *   <li>{@value #MODE}: {@code open} (default) or {@code restricted}; an unknown value is
  *       {@code restricted}.</li>
@@ -29,6 +32,7 @@ public class OnboardingSettingsService {
 
     public static final String ENABLED = "ebw.onboarding.enabled";
     public static final String TTL = "ebw.onboarding.ttl";
+    public static final String REGISTRATION_TTL = "ebw.onboarding.registration_ttl";
     public static final String SECURITY_CONTACT = "ebw.onboarding.security_contact";
     public static final String MODE = "ebw.onboarding.mode";
     public static final String SIGNUP_URL = "ebw.onboarding.signup_url";
@@ -48,31 +52,33 @@ public class OnboardingSettingsService {
                         tenantConfigService.getStringOrDefault(TTL, ""),
                         tenantConfigService.getStringOrDefault(SECURITY_CONTACT, ""),
                         tenantConfigService.getStringOrDefault(MODE, ""),
-                        tenantConfigService.getStringOrDefault(SIGNUP_URL, ""))
+                        tenantConfigService.getStringOrDefault(SIGNUP_URL, ""),
+                        tenantConfigService.getStringOrDefault(REGISTRATION_TTL, ""))
                 .map(tuple -> new OnboardingSettings(
                         "true".equalsIgnoreCase(tuple.getT1().trim()),
-                        parseTtl(tuple.getT2()),
+                        parseDuration(tuple.getT2(), TTL, OnboardingSettings.DEFAULT_TTL, OnboardingSettings.MAX_TTL),
+                        parseDuration(tuple.getT6(), REGISTRATION_TTL, OnboardingSettings.DEFAULT_REGISTRATION_TTL,
+                                OnboardingSettings.MAX_REGISTRATION_TTL),
                         blankToNull(tuple.getT3()),
                         parseMode(tuple.getT4()),
                         parseSignupUrl(tuple.getT5())));
     }
 
-    private static Duration parseTtl(String raw) {
+    private static Duration parseDuration(String raw, String key, Duration defaultValue, Duration max) {
         if (raw == null || raw.isBlank()) {
-            return OnboardingSettings.DEFAULT_TTL;
+            return defaultValue;
         }
         try {
             var value = Duration.parse(raw.trim());
-            if (value.isNegative() || value.isZero() || value.compareTo(OnboardingSettings.MAX_TTL) > 0) {
-                log.warn("tenant_config '{}' must be positive and at most {}; using default {}", TTL,
-                        OnboardingSettings.MAX_TTL, OnboardingSettings.DEFAULT_TTL);
-                return OnboardingSettings.DEFAULT_TTL;
+            if (value.isNegative() || value.isZero() || value.compareTo(max) > 0) {
+                log.warn("tenant_config '{}' must be positive and at most {}; using default {}", key, max,
+                        defaultValue);
+                return defaultValue;
             }
             return value;
         } catch (DateTimeParseException _) {
-            log.warn("tenant_config '{}' is not an ISO-8601 duration; using default {}", TTL,
-                    OnboardingSettings.DEFAULT_TTL);
-            return OnboardingSettings.DEFAULT_TTL;
+            log.warn("tenant_config '{}' is not an ISO-8601 duration; using default {}", key, defaultValue);
+            return defaultValue;
         }
     }
 

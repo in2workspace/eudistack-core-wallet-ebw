@@ -75,6 +75,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
                 "ebw.webauthn.origins", RESTRICTED_ORIGIN,
                 "ebw.onboarding.enabled", "true",
                 "ebw.onboarding.mode", "restricted",
+                "ebw.onboarding.registration_ttl", "PT10M",
                 "ebw.onboarding.signup_url", SIGNUP_URL));
         provisionSchema(DISABLED_TENANT + "_business_wallet");
         configureTenant(DISABLED_TENANT + "_business_wallet", Map.of(
@@ -277,10 +278,30 @@ class OnboardingTicketIT extends IntegrationTestBase {
         // Assert
         assertThat(body).containsEntry("hasPasskeys", false).containsEntry("sessionOfAccount", false)
                 .containsEntry("credentialOffer", OFFER).containsKey("registrationTicket")
-                .containsEntry("expiresIn", 300);
+                .containsEntry("expiresIn", 1800);
         assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isZero();
         assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'"
                 + " AND webauthn_user_handle IS NOT NULL AND redeemed_at IS NOT NULL")).isEqualTo(1);
+    }
+
+    @Test
+    void redeem_registrationTime_isTheTenantRegistrationTtlFromTheRedemptionAndKeepsThePreregistration() {
+        // Arrange: EC-03, NFR-5 (P8) - the QR ticket lasts 5 minutes, the tenant gives 10 to create the passkey
+        var email = email("registrationttl");
+        var ticket = ticketFor(email, RESTRICTED_TENANT);
+
+        // Act
+        redeem(ticket, RESTRICTED_TENANT, null).expectStatus().isOk().expectBody()
+                .jsonPath("$.expiresIn").value(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.greaterThan(595), org.hamcrest.Matchers.lessThanOrEqualTo(600)));
+
+        // Assert: the pre-registration outlives the registration ticket, so the cleanup does not delete it early
+        assertThat(count(RESTRICTED_SCHEMA, "onboarding_preregistration WHERE email = '" + email + "'"
+                + " AND expires_at > now() + interval '9 minutes'")).isEqualTo(1);
+        assertThat(count(RESTRICTED_SCHEMA, "registration_ticket WHERE preregistration_id IN (SELECT id FROM "
+                + RESTRICTED_SCHEMA + ".onboarding_preregistration WHERE email = '" + email + "')"
+                + " AND expires_at > now() + interval '9 minutes' AND expires_at <= now() + interval '10 minutes'"))
+                .isEqualTo(1);
     }
 
     @Test

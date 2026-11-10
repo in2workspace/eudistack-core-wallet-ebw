@@ -117,7 +117,8 @@ class OnboardingRepositoriesIT extends IntegrationTestBase {
     void deleteById_deletesTheRowAndItsRegistrationTickets() {
         // Arrange
         var stored = insert(hash(), Duration.ofMinutes(5));
-        var ticket = RegistrationTicket.issueForPreregistration(null, stored.id(), hash());
+        var ticket = RegistrationTicket.issueForPreregistration(null, stored.id(), hash(),
+                RegistrationTicket.TTL);
         block(ticketRepository.insert(ticket));
         assertThat(block(ticketRepository.findUsableByTokenHash(ticket.tokenHash())).preregistrationId())
                 .isEqualTo(stored.id());

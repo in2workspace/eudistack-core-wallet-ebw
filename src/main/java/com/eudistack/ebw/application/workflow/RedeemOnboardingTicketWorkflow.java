@@ -8,6 +8,7 @@ import com.eudistack.ebw.domain.repository.OnboardingPreregistrationRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.domain.service.AuditService;
+import com.eudistack.ebw.domain.service.OnboardingSettingsService;
 import com.eudistack.ebw.domain.service.RegistrationTicketService;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
@@ -32,6 +33,8 @@ import java.util.UUID;
  * </ul>
  * The account is looked up ignoring the case of the email; two accounts that differ only in case
  * reject the ticket as {@code invalid_ticket} (decision P16).
+ * The registration ticket lasts {@code ebw.onboarding.registration_ttl} from the redemption and the
+ * pre-registration is kept until then (decision P8, provisional).
  * The offer comes back in every case. The trace never carries the email nor the ticket.
  */
 @Service
@@ -47,6 +50,7 @@ public class RedeemOnboardingTicketWorkflow {
     private final WalletUserRepository userRepository;
     private final UserPasskeyRepository passkeyRepository;
     private final RegistrationTicketService ticketService;
+    private final OnboardingSettingsService onboardingSettings;
     private final HashProvider hashProvider;
     private final SecureRandomGenerator randomGenerator;
     private final AuditService auditService;
@@ -55,12 +59,14 @@ public class RedeemOnboardingTicketWorkflow {
     public RedeemOnboardingTicketWorkflow(OnboardingPreregistrationRepository preregistrationRepository,
                                           WalletUserRepository userRepository,
                                           UserPasskeyRepository passkeyRepository,
-                                          RegistrationTicketService ticketService, HashProvider hashProvider,
+                                          RegistrationTicketService ticketService,
+                                          OnboardingSettingsService onboardingSettings, HashProvider hashProvider,
                                           SecureRandomGenerator randomGenerator, AuditService auditService) {
         this.preregistrationRepository = preregistrationRepository;
         this.userRepository = userRepository;
         this.passkeyRepository = passkeyRepository;
         this.ticketService = ticketService;
+        this.onboardingSettings = onboardingSettings;
         this.hashProvider = hashProvider;
         this.randomGenerator = randomGenerator;
         this.auditService = auditService;
@@ -105,7 +111,9 @@ public class RedeemOnboardingTicketWorkflow {
     }
 
     private Mono<OnboardingTicketRedemption> registration(OnboardingPreregistration preregistration, UUID userId) {
-        return ticketService.issueForPreregistration(userId, preregistration.id())
+        return onboardingSettings.current()
+                .flatMap(settings -> ticketService.issueForPreregistration(userId, preregistration.id(),
+                        settings.registrationTtl()))
                 .flatMap(ticket -> preregistrationRepository.keepUntil(preregistration.id(), ticket.expiresAt())
                         .then(redeemed(preregistration, userId, OUTCOME_REGISTRATION))
                         .thenReturn(new OnboardingTicketRedemption(false, false, ticket.raw(),

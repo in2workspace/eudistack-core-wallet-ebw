@@ -62,6 +62,6 @@ class OnboardingModeStartupCheckTest {
     }
 
     private static OnboardingSettings settings(boolean enabled, OnboardingMode mode, String signupUrl) {
-        return new OnboardingSettings(enabled, OnboardingSettings.DEFAULT_TTL, null, mode, signupUrl);
+        return new OnboardingSettings(enabled, OnboardingSettings.DEFAULT_TTL, OnboardingSettings.DEFAULT_REGISTRATION_TTL, null, mode, signupUrl);
     }
 }

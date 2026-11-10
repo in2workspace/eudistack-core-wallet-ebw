@@ -69,7 +69,7 @@ class VerifyEmailWorkflowTest {
     }
 
     private static OnboardingSettings onboarding(OnboardingMode mode, String signupUrl) {
-        return new OnboardingSettings(true, Duration.ofMinutes(5), null, mode, signupUrl);
+        return new OnboardingSettings(true, Duration.ofMinutes(5), OnboardingSettings.DEFAULT_REGISTRATION_TTL, null, mode, signupUrl);
     }
 
     private void validCode() {

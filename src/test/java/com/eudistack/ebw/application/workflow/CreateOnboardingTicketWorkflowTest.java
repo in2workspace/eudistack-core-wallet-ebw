@@ -66,7 +66,7 @@ class CreateOnboardingTicketWorkflowTest {
     }
 
     private static OnboardingSettings settings(boolean enabled) {
-        return new OnboardingSettings(enabled, Duration.ofMinutes(5), null, OnboardingMode.OPEN, null);
+        return new OnboardingSettings(enabled, Duration.ofMinutes(5), OnboardingSettings.DEFAULT_REGISTRATION_TTL, null, OnboardingMode.OPEN, null);
     }
 
     @Test
