@@ -17,7 +17,8 @@ import java.util.regex.Pattern;
  * The service output already reaches the service's log group, so no setting or infrastructure of its own
  * is needed. It is the audit trail until the events go through the audit API.
  *
- * <p>A line carries the custody mode and never key material: no private key, no PRF salt, no PRF result.
+ * <p>The log masking of EUD-208 does not hide the UUIDs of this logger: an audit event has to name the holder and
+ * the attestation (FR-04, AC-07). A line carries the custody mode and never key material: no private key, no PRF salt, no PRF result.
  * Values come from requests, so control characters are replaced before they reach the line.</p>
  */
 public class KeyAuditLogAdapter implements KeyAuditPort {
