@@ -575,6 +575,28 @@ class OnboardingTicketIT extends IntegrationTestBase {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void onboarding_userAgentOfTheRegistration_isTheDeviceOfTheNoticeNotTheNameOfTheClient() {
+        // Arrange: EC-16, P19 - the client sends the name "Test device"; the notice shows what the service derives
+        var notices = captureNotices();
+        var email = email("devicelabel");
+        var client = authClient();
+        var registrationTicket = registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT);
+        var options = client.registrationOptions(registrationTicket);
+        var credential = new SoftwareAuthenticator(TEST_ORIGIN).register((Map<String, Object>) options.get("publicKey"));
+
+        // Act
+        client.registerSpec(registrationTicket, options.get("ceremonyId"), credential, true, null,
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                        + "Version/17.5 Mobile/15E148 Safari/604.1")
+                .expectStatus().isCreated();
+
+        // Assert
+        assertThat(notices).hasSize(1);
+        assertThat(notices.get(0).deviceName()).isEqualTo("iPhone · Safari");
+    }
+
+    @Test
     void onboarding_secondTicketAfterADisavowal_sendsANewNoticeWithANewLink() {
         // Arrange: EC-01, the account is left without passkeys by the first "it was not me"
         var notices = captureNotices();

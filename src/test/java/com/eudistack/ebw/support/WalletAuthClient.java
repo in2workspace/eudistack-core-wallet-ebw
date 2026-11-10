@@ -90,6 +90,12 @@ public class WalletAuthClient {
 
     public WebTestClient.ResponseSpec registerSpec(String ticket, Object ceremonyId, Map<String, Object> credential,
                                                    Boolean prfSupported, String cookie) {
+        return registerSpec(ticket, ceremonyId, credential, prfSupported, cookie, null);
+    }
+
+    /** @param userAgent {@code User-Agent} header of the request; {@code null} sends the client's default */
+    public WebTestClient.ResponseSpec registerSpec(String ticket, Object ceremonyId, Map<String, Object> credential,
+                                                   Boolean prfSupported, String cookie, String userAgent) {
         var body = new java.util.HashMap<String, Object>();
         body.put("ceremonyId", ceremonyId);
         body.put("credential", credential);
@@ -101,6 +107,9 @@ public class WalletAuthClient {
                 .headers(h -> {
                     bearer(h, ticket);
                     h.add(WALLET_REQUEST, "1");
+                    if (userAgent != null) {
+                        h.set(HttpHeaders.USER_AGENT, userAgent);
+                    }
                 })
                 .cookies(c -> cookie(c, cookie))
                 .bodyValue(body).exchange();
