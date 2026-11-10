@@ -75,18 +75,35 @@ class GenerateHolderKeyUseCaseTest {
     }
 
     @Test
-    void execute_newKey_preferredAlgorithmIsEdDSA() {
+    void execute_issuerAcceptsSeveralAlgorithms_alwaysGeneratesAnEs256Key() {
+        // Arrange
         when(writePort.upsertIfAbsent(any())).thenAnswer(inv -> {
             HolderKey key = inv.getArgument(0);
             return Mono.just(new HolderKeyPersistResult(true, key));
         });
 
-        // issuer supports all three; EdDSA has highest preference per ADR-024
-        StepVerifier.create(useCase.execute(command(List.of("EdDSA", "ES384", "ES256"))))
-                .assertNext(result -> {
-                    assertThat(result.jwsProof().algorithm().getJwsAlgorithmName()).isEqualTo("EdDSA");
-                })
+        // Act
+        var result = useCase.execute(command(List.of("EdDSA", "ES384", "ES256")));
+
+        // Assert
+        StepVerifier.create(result)
+                .assertNext(r -> assertThat(r.jwsProof().algorithm().getJwsAlgorithmName()).isEqualTo("ES256"))
                 .verifyComplete();
+    }
+
+    @Test
+    void execute_issuerDoesNotAcceptEs256_failsWithoutGeneratingOrStoringAKey() {
+        // Arrange
+        var supported = List.of("EdDSA", "ES384");
+
+        // Act
+        var result = useCase.execute(command(supported));
+
+        // Assert
+        StepVerifier.create(result)
+                .expectError(com.eudistack.ebw.keymanager.domain.exception.UnsupportedJwsAlgorithmException.class)
+                .verify();
+        org.mockito.Mockito.verifyNoInteractions(writePort);
     }
 
     // --- happy path: existing key fetched (EC-01) ---

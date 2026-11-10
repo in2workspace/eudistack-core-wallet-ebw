@@ -52,7 +52,8 @@ public class CredentialService {
             Instant expirationDate,
             String credentialType,
             String vct,
-            boolean hasCnf
+            boolean hasCnf,
+            Map<String, Object> cnfJwk
     ) {}
 
     public Mono<ParsedCredential> parseCredential(String raw, CredentialFormat format) {
@@ -379,7 +380,7 @@ public class CredentialService {
         var credentialType = extractCredentialType(claimsMap);
 
         return new ParsedCredential(issuer, subject, issuanceDate, expirationDate, credentialType, null,
-                hasCnf(claimsMap));
+                hasCnf(claimsMap), cnfJwk(claimsMap));
     }
 
     private ParsedCredential parseSdJwt(String raw) throws ParseException {
@@ -400,7 +401,7 @@ public class CredentialService {
         var vct = claims.getStringClaim("vct");
 
         return new ParsedCredential(issuer, subject, issuanceDate, expirationDate, credentialType, vct,
-                hasCnf(claims.getClaims()));
+                hasCnf(claims.getClaims()), cnfJwk(claims.getClaims()));
     }
 
     /** Holder binding: a {@code cnf} claim, at the top level or inside the W3C {@code vc} object. */
@@ -409,6 +410,18 @@ public class CredentialService {
             return true;
         }
         return claims.get("vc") instanceof Map<?, ?> vc && vc.get("cnf") instanceof Map<?, ?>;
+    }
+
+    /** The key inside {@code cnf.jwk}, or {@code null} when the attestation has no {@code cnf} or it carries no JWK. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> cnfJwk(Map<String, Object> claims) {
+        Object cnf = claims.get("cnf");
+        if (!(cnf instanceof Map<?, ?>) && claims.get("vc") instanceof Map<?, ?> vc) {
+            cnf = vc.get("cnf");
+        }
+        return cnf instanceof Map<?, ?> cnfMap && cnfMap.get("jwk") instanceof Map<?, ?> jwk
+                ? (Map<String, Object>) jwk
+                : null;
     }
 
     @SuppressWarnings("unchecked")
