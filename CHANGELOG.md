@@ -76,10 +76,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deleting an attestation deletes its key material** in the same transaction (its `holder_key` row or its `passkey_prf_salt` row); `ebw_app_role` gets DELETE on both tables.
 - **`/keys/generate` only accepts ES256** (400 otherwise), and an operation that belongs to the other custody mode answers 409 `unsupported-custody-mode` instead of 403.
 - **`hsm` and `qtsp` are no longer key managers**: they leave the enum, the resolver and the `key_manager` CHECK.
-- **Key audit is meant to be enabled in DEV and STG** (`KEYMANAGER_AUDIT_ENABLED=true` and the log group `/eudistack/audit/wallet-ebw/<env>`); the events go to CloudWatch with their hash chain. The log group, its short CloudWatch retention and the subscription that moves the events to S3 Glacier for the long retention belong to the infrastructure: the service no longer sets the retention of the group. They will move to the audit API in a later change.
+- **Key events are recorded as log lines**: one per event on the logger `audit.holder-key` (level INFO), starting with the fixed mark `audit=key-custody` and `event=HolderKeyOperation`, with the custody mode, tenant, attestation and the thumbprint (`jkt`) of the public key; never key material. They go to the service log, which already reaches the platform; the platform filters them by that mark and archives them (S3, Glacier). The log masking of EUD-208 is not changed, so the holder and key UUIDs are masked: the generation and signing events identify the key by its thumbprint.
 
 ### Removed
 
+- **`KeyAuditCloudWatchAdapter`** and its `keymanager.audit.*` settings (`KEYMANAGER_AUDIT_ENABLED`, `KEYMANAGER_AUDIT_LOG_GROUP`), replaced by `KeyAuditLogAdapter`; the CloudWatch Logs client and LocalStack test dependencies leave the build. No log group, IAM permission or environment variable is needed.
 - **Encrypted-key model of the passkey custody**: `/keys/passkey-prf/onboarding/init` and `/commit`, `/sign/prepare` and `/sign/submit`, `/constraint-accepted`, the `passkey_prf_wrapped_key_handle` table, and the PRF health indicator and telemetry that depended on them.
 - **Deployment note**: V10 deletes the attestations obtained with the encrypted key (the `cgcom` tenant in DEV and STG), their salts and that table; those users must obtain their attestations again.
 
