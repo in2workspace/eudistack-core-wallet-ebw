@@ -150,7 +150,7 @@ class SmtpEmailSenderTest {
         // Arrange: FR-29
         when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
         var notice = new AccountCreatedNotice(Instant.parse("2026-10-30T09:42:00Z"), "portal-machine.cgcom.es",
-                "iPhone · Safari", "https://cgcom.eudistack.net/no-he-sido-yo/tok", Instant.parse("2026-11-06T09:42:00Z"));
+                "iPhone · Safari", "https://cgcom.eudistack.net/no-he-sido-yo#tok", Instant.parse("2026-11-06T09:42:00Z"));
 
         // Act
         StepVerifier.create(sender.sendAccountCreatedNotice("ana@cgcom.es", notice, Locale.ENGLISH)
@@ -164,7 +164,7 @@ class SmtpEmailSenderTest {
         assertThat(message.getSubject()).isEqualTo("Your CGCOM wallet has been created");
         assertThat(htmlOf(message))
                 .contains("On 30/10/2026 10:42 your wallet was created from portal-machine.cgcom.es")
-                .contains("href=\"https://cgcom.eudistack.net/no-he-sido-yo/tok\"")
+                .contains("href=\"https://cgcom.eudistack.net/no-he-sido-yo#tok\"")
                 .contains("The link expires on 06/11/2026.");
     }
 

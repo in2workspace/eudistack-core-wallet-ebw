@@ -78,8 +78,8 @@ class CreateOnboardingTicketWorkflowTest {
         StepVerifier.create(workflow.create(new CreateOnboardingTicketCommand("ana@example.com", OFFER, null, "portal")))
                 .assertNext(issued -> {
                     assertThat(issued.onboardingUrl())
-                            .isEqualTo("https://sandbox.stg.eudistack.net/t/AAAAAAAAAAAAAAAAAAAAAA");
-                    assertThat(issued.onboardingUrl().substring(issued.onboardingUrl().lastIndexOf('/') + 1))
+                            .isEqualTo("https://sandbox.stg.eudistack.net/t#AAAAAAAAAAAAAAAAAAAAAA");
+                    assertThat(issued.onboardingUrl().substring(issued.onboardingUrl().indexOf('#') + 1))
                             .matches("^[A-Za-z0-9_-]{22}$");
                     assertThat(issued.expiresIn()).isEqualTo(300);
                 })

@@ -50,13 +50,13 @@ class OnboardingTicketControllerTest {
     void create_valid_answers201WithUrlAndLifetime() {
         // Arrange
         when(workflow.create(new CreateOnboardingTicketCommand("ana@example.com", null, null, "portal")))
-                .thenReturn(Mono.just(new OnboardingTicketIssued("https://sandbox.example/t/abc", 300)));
+                .thenReturn(Mono.just(new OnboardingTicketIssued("https://sandbox.example/t#abc", 300)));
 
         // Act + Assert
         post(Map.of("email", "ana@example.com"))
                 .expectStatus().isCreated()
                 .expectBody()
-                .jsonPath("$.onboardingUrl").isEqualTo("https://sandbox.example/t/abc")
+                .jsonPath("$.onboardingUrl").isEqualTo("https://sandbox.example/t#abc")
                 .jsonPath("$.expiresIn").isEqualTo(300);
     }
 

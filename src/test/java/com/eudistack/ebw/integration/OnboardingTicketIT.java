@@ -153,7 +153,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
         var url = (String) requestTicket(adminToken(), Map.of("email", email, "credentialOffer", OFFER))
                 .expectStatus().isCreated()
                 .expectBody(Map.class).returnResult().getResponseBody().get("onboardingUrl");
-        return url.substring(url.lastIndexOf('/') + 1);
+        return url.substring(url.indexOf('#') + 1);
     }
 
     private WebTestClient.ResponseSpec redeem(String ticket, String tenant, String accessToken) {
@@ -200,9 +200,9 @@ class OnboardingTicketIT extends IntegrationTestBase {
 
         // Assert
         var url = (String) body.get("onboardingUrl");
-        assertThat(url).matches("https://" + PUBLIC_HOST.replace(".", "\\.") + "/t/[A-Za-z0-9_-]{22}");
+        assertThat(url).matches("https://" + PUBLIC_HOST.replace(".", "\\.") + "/t#[A-Za-z0-9_-]{22}");
         assertThat(body).containsEntry("expiresIn", 300);
-        var ticket = url.substring(url.lastIndexOf('/') + 1);
+        var ticket = url.substring(url.indexOf('#') + 1);
         assertThat(ticket).hasSize(22);
         assertThat(countInTestTenant("onboarding_preregistration WHERE email = '" + email + "'")).isEqualTo(1);
         assertThat(countInTestTenant("onboarding_preregistration WHERE token_hash = '" + ticket + "'")).isZero();
@@ -505,7 +505,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody(Map.class).returnResult().getResponseBody().get("onboardingUrl");
-        return url.substring(url.lastIndexOf('/') + 1);
+        return url.substring(url.indexOf('#') + 1);
     }
 
     @SuppressWarnings("unchecked")
@@ -553,10 +553,10 @@ class OnboardingTicketIT extends IntegrationTestBase {
         // The new-account email went out with the "it was not me" link (provisional, P5)
         assertThat(notices).hasSize(1);
         var link = notices.get(0).disavowalUrl();
-        assertThat(link).startsWith("https://" + PUBLIC_HOST + "/no-he-sido-yo/");
+        assertThat(link).startsWith("https://" + PUBLIC_HOST + "/no-he-sido-yo#");
 
         // And the link works
-        disavow(link.substring(link.lastIndexOf('/') + 1)).expectStatus().isNoContent();
+        disavow(link.substring(link.indexOf('#') + 1)).expectStatus().isNoContent();
         assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isZero();
     }
 
@@ -711,7 +711,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
         var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
         authClient().registerPasskey(registrationTicket, authenticator);
         var link = notices.get(0).disavowalUrl();
-        var disavowalToken = link.substring(link.lastIndexOf('/') + 1);
+        var disavowalToken = link.substring(link.indexOf('#') + 1);
 
         // Act
         disavow(disavowalToken).expectStatus().isNoContent();

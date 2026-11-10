@@ -21,15 +21,16 @@ import java.util.Map;
 /**
  * Pre-registration requested by an authorized system (design §2.6, FR-22 to FR-26): stores the
  * email, the offer and the system, never an account, and returns the onboarding URL
- * {@code https://<rpId>/t/<ticket>}. The ticket is 16 random bytes (128 bits, 22 base64url
- * characters, AD-8); only its SHA-256 is stored. It lives the tenant's {@code ttl}, or the
- * shorter lifetime the system asks for (EC-03).
+ * {@code https://<rpId>/t#<ticket>}, with the ticket in the fragment (P18). The ticket is 16
+ * random bytes (128 bits, 22 base64url characters, AD-8); only its SHA-256 is stored. It lives
+ * the tenant's {@code ttl}, or the shorter lifetime the system asks for (EC-03).
  */
 @Service
 public class CreateOnboardingTicketWorkflow {
 
     static final int TICKET_BYTES = 16;
-    static final String ONBOARDING_PATH = "/t/";
+    /** In the fragment, which never leaves the browser: not in access logs nor in Referer (P18). */
+    static final String ONBOARDING_PATH = "/t#";
 
     private final OnboardingSettingsService onboardingSettings;
     private final WalletAuthSettingsService authSettings;
