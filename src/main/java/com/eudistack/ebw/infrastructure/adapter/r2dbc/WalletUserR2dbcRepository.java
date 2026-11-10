@@ -7,6 +7,7 @@ import com.eudistack.ebw.infrastructure.adapter.r2dbc.spring.SpringWalletUserRep
 import com.eudistack.ebw.domain.model.exception.DuplicateAccountException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.UUID;
@@ -33,6 +34,11 @@ public class WalletUserR2dbcRepository implements WalletUserRepository {
     @Override
     public Mono<WalletUser> findByEmail(String email) {
         return springRepository.findByEmail(email).map(UserMapper::toDomain);
+    }
+
+    @Override
+    public Flux<WalletUser> findAllByEmailIgnoreCase(String email) {
+        return springRepository.findAllByEmailIgnoreCase(email).map(UserMapper::toDomain);
     }
 
     @Override

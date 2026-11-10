@@ -596,6 +596,72 @@ class OnboardingTicketIT extends IntegrationTestBase {
         assertThat(notices.get(0).deviceName()).isEqualTo("iPhone · Safari");
     }
 
+    // ------------------------------------------------------------------ email in another case (P16)
+
+    @Test
+    void redeem_emailInAnotherCaseThanTheAccount_findsTheAccountAndCreatesNoOther() {
+        // Arrange: EC-15, the ticket says ANA-... and the account ana-...
+        var email = email("casepasskeys");
+        authClient().signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        var ticket = ticketFor(email.toUpperCase());
+
+        // Act
+        var body = redeemed(ticket);
+
+        // Assert
+        assertThat(body).containsEntry("hasPasskeys", true).doesNotContainKey("registrationTicket");
+        assertThat(countInTestTenant("wallet_user WHERE lower(email) = '" + email + "'")).isEqualTo(1);
+    }
+
+    @Test
+    void onboarding_accountWithoutPasskeysInAnotherCase_isRecognizedWithoutDuplicatingIt() {
+        // Arrange: EC-15 and EC-01
+        captureNotices();
+        var email = email("caserecognized");
+        accountWithoutPasskeys(email);
+        var registrationTicket = registrationTicketOf(ticketFor(email.toUpperCase(), TEST_TENANT), TEST_TENANT);
+
+        // Act
+        var session = authClient().registerPasskey(registrationTicket, new SoftwareAuthenticator(TEST_ORIGIN));
+
+        // Assert: the passkey is the first one of the existing account
+        assertThat(session.accessToken()).isNotBlank();
+        assertThat(countInTestTenant("wallet_user WHERE lower(email) = '" + email + "'")).isEqualTo(1);
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isEqualTo(1);
+    }
+
+    @Test
+    void redeem_twoAccountsThatDifferOnlyInCase_isInvalidTicketAndCreatesNothing() {
+        // Arrange: EC-15, two accounts of the same person
+        var email = email("caseduplicate");
+        accountWithoutPasskeys(email);
+        accountWithoutPasskeys(email.toUpperCase());
+        var ticket = ticketFor(email);
+
+        // Act + Assert
+        redeem(ticket, TEST_TENANT, null).expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_ticket");
+        assertThat(countInTestTenant("wallet_user WHERE lower(email) = '" + email + "'")).isEqualTo(2);
+        assertThat(countInTestTenant("onboarding_preregistration WHERE lower(email) = '" + email + "'")).isZero();
+        assertThat(countInTestTenant("audit_log WHERE action = 'ONBOARDING_TICKET_REJECTED'"
+                + " AND metadata LIKE '%ambiguous_account%'")).isPositive();
+    }
+
+    @Test
+    void onboarding_accountInAnotherCaseAppearedAfterTheRedemption_isRejected() {
+        // Arrange: EC-15 and EC-04, the account appears between the redemption and the passkey
+        var email = email("caseappeared");
+        var registrationTicket = registrationTicketOf(ticketFor(email.toUpperCase(), TEST_TENANT), TEST_TENANT);
+        accountWithoutPasskeys(email);
+
+        // Act + Assert
+        authClient().registerPasskeySpec(registrationTicket, new SoftwareAuthenticator(TEST_ORIGIN), null)
+                .expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.type").isEqualTo("invalid_ticket");
+        assertThat(countInTestTenant("wallet_user WHERE lower(email) = '" + email + "'")).isEqualTo(1);
+        assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isZero();
+    }
+
     @Test
     void onboarding_secondTicketAfterADisavowal_sendsANewNoticeWithANewLink() {
         // Arrange: EC-01, the account is left without passkeys by the first "it was not me"

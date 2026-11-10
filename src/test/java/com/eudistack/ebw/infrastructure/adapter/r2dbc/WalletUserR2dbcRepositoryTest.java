@@ -7,6 +7,7 @@ import com.eudistack.ebw.infrastructure.adapter.r2dbc.spring.SpringWalletUserRep
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -46,6 +47,21 @@ class WalletUserR2dbcRepositoryTest {
         StepVerifier.create(byId).assertNext(u -> assertThat(u).usingRecursiveComparison().isEqualTo(user))
                 .verifyComplete();
         StepVerifier.create(byEmail).assertNext(u -> assertThat(u.getId()).isEqualTo(user.getId())).verifyComplete();
+    }
+
+    @Test
+    void findAllByEmailIgnoreCase_accountsThatDifferInCase_mapsEveryOneToTheDomain() {
+        // Arrange: EUD-315 P16
+        var lower = TestPasskeys.user("holder@example.com");
+        var upper = TestPasskeys.user("HOLDER@example.com");
+        when(springRepository.findAllByEmailIgnoreCase("Holder@Example.com"))
+                .thenReturn(Flux.just(UserMapper.toEntity(lower), UserMapper.toEntity(upper)));
+
+        // Act + Assert
+        StepVerifier.create(repository.findAllByEmailIgnoreCase("Holder@Example.com"))
+                .assertNext(u -> assertThat(u.getId()).isEqualTo(lower.getId()))
+                .assertNext(u -> assertThat(u.getId()).isEqualTo(upper.getId()))
+                .verifyComplete();
     }
 
     @Test

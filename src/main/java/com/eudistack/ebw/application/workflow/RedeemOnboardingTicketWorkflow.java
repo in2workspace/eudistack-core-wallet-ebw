@@ -30,6 +30,8 @@ import java.util.UUID;
  *       pre-registration. Without an account, the WebAuthn user handle of the future account is
  *       generated here and kept in the pre-registration (decision P2, provisional).</li>
  * </ul>
+ * The account is looked up ignoring the case of the email; two accounts that differ only in case
+ * reject the ticket as {@code invalid_ticket} (decision P16).
  * The offer comes back in every case. The trace never carries the email nor the ticket.
  */
 @Service
@@ -39,6 +41,7 @@ public class RedeemOnboardingTicketWorkflow {
     static final String OUTCOME_REGISTRATION = "registration";
     static final String OUTCOME_HAS_PASSKEYS = "has_passkeys";
     static final String OUTCOME_SESSION_OF_ACCOUNT = "session_of_account";
+    static final String REASON_AMBIGUOUS_ACCOUNT = "ambiguous_account";
 
     private final OnboardingPreregistrationRepository preregistrationRepository;
     private final WalletUserRepository userRepository;
@@ -70,9 +73,13 @@ public class RedeemOnboardingTicketWorkflow {
     public Mono<OnboardingTicketRedemption> redeem(String rawTicket, UUID sessionUserId) {
         return preregistrationRepository.redeem(hashProvider.sha256(rawTicket))
                 .switchIfEmpty(Mono.defer(this::reject))
-                .flatMap(preregistration -> userRepository.findByEmail(preregistration.email())
-                        .flatMap(user -> forAccount(preregistration, user, sessionUserId))
-                        .switchIfEmpty(Mono.defer(() -> withoutAccount(preregistration))));
+                .flatMap(preregistration -> userRepository.findAllByEmailIgnoreCase(preregistration.email())
+                        .collectList()
+                        .flatMap(accounts -> switch (accounts.size()) {
+                            case 0 -> withoutAccount(preregistration);
+                            case 1 -> forAccount(preregistration, accounts.getFirst(), sessionUserId);
+                            default -> rejectAmbiguous(preregistration);
+                        }));
     }
 
     private Mono<OnboardingTicketRedemption> forAccount(OnboardingPreregistration preregistration, WalletUser user,
@@ -115,6 +122,17 @@ public class RedeemOnboardingTicketWorkflow {
         return auditService.record(AuthAuditEvents.ENTITY_PREREGISTRATION, preregistration.id(),
                 AuthAuditEvents.ONBOARDING_TICKET_REDEEMED, userId,
                 Map.of(OUTCOME, outcome, "requested_by", preregistration.requestedBy()));
+    }
+
+    /**
+     * Two accounts whose email differs only in case (decision P16): the account cannot be told, so it
+     * counts as an existing one and the ticket gives no registration. The trace has the reason.
+     */
+    private Mono<OnboardingTicketRedemption> rejectAmbiguous(OnboardingPreregistration preregistration) {
+        return preregistrationRepository.deleteById(preregistration.id())
+                .then(auditService.record(AuthAuditEvents.ENTITY_PREREGISTRATION, preregistration.id(),
+                        AuthAuditEvents.ONBOARDING_TICKET_REJECTED, null, Map.of("reason", REASON_AMBIGUOUS_ACCOUNT)))
+                .then(Mono.error(new InvalidTicketException()));
     }
 
     /** Unknown, used, expired or of another tenant: the same answer, and the trace has no ticket. */

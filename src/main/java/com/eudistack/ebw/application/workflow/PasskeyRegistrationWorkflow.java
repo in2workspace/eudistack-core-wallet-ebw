@@ -289,7 +289,9 @@ public class PasskeyRegistrationWorkflow {
                                                     AuthAuditEvents.ACCOUNT_RECOGNIZED, user.getId(), Map.of())
                                             .thenReturn(new OnboardingAccount(user, false))));
         }
-        return userRepository.findByEmail(preregistration.email())
+        // Ignoring the case of the email (decision P16): one account or several, the ticket does not create another
+        return userRepository.findAllByEmailIgnoreCase(preregistration.email())
+                .next()
                 .flatMap(existing -> Mono.<OnboardingAccount>error(
                         new OnboardingAccountConflictException("account_appeared")))
                 .switchIfEmpty(Mono.defer(() -> userRepository

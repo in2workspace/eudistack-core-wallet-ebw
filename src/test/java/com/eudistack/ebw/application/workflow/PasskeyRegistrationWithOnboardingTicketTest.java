@@ -151,7 +151,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     @Test
     void register_emailWithoutAccount_createsTheAccountWithTheHandleAndThePasskeyInOneTransaction() {
         // Arrange: AC-03
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.empty());
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.empty());
         when(userRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
         // Act + Assert
@@ -170,7 +170,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     @Test
     void register_newAccount_keepsTheDisavowalRowWithoutToken() {
         // Arrange: decision P6, the token is set when the new-account email is sent
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.empty());
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.empty());
         when(userRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
         // Act
@@ -191,7 +191,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     @Test
     void register_withTicket_theNoticeGetsTheDeviceLabelOfTheUserAgentNotTheNameOfTheClient() {
         // Arrange: EC-16, P19 - the client name is free text: an attacker with the ticket can write it
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.empty());
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.empty());
         when(userRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         var iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 "
                 + "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
@@ -257,8 +257,24 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     @Test
     void register_accountOfTheEmailAppearedAfterTheRedemption_isRejected() {
         // Arrange: EC-04 (decision of the developer, 2026-11-06): its user handle is not the one in the passkey
-        when(userRepository.findByEmail(EMAIL))
-                .thenReturn(Mono.just(WalletUser.create(EMAIL, new byte[WalletUser.USER_HANDLE_LENGTH])));
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL))
+                .thenReturn(Flux.just(WalletUser.create(EMAIL, new byte[WalletUser.USER_HANDLE_LENGTH])));
+
+        // Act + Assert
+        StepVerifier.create(workflow.register(command(ceremony.id(), null)))
+                .expectError(InvalidTicketException.class).verify();
+        verify(userRepository, never()).save(any());
+        verify(passkeyRepository, never()).insert(any());
+        verify(auditService).record("onboarding_preregistration", preregistration.id(),
+                AuthAuditEvents.PASSKEY_REJECTED, null, Map.of("reason", "account_appeared"));
+    }
+
+    @Test
+    void register_twoAccountsOfTheEmailThatDifferOnlyInCase_isRejected() {
+        // Arrange: EC-15, P16 - the lookup ignores case; several accounts also count as an existing one
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.just(
+                WalletUser.create(EMAIL, new byte[WalletUser.USER_HANDLE_LENGTH]),
+                WalletUser.create("ANA@example.com", new byte[WalletUser.USER_HANDLE_LENGTH])));
 
         // Act + Assert
         StepVerifier.create(workflow.register(command(ceremony.id(), null)))
@@ -272,7 +288,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     @Test
     void register_concurrentCreationOfTheSameAccount_rejectsTheSecond() {
         // Arrange: EC-04, two onboarding tickets of one email registered at once
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.empty());
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.empty());
         when(userRepository.save(any())).thenReturn(Mono.error(new DuplicateAccountException()));
 
         // Act + Assert

@@ -18,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -81,7 +82,7 @@ class RedeemOnboardingTicketWorkflowTest {
     @Test
     void redeem_emailWithoutAccount_givesRegistrationTicketWithoutCreatingTheAccount() {
         // Arrange
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.empty());
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.empty());
 
         // Act + Assert
         StepVerifier.create(workflow.redeem(TICKET, null))
@@ -102,7 +103,7 @@ class RedeemOnboardingTicketWorkflowTest {
     @Test
     void redeem_registration_keepsThePreregistrationUntilTheRegistrationTicketExpires() {
         // Arrange: decision P8, the pre-registration must outlive its registration ticket
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.empty());
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.empty());
 
         // Act
         StepVerifier.create(workflow.redeem(TICKET, null)).expectNextCount(1).verifyComplete();
@@ -114,7 +115,7 @@ class RedeemOnboardingTicketWorkflowTest {
     @Test
     void redeem_accountWithoutPasskeys_givesRegistrationTicketBoundToTheAccount() {
         // Arrange: EC-01, an email sign-up abandoned before the passkey
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.just(account));
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.just(account));
         when(passkeyRepository.countByUserId(account.getId())).thenReturn(Mono.just(0L));
 
         // Act + Assert
@@ -126,9 +127,40 @@ class RedeemOnboardingTicketWorkflowTest {
     }
 
     @Test
+    void redeem_emailThatDiffersOnlyInCase_findsTheAccountIgnoringCase() {
+        // Arrange: EC-15, P16 - the ticket says Ana@Example.com and the account ana@example.com
+        var mixedCase = OnboardingPreregistration.create(HASH, "Ana@Example.com", OFFER, "portal-machine.example.org",
+                Duration.ofMinutes(5));
+        when(preregistrationRepository.redeem(HASH)).thenReturn(Mono.just(mixedCase));
+        when(userRepository.findAllByEmailIgnoreCase("Ana@Example.com")).thenReturn(Flux.just(account));
+        when(passkeyRepository.countByUserId(account.getId())).thenReturn(Mono.just(1L));
+
+        // Act + Assert: the account is the one of the email, with passkeys, and no other is created
+        StepVerifier.create(workflow.redeem(TICKET, null))
+                .assertNext(redemption -> assertThat(redemption.hasPasskeys()).isTrue())
+                .verifyComplete();
+        verify(userRepository, never()).save(any());
+        verify(preregistrationRepository, never()).assignUserHandle(any(), any());
+    }
+
+    @Test
+    void redeem_twoAccountsThatDifferOnlyInCase_isInvalidTicketAndDeletesThePreregistration() {
+        // Arrange: EC-15, P16 - the account cannot be told: it counts as an existing one
+        var other = WalletUser.create("ANA@example.com", new byte[WalletUser.USER_HANDLE_LENGTH]);
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.just(account, other));
+
+        // Act + Assert
+        StepVerifier.create(workflow.redeem(TICKET, null)).expectError(InvalidTicketException.class).verify();
+        verify(preregistrationRepository).deleteById(preregistration.id());
+        verify(ticketService, never()).issueForPreregistration(any(), any());
+        verify(auditService).record("onboarding_preregistration", preregistration.id(),
+                AuthAuditEvents.ONBOARDING_TICKET_REJECTED, null, Map.of("reason", "ambiguous_account"));
+    }
+
+    @Test
     void redeem_accountWithPasskeys_givesNoRegistrationTicketAndDeletesThePreregistration() {
         // Arrange: AC-08, FR-28
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.just(account));
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.just(account));
         when(passkeyRepository.countByUserId(account.getId())).thenReturn(Mono.just(1L));
 
         // Act + Assert
@@ -148,7 +180,7 @@ class RedeemOnboardingTicketWorkflowTest {
     @Test
     void redeem_activeSessionOfTheAccount_saysSoAndDeletesThePreregistration() {
         // Arrange: AC-09
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.just(account));
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.just(account));
 
         // Act + Assert
         StepVerifier.create(workflow.redeem(TICKET, account.getId()))
@@ -164,7 +196,7 @@ class RedeemOnboardingTicketWorkflowTest {
     @Test
     void redeem_sessionOfAnotherAccount_isIgnored() {
         // Arrange: EC-02
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.empty());
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.empty());
 
         // Act + Assert
         StepVerifier.create(workflow.redeem(TICKET, UUID.randomUUID()))
@@ -181,7 +213,7 @@ class RedeemOnboardingTicketWorkflowTest {
         var withoutOffer = OnboardingPreregistration.create(HASH, EMAIL, null, "portal-machine.example.org",
                 Duration.ofMinutes(5));
         when(preregistrationRepository.redeem(HASH)).thenReturn(Mono.just(withoutOffer));
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.empty());
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.empty());
 
         // Act + Assert
         StepVerifier.create(workflow.redeem(TICKET, null))
@@ -198,13 +230,13 @@ class RedeemOnboardingTicketWorkflowTest {
         StepVerifier.create(workflow.redeem(TICKET, null)).expectError(InvalidTicketException.class).verify();
         verify(auditService).record(eq("onboarding_preregistration"), any(),
                 eq(AuthAuditEvents.ONBOARDING_TICKET_REJECTED), isNull(), eq(Map.of()));
-        verify(userRepository, never()).findByEmail(anyString());
+        verify(userRepository, never()).findAllByEmailIgnoreCase(anyString());
     }
 
     @Test
     void redeem_trace_carriesTheOutcomeAndTheSystemButNeverTheEmail() {
         // Arrange: AC-19
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Mono.empty());
+        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.empty());
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> details = ArgumentCaptor.forClass(Map.class);
 
