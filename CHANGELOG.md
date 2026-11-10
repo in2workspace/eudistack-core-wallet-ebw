@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (EUD-26)
+
+- **Every operation carries the `tenant` tag**, as in the Issuer and the Verifier: spans, the metrics derived from them and `http.server.requests` (`TenantServerRequestObservationConvention`, which reads the tenant from the exchange because the Reactor context is gone when the HTTP observation stops). Only a tenant active in `public.tenant_registry` becomes the tag, loaded when the application is ready and refreshed every 5 minutes (`ObservedTenants`); any other value is `unknown`, so an invented subdomain creates no metric series. The request itself is not affected.
+- **The tenant is in the MDC as `tenantDomain`** (`MdcContextConfig`), so the console pattern prints it and the OTLP log export carries it with the other MDC attributes.
+
 ### Changed (EUD-26)
 
 - **URL-encoded emails (`%40`) are masked in the logs**, as they reach the DEBUG logs in query strings.

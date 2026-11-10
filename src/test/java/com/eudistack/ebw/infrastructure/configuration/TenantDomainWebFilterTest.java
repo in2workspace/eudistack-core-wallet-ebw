@@ -299,6 +299,26 @@ class TenantDomainWebFilterTest {
 
             assertThat(captured[0]).isNull();
         }
+
+        @Test
+        void resolvedTenant_isWrittenToTheExchangeAttributes() {
+            var exchange = exchange(MockServerHttpRequest.get("/")
+                    .header("Host", "acme.example.com"));
+
+            filter.filter(exchange, ex -> reactor.core.publisher.Mono.empty()).block();
+
+            assertThat(exchange.<String>getAttribute(ReactorContextKeys.TENANT_DOMAIN)).isEqualTo("acme");
+        }
+
+        @Test
+        void unresolvableTenant_doesNotWriteTheExchangeAttribute() {
+            var exchange = exchange(MockServerHttpRequest.get("/")
+                    .header("Host", "localhost"));
+
+            filter.filter(exchange, ex -> reactor.core.publisher.Mono.empty()).block();
+
+            assertThat(exchange.getAttributes()).doesNotContainKey(ReactorContextKeys.TENANT_DOMAIN);
+        }
     }
 
     // -------------------------------------------------------------------------
