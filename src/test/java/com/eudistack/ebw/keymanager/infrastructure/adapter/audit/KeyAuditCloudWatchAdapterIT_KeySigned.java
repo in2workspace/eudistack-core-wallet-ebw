@@ -21,11 +21,13 @@ import software.amazon.awssdk.services.cloudwatchlogs.CloudWatchLogsAsyncClient;
 import software.amazon.awssdk.services.cloudwatchlogs.model.CreateLogGroupRequest;
 import software.amazon.awssdk.services.cloudwatchlogs.model.GetLogEventsRequest;
 import software.amazon.awssdk.services.cloudwatchlogs.model.OutputLogEvent;
+import software.amazon.awssdk.services.cloudwatchlogs.model.ResourceAlreadyExistsException;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.testcontainers.containers.localstack.LocalStackContainer.Service.CLOUDWATCHLOGS;
@@ -68,9 +70,20 @@ class KeyAuditCloudWatchAdapterIT_KeySigned {
         objectMapper = new ObjectMapper();
         logStreamName = "sign-test-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 
-        logsClient.createLogGroup(CreateLogGroupRequest.builder()
-                .logGroupName(LOG_GROUP)
-                .build()).join();
+        createLogGroupIfAbsent();
+    }
+
+    /** The LocalStack container is shared by the tests of the class, so the group may exist already. */
+    private void createLogGroupIfAbsent() {
+        try {
+            logsClient.createLogGroup(CreateLogGroupRequest.builder()
+                    .logGroupName(LOG_GROUP)
+                    .build()).join();
+        } catch (CompletionException e) {
+            if (!(e.getCause() instanceof ResourceAlreadyExistsException)) {
+                throw e;
+            }
+        }
     }
 
     @Test
@@ -150,9 +163,9 @@ class KeyAuditCloudWatchAdapterIT_KeySigned {
                 "jkt-gen", Instant.now(), UUID.randomUUID().toString()
         );
 
+        String generationStream = "gen-stream-" + UUID.randomUUID().toString().replace("-", "").substring(0, 6);
         KeyAuditCloudWatchAdapter adapter = new KeyAuditCloudWatchAdapter(
-                LOG_GROUP, objectMapper, logsClient,
-                "gen-stream-" + UUID.randomUUID().toString().replace("-", "").substring(0, 6));
+                LOG_GROUP, objectMapper, logsClient, generationStream);
 
         try {
             adapter.emit(event).block();
@@ -160,12 +173,22 @@ class KeyAuditCloudWatchAdapterIT_KeySigned {
 
             List<OutputLogEvent> logEvents = logsClient.getLogEvents(GetLogEventsRequest.builder()
                     .logGroupName(LOG_GROUP)
-                    .logStreamName(logStreamName + "gen")
+                    .logStreamName(generationStream)
                     .startFromHead(true)
                     .build()).join().events();
 
-            // The generation event path is tested in existing KeyAuditCloudWatchAdapterIT
-            // This test just confirms the adapter doesn't throw on generation events
+            assertThat(logEvents).isNotEmpty();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> batch = objectMapper.readValue(logEvents.get(0).message(), Map.class);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> events = (List<Map<String, Object>>) batch.get("events");
+            assertThat(events).hasSize(1);
+
+            Map<String, Object> e = events.get(0);
+            assertThat(e.get("event_type")).isEqualTo("key.generated");
+            assertThat(e.get("signing_type")).isNull();
+            assertThat(e.get("purpose")).isNull();
+            assertThat(e.get("consumer_origin")).isNull();
         } finally {
             adapter.destroy();
             logsClient.close();

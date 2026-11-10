@@ -88,7 +88,7 @@ class KeyAuditCloudWatchAdapterTest {
         assertThat(stream.getValue().logStreamName()).isEqualTo(STREAM);
         var retention = ArgumentCaptor.forClass(PutRetentionPolicyRequest.class);
         verify(logsClient).putRetentionPolicy(retention.capture());
-        assertThat(retention.getValue().retentionInDays()).isEqualTo(2555);
+        assertThat(retention.getValue().retentionInDays()).isEqualTo(2557);
     }
 
     @Test

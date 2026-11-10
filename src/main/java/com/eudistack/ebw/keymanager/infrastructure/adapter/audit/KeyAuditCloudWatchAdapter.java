@@ -164,9 +164,9 @@ public class KeyAuditCloudWatchAdapter implements KeyAuditPort, DisposableBean {
         try {
             joinAndRethrowSdkException(logsClient.putRetentionPolicy(PutRetentionPolicyRequest.builder()
                     .logGroupName(logGroupName)
-                    .retentionInDays(2555)
+                    .retentionInDays(2557)
                     .build()));
-            log.info("keymanager.audit.retention_set group={} days=2555", logGroupName);
+            log.info("keymanager.audit.retention_set group={} days=2557", logGroupName);
         } catch (SdkException e) {
             log.error("keymanager.audit.retention_set_failed group={}: {}", logGroupName, e.getMessage());
         }

@@ -244,8 +244,8 @@ class KeyAuditCloudWatchAdapterIT {
                     .orElse(null);
 
             assertThat(retentionDays)
-                    .as("CA-2: audit log group must have at least 7-year (2555 days) retention")
-                    .isEqualTo(2555);
+                    .as("CA-2: audit log group must have at least 7-year (2557 days) retention")
+                    .isEqualTo(2557);
         } finally {
             adapter.destroy();
         }
@@ -300,8 +300,8 @@ class KeyAuditCloudWatchAdapterIT {
                         .orElse(null);
 
                 assertThat(retentionDays)
-                        .as("CA-2: adapter must enforce 7-year (2555-day) retention even when stream already exists")
-                        .isEqualTo(2555);
+                        .as("CA-2: adapter must enforce 7-year (2557-day) retention even when stream already exists")
+                        .isEqualTo(2557);
             } finally {
                 adapter.destroy();
             }
