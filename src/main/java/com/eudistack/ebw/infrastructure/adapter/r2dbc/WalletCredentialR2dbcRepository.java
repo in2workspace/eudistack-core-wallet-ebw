@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -63,6 +64,12 @@ public class WalletCredentialR2dbcRepository implements WalletCredentialReposito
         var configId = (credentialConfigId != null && !credentialConfigId.isBlank()) ? credentialConfigId : null;
         var issuerFilter = (issuer != null && !issuer.isBlank()) ? issuer : null;
         return springRepository.findAllByUserIdAndFilters(userId, statusName, configId, issuerFilter)
+                .map(CredentialMapper::toDomain);
+    }
+
+    @Override
+    public Flux<WalletCredential> findOrphanedExpired(Instant now) {
+        return springRepository.findOrphanedExpired(now)
                 .map(CredentialMapper::toDomain);
     }
 

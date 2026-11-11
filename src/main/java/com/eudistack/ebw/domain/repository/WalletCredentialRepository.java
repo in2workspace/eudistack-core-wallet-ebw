@@ -5,6 +5,7 @@ import com.eudistack.ebw.domain.model.WalletCredential;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.UUID;
 
 public interface WalletCredentialRepository {
@@ -27,6 +28,12 @@ public interface WalletCredentialRepository {
 
     Flux<WalletCredential> findAllByUserIdAndFilters(UUID userId, CredentialStatus status,
                                                       String credentialConfigId, String issuer);
+
+    /**
+     * Bound attestations whose passkey is no longer in the account ({@code passkey_id} is null) and whose
+     * expiration date is before {@code now}. Those without an expiration date are not returned.
+     */
+    Flux<WalletCredential> findOrphanedExpired(Instant now);
 
     Mono<Void> deleteById(UUID id);
 }

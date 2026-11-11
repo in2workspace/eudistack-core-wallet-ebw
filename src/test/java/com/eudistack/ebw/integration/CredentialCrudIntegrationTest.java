@@ -157,7 +157,7 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
 
         webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
-                .bodyValue(Map.of("status", "SUSPENDED"))
+                .bodyValue(Map.of("status", "REVOKED"))
                 .exchange()
                 .expectStatus().isOk();
 
@@ -168,7 +168,7 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
                 .expectBody(Map.class)
                 .returnResult().getResponseBody();
 
-        assertThat(after.get("lifeCycleStatus")).isEqualTo("SUSPENDED");
+        assertThat(after.get("lifeCycleStatus")).isEqualTo("REVOKED");
         assertThat(after.get("credentialEncoded"))
                 .as("credentialEncoded must be preserved across UPDATE")
                 .isEqualTo(before.get("credentialEncoded"));
@@ -222,7 +222,7 @@ class CredentialCrudIntegrationTest extends IntegrationTestBase {
         // Update status
         webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
-                .bodyValue(Map.of("status", "SUSPENDED"))
+                .bodyValue(Map.of("status", "REVOKED"))
                 .exchange()
                 .expectStatus().isOk();
 
