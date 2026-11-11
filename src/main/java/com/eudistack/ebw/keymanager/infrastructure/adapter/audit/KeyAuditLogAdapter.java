@@ -12,17 +12,21 @@ import java.util.regex.Pattern;
 
 /**
  * Records the key events (EUD-11 FR-04) as one structured line each, on the logger {@value #LOGGER_NAME}.
- * Every line starts with the fixed mark {@code audit=key-custody}: the platform filters the audit lines from the
- * service log by it. It is not {@code passkey}: the events of both custody modes carry it.
+ * Every line starts with the fixed keyword {@value #AUDIT_MARK}: the platform filters the audit lines from the
+ * service log by it, so no other log that merely contains the word "audit" is ingested.
  * The service output already reaches the service's log group, so no setting or infrastructure of its own
  * is needed. It is the audit trail until the events go through the audit API.
  *
- * <p>A line carries the custody mode and never key material: no private key, no PRF salt, no PRF result.
+ * <p>The log masking of EUD-208 does not hide the UUIDs of this logger: an audit event has to name the holder and
+ * the attestation (FR-04, AC-07). A line carries the custody mode and never key material: no private key, no PRF salt, no PRF result.
  * Values come from requests, so control characters are replaced before they reach the line.</p>
  */
 public class KeyAuditLogAdapter implements KeyAuditPort {
 
     static final String LOGGER_NAME = "audit.holder-key";
+
+    /** Keyword at the start of every audit line; a log that is not an audit event must never carry it. */
+    static final String AUDIT_MARK = "[###AUDIT###]";
 
     private static final Logger AUDIT_LOG = LoggerFactory.getLogger(LOGGER_NAME);
     private static final Pattern CONTROL_CHARACTERS = Pattern.compile("\\p{Cntrl}");
@@ -32,7 +36,7 @@ public class KeyAuditLogAdapter implements KeyAuditPort {
     public Mono<Void> emit(KeyAuditEvent event) {
         return Mono.fromRunnable(() -> {
             if (AUDIT_LOG.isInfoEnabled()) {
-                AUDIT_LOG.info("audit=key-custody event=HolderKeyOperation {}", fieldsOf(event));
+                AUDIT_LOG.info("{} event=HolderKeyOperation {}", AUDIT_MARK, fieldsOf(event));
             }
         });
     }
