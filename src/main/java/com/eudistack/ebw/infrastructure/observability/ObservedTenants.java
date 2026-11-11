@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The value of the {@code tenant} tag on spans and metrics: the tenant itself when it is active in
@@ -31,7 +32,8 @@ public class ObservedTenants {
     public static final String UNKNOWN_TENANT = "unknown";
 
     private final ObjectProvider<ActiveTenantDirectory> tenantDirectory;
-    private volatile Set<String> activeTenants = Set.of();
+    /** Always an immutable set, replaced whole on each refresh. */
+    private final AtomicReference<Set<String>> activeTenants = new AtomicReference<>(Set.of());
 
     public ObservedTenants(ObjectProvider<ActiveTenantDirectory> tenantDirectory) {
         this.tenantDirectory = tenantDirectory;
@@ -39,7 +41,7 @@ public class ObservedTenants {
 
     /** The tag value for a resolved tenant, which may be {@code null}. */
     public String tagValue(String tenant) {
-        return tenant != null && activeTenants.contains(tenant) ? tenant : UNKNOWN_TENANT;
+        return tenant != null && activeTenants.get().contains(tenant) ? tenant : UNKNOWN_TENANT;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -57,12 +59,13 @@ public class ObservedTenants {
         return tenantDirectory.getObject().activeTenants()
                 .collectList()
                 .map(tenants -> {
-                    activeTenants = Set.copyOf(tenants);
-                    return activeTenants.size();
+                    Set<String> loaded = Set.copyOf(tenants);
+                    activeTenants.set(loaded);
+                    return loaded.size();
                 })
                 .onErrorResume(e -> {
                     log.warn("Could not list the active tenants for the tenant tag: {}", e.getMessage());
-                    return Mono.just(activeTenants.size());
+                    return Mono.just(activeTenants.get().size());
                 });
     }
 }
