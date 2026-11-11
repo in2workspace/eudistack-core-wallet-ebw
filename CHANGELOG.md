@@ -80,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deleting an attestation deletes its key material** in the same transaction (its `holder_key` row or its `passkey_prf_salt` row); `ebw_app_role` gets DELETE on both tables.
 - **`/keys/generate` only accepts ES256** (400 otherwise), and an operation that belongs to the other custody mode answers 409 `unsupported-custody-mode` instead of 403.
 - **`hsm` and `qtsp` are no longer key managers**: they leave the enum, the resolver and the `key_manager` CHECK.
-- **Key events are recorded as log lines**: one per event on the logger `audit.holder-key` (level INFO), starting with the fixed mark `audit=key-custody` and `event=HolderKeyOperation`, with the custody mode, tenant, attestation and the thumbprint (`jkt`) of the public key; never key material. They go to the service log, which already reaches the platform; the platform filters them by that mark and archives them (S3, Glacier). The log masking of EUD-208 is not changed, so the holder and key UUIDs are masked: the generation and signing events identify the key by its thumbprint.
+- **Key events are recorded as log lines**: one per event on the logger `audit.holder-key` (level INFO), starting with the fixed keyword `[###AUDIT###]` and `event=HolderKeyOperation`, with the custody mode, tenant, attestation and the thumbprint (`jkt`) of the public key; never key material. They go to the service log, which already reaches the platform; the platform filters them by that mark and archives them (S3, Glacier). The log masking of EUD-208 is not changed, so the holder and key UUIDs are masked: the generation and signing events identify the key by its thumbprint.
 
 ### Removed
 

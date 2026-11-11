@@ -360,7 +360,7 @@ class MaskingPatternLayoutTest {
         patternLayout.start();
         LoggingEvent event = new LoggingEvent(MaskingPatternLayoutTest.class.getName(),
                 context.getLogger(MaskingPatternLayout.AUDIT_LOGGER), Level.INFO,
-                "audit=key-custody holder_id=" + USER_ID + " credential_id=" + CREDENTIAL_ID
+                "[###AUDIT###] holder_id=" + USER_ID + " credential_id=" + CREDENTIAL_ID
                         + " email=holder@empresa.com token=abc123", null, null);
 
         String line = patternLayout.doLayout(event);

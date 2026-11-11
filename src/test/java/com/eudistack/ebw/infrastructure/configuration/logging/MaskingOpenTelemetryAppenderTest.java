@@ -292,7 +292,7 @@ class MaskingOpenTelemetryAppenderTest {
     void mask_AuditLoggerMessage_KeepsTheUuidsButMasksTheRest() {
         ILoggingEvent source = mock(ILoggingEvent.class);
         when(source.getLoggerName()).thenReturn(MaskingPatternLayout.AUDIT_LOGGER);
-        when(source.getFormattedMessage()).thenReturn("audit=key-custody holder_id=" + USER_ID
+        when(source.getFormattedMessage()).thenReturn("[###AUDIT###] holder_id=" + USER_ID
                 + " email=holder@empresa.com session=" + JWT_SAMPLE);
 
         ILoggingEvent masked = MaskingOpenTelemetryAppender.mask(source);

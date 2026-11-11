@@ -51,7 +51,7 @@ class KeyAuditLogAdapterTest {
                 SigningType.KB_JWT, SignaturePurpose.PRESENTATION, ConsumerOrigin.OID4VP_RESPONDER, null, "key-1"));
 
         assertThat(onlyLine())
-                .startsWith("audit=key-custody event=HolderKeyOperation type=KEY_SIGNED custody_mode=server tenant=sandbox")
+                .startsWith("[###AUDIT###] event=HolderKeyOperation type=KEY_SIGNED custody_mode=server tenant=sandbox")
                 .contains("holder_id=holder-1", "credential_id=cred-1", "key_id=key-1", "jkt=jkt-1",
                         "signing_type=KB_JWT", "correlation_id=corr-1")
                 .doesNotContain("reason=");
@@ -101,7 +101,7 @@ class KeyAuditLogAdapterTest {
         String printed = layout.doLayout(appender.list.getFirst());
 
         assertThat(printed)
-                .startsWith("audit=key-custody event=HolderKeyOperation")
+                .startsWith("[###AUDIT###] event=HolderKeyOperation")
                 .contains("holder_id=" + holder, "key_id=9b2f7c1e-3a4d-4e5f-8a6b-7c8d9e0f1a2b",
                         "jkt=NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs");
     }
