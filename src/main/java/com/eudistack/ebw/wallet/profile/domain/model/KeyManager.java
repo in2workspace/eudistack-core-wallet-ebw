@@ -14,9 +14,7 @@ package com.eudistack.ebw.wallet.profile.domain.model;
 public enum KeyManager {
 
     DB("db"),
-    PASSKEY_PRF("passkey-prf"),
-    HSM("hsm"),
-    QTSP("qtsp");
+    PASSKEY_PRF("passkey-prf");
 
     private final String dbValue;
 

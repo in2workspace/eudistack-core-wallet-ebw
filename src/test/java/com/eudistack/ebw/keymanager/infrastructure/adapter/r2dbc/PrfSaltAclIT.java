@@ -17,10 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
 /**
- * Integration tests verifying the ACL on {@code passkey_prf_salt} as defined in
- * the Flyway migration {@code V3__create_hybrid_prf_salt.sql}:
- * only {@code SELECT} and {@code INSERT} are granted to {@code ebw_app_role};
- * {@code UPDATE} and {@code DELETE} are explicitly not granted.
+ * Integration tests verifying the ACL on {@code passkey_prf_salt} as defined in the Flyway migrations
+ * {@code V3__create_hybrid_prf_salt.sql} and {@code V10__holder_key_custody.sql}: {@code ebw_app_role} may
+ * {@code SELECT}, {@code INSERT} and {@code DELETE} (deleting an attestation deletes its salt), and may
+ * {@code UPDATE} only the {@code public_jwk} column. The salt itself is immutable.
  *
  * <p>Tests use a shared Testcontainers PostgreSQL instance. Setup creates
  * {@code ebw_app_role} (group role) and a matching login user {@code ebw_app_user}
@@ -29,11 +29,10 @@ import static org.assertj.core.api.Assertions.fail;
  *
  * <p>Covered criteria:
  * <ul>
- *   <li>AC-03 / ES-03 — {@code ebw_app_role} UPDATE on {@code passkey_prf_salt}
- *       is denied (SQLSTATE 42501)</li>
- *   <li>ES-03 — {@code ebw_app_role} DELETE on {@code passkey_prf_salt}
- *       is denied (SQLSTATE 42501)</li>
- *   <li>NFR-S-537-04 — salt row remains intact after both rejected attempts</li>
+ *   <li>AC-03 / ES-03 — {@code ebw_app_role} UPDATE of the salt is denied (SQLSTATE 42501)</li>
+ *   <li>NFR-S-537-04 — the salt row remains intact after the rejected UPDATE</li>
+ *   <li>EUD-11 FR-13 — {@code ebw_app_role} may UPDATE {@code public_jwk}</li>
+ *   <li>EUD-11 FR-16 — {@code ebw_app_role} may DELETE the row</li>
  *   <li>Positive: SELECT and INSERT work for {@code ebw_app_role}</li>
  * </ul>
  *
@@ -221,30 +220,39 @@ class PrfSaltAclIT {
         assertThat(afterAttempt).isEqualTo(originalSalt);
     }
 
-    // ------------------------------------------------------------------ ES-03: DELETE denied
+    // ------------------------------------------------------------------ FR-13: public_jwk is the only updatable column
 
     @Test
-    void ebwAppRole_delete_denied_withInsufficientPrivilege() throws SQLException {
-        String credId = "cred-acl-del-1";
-        byte[] originalSalt = new byte[32];
-        originalSalt[3] = 0x44;
-        seedSaltRow(credId, originalSalt);
+    void ebwAppRole_updatePublicJwk_isAllowed() throws SQLException {
+        String credId = "cred-acl-jwk-1";
+        seedSaltRow(credId, new byte[32]);
 
         try (Connection conn = ebwAppConnection()) {
-            try {
-                conn.createStatement().execute(
-                        "DELETE FROM passkey_prf_salt WHERE credential_id = '" + credId + "'");
-                fail("Expected SQLSTATE 42501 for DELETE as ebw_app_role");
-            } catch (SQLException ex) {
-                assertThat(ex.getSQLState())
-                        .as("DELETE must be denied with SQLSTATE 42501 (insufficient_privilege)")
-                        .isEqualTo(SQLSTATE_INSUFFICIENT_PRIVILEGE);
-            }
+            int updated = conn.createStatement().executeUpdate(
+                    "UPDATE passkey_prf_salt SET public_jwk = '{\"kty\":\"EC\"}'::jsonb "
+                    + "WHERE credential_id = '" + credId + "'");
+            assertThat(updated).isEqualTo(1);
+        }
+    }
+
+    // ------------------------------------------------------------------ FR-16: DELETE allowed
+
+    @Test
+    void ebwAppRole_delete_isAllowedAndRemovesTheRow() throws SQLException {
+        String credId = "cred-acl-del-1";
+        seedSaltRow(credId, new byte[32]);
+
+        try (Connection conn = ebwAppConnection()) {
+            int deleted = conn.createStatement().executeUpdate(
+                    "DELETE FROM passkey_prf_salt WHERE credential_id = '" + credId + "'");
+            assertThat(deleted).isEqualTo(1);
         }
 
-        // NFR-S-537-04: salt row must remain intact after rejected DELETE
-        byte[] afterAttempt = readSaltDirect(credId);
-        assertThat(afterAttempt).isEqualTo(originalSalt);
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, "test", "test");
+             var rs = conn.createStatement().executeQuery(
+                     "SELECT 1 FROM " + testSchema + ".passkey_prf_salt WHERE credential_id = '" + credId + "'")) {
+            assertThat(rs.next()).isFalse();
+        }
     }
 
     // ------------------------------------------------------------------ helpers

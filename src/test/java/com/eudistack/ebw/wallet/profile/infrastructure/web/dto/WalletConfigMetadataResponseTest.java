@@ -75,24 +75,4 @@ class WalletConfigMetadataResponseTest {
 
         assertThat(response.keyManager()).isEqualTo("passkey-prf");
     }
-
-    @Test
-    void from_hsmKeyManager_producesDatabaseValue() {
-        TenantWalletProfile profile =
-                new TenantWalletProfile("tenant1", WalletMode.SERVER, KeyManager.HSM, NOW, NOW);
-
-        WalletConfigMetadataResponse response = WalletConfigMetadataResponse.from(profile);
-
-        assertThat(response.keyManager()).isEqualTo("hsm");
-    }
-
-    @Test
-    void from_qtspKeyManager_producesDatabaseValue() {
-        TenantWalletProfile profile =
-                new TenantWalletProfile("tenant1", WalletMode.SERVER, KeyManager.QTSP, NOW, NOW);
-
-        WalletConfigMetadataResponse response = WalletConfigMetadataResponse.from(profile);
-
-        assertThat(response.keyManager()).isEqualTo("qtsp");
-    }
 }

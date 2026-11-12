@@ -1,8 +1,9 @@
 package com.eudistack.ebw.application.workflow;
 
+import com.eudistack.ebw.domain.model.CustodyMode;
 import com.eudistack.ebw.domain.model.WalletCredential;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
-import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
+import com.eudistack.ebw.wallet.profile.domain.model.TenantWalletProfile;
 import com.eudistack.ebw.wallet.profile.domain.model.WalletMode;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
 import org.springframework.stereotype.Service;
@@ -35,9 +36,23 @@ public class PasskeyCustodyPolicy {
     }
 
     public Mono<Boolean> isPasskeyCustody() {
+        return custodyMode().map(mode -> mode == CustodyMode.PASSKEY).defaultIfEmpty(false);
+    }
+
+    /** Custody mode of the current tenant; empty when it has no wallet profile or keeps its keys in the browser. */
+    public Mono<CustodyMode> custodyMode() {
         return walletProfileQueryPort.queryByCurrentTenant()
-                .map(profile -> profile.walletMode() == WalletMode.SERVER
-                        && profile.keyManager() == KeyManager.PASSKEY_PRF)
-                .onErrorResume(TenantUnknownException.class, e -> Mono.just(false));
+                .flatMap(profile -> Mono.justOrEmpty(custodyModeOf(profile)))
+                .onErrorResume(TenantUnknownException.class, e -> Mono.empty());
+    }
+
+    private static CustodyMode custodyModeOf(TenantWalletProfile profile) {
+        if (profile.walletMode() != WalletMode.SERVER || profile.keyManager() == null) {
+            return null;
+        }
+        return switch (profile.keyManager()) {
+            case DB -> CustodyMode.SERVER;
+            case PASSKEY_PRF -> CustodyMode.PASSKEY;
+        };
     }
 }

@@ -1,13 +1,8 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.http;
 
-import com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException;
-import com.eudistack.ebw.keymanager.domain.exception.InvalidCommitException;
-import com.eudistack.ebw.keymanager.domain.exception.InvalidSignatureSubmissionException;
-import com.eudistack.ebw.keymanager.domain.exception.OnboardingStateException;
+import com.eudistack.ebw.domain.model.exception.InvalidSessionException;
 import com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException;
-import com.eudistack.ebw.keymanager.domain.exception.SignatureInvalidException;
 import com.eudistack.ebw.keymanager.domain.exception.TenantWalletProfileUnsupportedException;
-import com.eudistack.ebw.keymanager.domain.exception.UnsupportedCredentialFormatException;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -26,10 +21,7 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Unit tests for {@link PasskeyPrfKeyManagerExceptionHandler} — status, problem type and machine-readable
- * {@code error} code returned to the passkey-prf onboarding / signing clients.
- */
+/** Status and problem type {@link PasskeyPrfKeyManagerExceptionHandler} returns to the Wallet App. */
 class PasskeyPrfKeyManagerExceptionHandlerTest {
 
     private static final String TYPE_BASE = "urn:eudistack:error:keymanager:passkey-prf:";
@@ -38,41 +30,50 @@ class PasskeyPrfKeyManagerExceptionHandlerTest {
 
     static Stream<Arguments> problems() {
         return Stream.of(
-                Arguments.of(call(h -> h.handleUnsupportedFormat(new UnsupportedCredentialFormatException("x"))),
-                        HttpStatus.BAD_REQUEST, "unsupported-format", "unsupported_format"),
-                Arguments.of(call(h -> h.handleSignatureInvalid(new SignatureInvalidException())),
-                        HttpStatus.BAD_REQUEST, "signature-invalid", "signature_invalid"),
-                Arguments.of(call(h -> h.handleInvalidSignatureSubmission(new InvalidSignatureSubmissionException("x"))),
-                        HttpStatus.BAD_REQUEST, "invalid-request", "invalid_request"),
-                Arguments.of(call(h -> h.handleInvalidCommit(new InvalidCommitException("x"))),
-                        HttpStatus.BAD_REQUEST, "invalid-request", "invalid_request"),
-                Arguments.of(call(h -> h.handleOnboardingState(new OnboardingStateException("x"))),
-                        HttpStatus.CONFLICT, "idempotency-replay", "idempotency_replay"),
+                Arguments.of(call(h -> h.handleInvalidSession(new InvalidSessionException())),
+                        HttpStatus.UNAUTHORIZED, "invalid-session"),
                 Arguments.of(call(h -> h.handlePrfSaltNotFound(new PrfSaltNotFoundException("cred-1"))),
-                        HttpStatus.NOT_FOUND, "wrap-handle-not-found", "wrap_handle_not_found"),
-                Arguments.of(call(h -> h.handleHolderIsolation(new HolderIsolationViolationException("cred-1"))),
-                        HttpStatus.FORBIDDEN, "holder-isolation-violation", "holder_isolation_violation"));
+                        HttpStatus.NOT_FOUND, "not-found"),
+                Arguments.of(call(h -> h.handleGeneral(new IllegalStateException("boom"))),
+                        HttpStatus.INTERNAL_SERVER_ERROR, "internal")
+        );
     }
 
     @ParameterizedTest
     @MethodSource("problems")
-    void problemHandlers_returnStatusTypeAndErrorCode(
+    void handler_exception_returnsProblemWithStatusAndType(
             Function<PasskeyPrfKeyManagerExceptionHandler, ResponseEntity<ProblemDetail>> handlerCall,
-            HttpStatus expectedStatus, String expectedType, String expectedError) {
+            HttpStatus status, String type) {
+        // Arrange
+        // handler and exception come from the parameters
+
         // Act
         var response = handlerCall.apply(handler);
 
         // Assert
-        assertThat(response.getStatusCode()).isEqualTo(expectedStatus);
-        assertThat(response.getBody().getType()).isEqualTo(URI.create(TYPE_BASE + expectedType));
-        assertThat(response.getBody().getProperties()).containsEntry("error", expectedError);
+        assertThat(response.getStatusCode()).isEqualTo(status);
+        assertThat(response.getBody().getType()).isEqualTo(URI.create(TYPE_BASE + type));
     }
 
     @Test
-    void handleValidation_returns400WithoutFieldDetails() throws Exception {
+    void unsupportedCustodyMode_usesTheSameTypeAsTheKeyEndpoints() {
         // Arrange
-        var exception = new WebExchangeBindException(new MethodParameter(Object.class.getMethod("toString"), -1),
-                new BeanPropertyBindingResult(new Object(), "request"));
+        var exception = new TenantWalletProfileUnsupportedException("sandbox");
+
+        // Act
+        var response = handler.handleUnsupportedCustodyMode(exception);
+
+        // Assert
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().getType())
+                .isEqualTo(URI.create("urn:eudistack:error:keymanager:unsupported-custody-mode"));
+    }
+
+    @Test
+    void handleValidation_invalidBody_returns400() throws NoSuchMethodException {
+        // Arrange
+        var parameter = new MethodParameter(String.class.getMethod("length"), -1);
+        var exception = new WebExchangeBindException(parameter, new BeanPropertyBindingResult(new Object(), "request"));
 
         // Act
         var response = handler.handleValidation(exception);
@@ -80,30 +81,19 @@ class PasskeyPrfKeyManagerExceptionHandlerTest {
         // Assert
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody().getType()).isEqualTo(URI.create(TYPE_BASE + "invalid-request"));
-        assertThat(response.getBody().getProperties()).isNull();
     }
 
     @Test
-    void handleForbidden_returns403WithoutBody() {
+    void handleForbidden_unknownTenant_returns403WithoutBody() {
+        // Arrange
+        var exception = new TenantUnknownException(TenantUnknownException.Reason.PROFILE_NOT_SEEDED);
+
         // Act
-        var unsupported = handler.handleForbidden(new TenantWalletProfileUnsupportedException("sandbox"));
-        var unknown = handler.handleForbidden(
-                new TenantUnknownException(TenantUnknownException.Reason.TENANT_ABSENT_FROM_CONTEXT));
+        var response = handler.handleForbidden(exception);
 
         // Assert
-        assertThat(unsupported.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
-        assertThat(unknown.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
-        assertThat(unknown.getBody()).isNull();
-    }
-
-    @Test
-    void handleGeneral_returnsInternalProblem() {
-        // Act
-        var response = handler.handleGeneral(new IllegalStateException("boom"));
-
-        // Assert
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
-        assertThat(response.getBody().getType()).isEqualTo(URI.create(TYPE_BASE + "internal"));
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).isNull();
     }
 
     private static Function<PasskeyPrfKeyManagerExceptionHandler, ResponseEntity<ProblemDetail>> call(

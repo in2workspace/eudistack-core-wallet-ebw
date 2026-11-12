@@ -1,6 +1,7 @@
 package com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc;
 
 import com.eudistack.ebw.keymanager.application.PrfSaltService;
+import com.eudistack.ebw.keymanager.domain.model.PrfSalt;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,6 +63,7 @@ class PrfSaltConcurrencyIT {
     private static String HOLDER_ID;
 
     private static final String CRED_ID = "cred-concurrent-1";
+    private static final String PASSKEY_ID = UUID.randomUUID().toString();
 
     @Container
     static final PostgreSQLContainer<?> postgres =
@@ -123,6 +125,12 @@ class PrfSaltConcurrencyIT {
                     + "VALUES ('" + HOLDER_ID + "', 'concurrent@test.com') "
                     + "ON CONFLICT (id) DO NOTHING");
             conn.createStatement().execute(
+                    "INSERT INTO " + TENANT_SCHEMA + ".user_passkey (id, user_id, credential_id, display_name, attested_credential_data, "
+                    + "sign_count, uv_initialized, backup_eligible, backup_state, prf_enabled) "
+                    + "VALUES ('" + PASSKEY_ID + "', '" + HOLDER_ID + "', 'webauthn-cred-1', 'test passkey', "
+                    + "decode('00', 'hex'), 0, true, false, false, true) "
+                    + "ON CONFLICT (id) DO NOTHING");
+            conn.createStatement().execute(
                     "DELETE FROM " + TENANT_SCHEMA + ".passkey_prf_salt");
         }
     }
@@ -132,16 +140,16 @@ class PrfSaltConcurrencyIT {
     @Test
     void concurrentInit_sameKey_exactlyOneRowPersisted() throws SQLException {
         // Launch two simultaneous getOrCreatePrfSalt for the same (H1, C1)
-        Mono<byte[]> call1 = prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_ID, CRED_ID)
+        Mono<PrfSalt> call1 = prfSaltService.createForPasskey(TENANT, HOLDER_ID, PASSKEY_ID, CRED_ID)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT));
-        Mono<byte[]> call2 = prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_ID, CRED_ID)
+        Mono<PrfSalt> call2 = prfSaltService.createForPasskey(TENANT, HOLDER_ID, PASSKEY_ID, CRED_ID)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT));
 
         // Mono.zip subscribes to both simultaneously
         StepVerifier.create(Mono.zip(call1, call2))
                 .assertNext(tuple -> {
-                    byte[] salt1 = tuple.getT1();
-                    byte[] salt2 = tuple.getT2();
+                    byte[] salt1 = tuple.getT1().value();
+                    byte[] salt2 = tuple.getT2().value();
                     assertThat(salt1).hasSize(32);
                     assertThat(salt2).hasSize(32);
                     // Both callers must receive the same salt (EC-03)
@@ -164,9 +172,9 @@ class PrfSaltConcurrencyIT {
     @Test
     void concurrentInit_sameKey_neitherCallPropagatesError() {
         // Neither concurrent call should result in a 500/error signal (R-3)
-        Mono<byte[]> call1 = prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_ID, CRED_ID)
+        Mono<PrfSalt> call1 = prfSaltService.createForPasskey(TENANT, HOLDER_ID, PASSKEY_ID, CRED_ID)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT));
-        Mono<byte[]> call2 = prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_ID, CRED_ID)
+        Mono<PrfSalt> call2 = prfSaltService.createForPasskey(TENANT, HOLDER_ID, PASSKEY_ID, CRED_ID)
                 .contextWrite(ctx -> ctx.put("tenantDomain", TENANT));
 
         StepVerifier.create(Mono.zip(call1, call2))
@@ -181,15 +189,15 @@ class PrfSaltConcurrencyIT {
     @Test
     void concurrentInit_sameKey_returnedSaltMatchesPersistedSalt() throws SQLException {
         // Capture what both concurrent callers received
-        Tuple2<byte[], byte[]> results = Mono.zip(
-                prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_ID, CRED_ID)
+        Tuple2<PrfSalt, PrfSalt> results = Mono.zip(
+                prfSaltService.createForPasskey(TENANT, HOLDER_ID, PASSKEY_ID, CRED_ID)
                         .contextWrite(ctx -> ctx.put("tenantDomain", TENANT)),
-                prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_ID, CRED_ID)
+                prfSaltService.createForPasskey(TENANT, HOLDER_ID, PASSKEY_ID, CRED_ID)
                         .contextWrite(ctx -> ctx.put("tenantDomain", TENANT))
         ).block();
 
         assertThat(results).isNotNull();
-        byte[] returnedSalt = results.getT1();
+        byte[] returnedSalt = results.getT1().value();
 
         // Read the actually persisted salt directly from the DB
         byte[] persistedSalt;
@@ -214,10 +222,10 @@ class PrfSaltConcurrencyIT {
         String credId1 = "cred-concurrent-diff-1";
         String credId2 = "cred-concurrent-diff-2";
 
-        Tuple2<byte[], byte[]> results = Mono.zip(
-                prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_ID, credId1)
+        Tuple2<PrfSalt, PrfSalt> results = Mono.zip(
+                prfSaltService.createForPasskey(TENANT, HOLDER_ID, PASSKEY_ID, credId1)
                         .contextWrite(ctx -> ctx.put("tenantDomain", TENANT)),
-                prfSaltService.getOrCreatePrfSalt(TENANT, HOLDER_ID, credId2)
+                prfSaltService.createForPasskey(TENANT, HOLDER_ID, PASSKEY_ID, credId2)
                         .contextWrite(ctx -> ctx.put("tenantDomain", TENANT))
         ).block();
 
@@ -236,6 +244,6 @@ class PrfSaltConcurrencyIT {
         }
 
         // The two salts must be distinct
-        assertThat(results.getT1()).isNotEqualTo(results.getT2());
+        assertThat(results.getT1().value()).isNotEqualTo(results.getT2().value());
     }
 }

@@ -1,7 +1,5 @@
 package com.eudistack.ebw.integration;
 
-import com.eudistack.ebw.domain.model.ReactorContextKeys;
-import com.eudistack.ebw.keymanager.application.SessionPasskeyCredentialPort;
 import com.eudistack.ebw.support.SoftwareAuthenticator;
 import com.eudistack.ebw.support.WalletAuthClient;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -13,7 +11,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.web.reactive.server.WebTestClient;
 
 import java.util.List;
 import java.util.Map;
@@ -24,12 +22,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * EUD-11 FR-13/FR-14 with passkey custody: a bound attestation is stored with the session's
  * passkey and only listed to sessions of that passkey; unbound ones are listed to every session
- * (AC-04, AC-05, AC-10, AC-11). The PRF salt lookup is limited the same way.
+ * (AC-04, AC-05, AC-10, AC-11). The salt and public key of an attestation are only given to the same passkey
+ * (FR-14, AC-08), the key of a stored attestation must be the key of its holder (FR-05, AC-05) and deleting an
+ * attestation deletes its salt (FR-16, AC-06).
  */
 class CredentialPasskeyCustodyIT extends IntegrationTestBase {
 
-    @Autowired
-    private SessionPasskeyCredentialPort sessionPasskeyCredentialPort;
+    private static final String SALTS = "/api/v1/keys/passkey-prf/salts";
 
     private WalletAuthClient auth;
 
@@ -94,27 +93,98 @@ class CredentialPasskeyCustodyIT extends IntegrationTestBase {
     }
 
     @Test
-    void prfSaltLookup_onlyForAttestationsOfTheSessionPasskey() {
+    void passkeySalts_onlyThePasskeyOfTheAttestationGetsItsSaltAndPublicKey() {
+        // AC-08
         var email = "custody-salt-" + System.nanoTime() + "@example.com";
         var first = auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
         var second = auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
-        var holderKey = "holder-" + UUID.randomUUID();
-        store(first.accessToken(), sdJwt(true), holderKey);
-        var userId = query("SELECT id FROM wallet_user WHERE email = '" + email + "'").get(0).get("id").toString();
+        var credentialId = "holder-" + UUID.randomUUID();
+        var attestation = boundSdJwt();
 
-        assertThat(obtained(userId, holderKey, first.passkeyId())).isTrue();
-        assertThat(obtained(userId, holderKey, second.passkeyId())).isFalse();
-        assertThat(obtained(UUID.randomUUID().toString(), holderKey, first.passkeyId())).isFalse();
+        PasskeyRegistrationIT.withPasskeyCustody(() -> {
+            createSalt(first.accessToken(), credentialId).expectStatus().isCreated()
+                    .expectBody()
+                    .jsonPath("$.prf_salt").isNotEmpty()
+                    .jsonPath("$.kdf.algorithm").isEqualTo("HKDF-SHA-256")
+                    .jsonPath("$.kdf.info").isEqualTo("eudistack:passkey-prf:p256:v1");
+            createSalt(second.accessToken(), credentialId).expectStatus().isNotFound();
+            getSalt(first.accessToken(), credentialId).expectStatus().isNotFound();
+
+            storeRequest(first.accessToken(), attestation.compact(), credentialId, attestation.publicJwk())
+                    .expectStatus().isOk();
+
+            getSalt(first.accessToken(), credentialId).expectStatus().isOk()
+                    .expectBody().jsonPath("$.public_jwk.x").isEqualTo(attestation.publicJwk().get("x"));
+            getSalt(second.accessToken(), credentialId).expectStatus().isNotFound();
+        });
     }
 
-    private Boolean obtained(String userId, String holderKey, String passkeyId) {
-        return sessionPasskeyCredentialPort.isObtainedWithPasskey(userId, holderKey, passkeyId)
-                .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TEST_TENANT))
-                .block();
+    @Test
+    void passkeyCustodyStore_cnfIsNotTheHolderKey_returns422AndStoresNothing() {
+        // AC-05
+        var email = "custody-mismatch-" + System.nanoTime() + "@example.com";
+        var session = auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        var credentialId = "holder-" + UUID.randomUUID();
+        var attestation = boundSdJwt();
+        var otherKey = generateKey().toPublicJWK().toJSONObject();
+
+        PasskeyRegistrationIT.withPasskeyCustody(() -> {
+            createSalt(session.accessToken(), credentialId).expectStatus().isCreated();
+
+            storeRequest(session.accessToken(), attestation.compact(), credentialId, otherKey)
+                    .expectStatus().isEqualTo(422);
+        });
+
+        assertThat(query("SELECT 1 FROM wallet_credential c JOIN wallet_user u ON u.id = c.user_id "
+                + "WHERE u.email = '" + email + "'")).isEmpty();
+    }
+
+    @Test
+    void passkeyCustodyDelete_removesTheSaltOfTheAttestation() {
+        // AC-06
+        var email = "custody-delete-" + System.nanoTime() + "@example.com";
+        var session = auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        var credentialId = "holder-" + UUID.randomUUID();
+        var attestation = boundSdJwt();
+
+        PasskeyRegistrationIT.withPasskeyCustody(() -> {
+            createSalt(session.accessToken(), credentialId).expectStatus().isCreated();
+            var id = idOf(storeRequest(session.accessToken(), attestation.compact(), credentialId, attestation.publicJwk()));
+            assertThat(query("SELECT 1 FROM passkey_prf_salt WHERE credential_id = '" + credentialId + "'")).hasSize(1);
+
+            webClient.delete().uri("/api/v1/credentials/" + id)
+                    .headers(h -> h.setBearerAuth(session.accessToken()))
+                    .exchange().expectStatus().isNoContent();
+        });
+
+        assertThat(query("SELECT 1 FROM passkey_prf_salt WHERE credential_id = '" + credentialId + "'")).isEmpty();
+    }
+
+    private WebTestClient.ResponseSpec createSalt(String accessToken, String credentialId) {
+        return webClient.post().uri(SALTS)
+                .headers(h -> h.setBearerAuth(accessToken))
+                .bodyValue(Map.of("credential_id", credentialId))
+                .exchange();
+    }
+
+    private WebTestClient.ResponseSpec getSalt(String accessToken, String credentialId) {
+        return webClient.get().uri(SALTS + "/" + credentialId)
+                .headers(h -> h.setBearerAuth(accessToken))
+                .exchange();
     }
 
     @SuppressWarnings("unchecked")
+    private String idOf(WebTestClient.ResponseSpec stored) {
+        return (String) stored.expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody().get("id");
+    }
+
     private String store(String accessToken, String credential, String holderKeyId) {
+        return idOf(storeRequest(accessToken, credential, holderKeyId, null));
+    }
+
+    private WebTestClient.ResponseSpec storeRequest(String accessToken, String credential, String holderKeyId,
+                                                    Map<String, Object> holderPublicJwk) {
         var body = new java.util.HashMap<String, Object>();
         body.put("credentialResponseWithStatus",
                 Map.of("credentialResponse", Map.of("credentials", List.of(Map.of("credential", credential)))));
@@ -123,12 +193,13 @@ class CredentialPasskeyCustodyIT extends IntegrationTestBase {
         if (holderKeyId != null) {
             body.put("holderKeyId", holderKeyId);
         }
-        var stored = webClient.post().uri("/api/v1/openid-credential-offer/credential-response")
+        if (holderPublicJwk != null) {
+            body.put("holder_public_jwk", holderPublicJwk);
+        }
+        return webClient.post().uri("/api/v1/openid-credential-offer/credential-response")
                 .headers(h -> h.setBearerAuth(accessToken))
                 .bodyValue(body)
-                .exchange().expectStatus().isOk()
-                .expectBody(Map.class).returnResult().getResponseBody();
-        return (String) stored.get("id");
+                .exchange();
     }
 
     @SuppressWarnings("unchecked")
@@ -141,8 +212,31 @@ class CredentialPasskeyCustodyIT extends IntegrationTestBase {
     }
 
     private static String sdJwt(boolean withCnf) {
+        return withCnf ? boundSdJwt().compact() : unboundSdJwt();
+    }
+
+    private record Attestation(String compact, Map<String, Object> publicJwk) {
+    }
+
+    private static Attestation boundSdJwt() {
+        var key = generateKey();
+        return new Attestation(signedSdJwt(key, true), key.toPublicJWK().toJSONObject());
+    }
+
+    private static String unboundSdJwt() {
+        return signedSdJwt(generateKey(), false);
+    }
+
+    private static com.nimbusds.jose.jwk.ECKey generateKey() {
         try {
-            var key = new ECKeyGenerator(Curve.P_256).generate();
+            return new ECKeyGenerator(Curve.P_256).generate();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static String signedSdJwt(com.nimbusds.jose.jwk.ECKey key, boolean withCnf) {
+        try {
             var claims = new JWTClaimsSet.Builder().issuer("https://issuer.example").subject("did:sub")
                     .claim("vct", "urn:vct:custody");
             if (withCnf) {

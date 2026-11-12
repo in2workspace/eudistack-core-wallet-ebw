@@ -1,54 +1,28 @@
 package com.eudistack.ebw.keymanager.application;
 
+import com.eudistack.ebw.keymanager.domain.model.PrfSalt;
 import reactor.core.publisher.Mono;
 
 /**
- * Application port for PRF salt lifecycle management during passkey-prf onboarding.
- *
- * <p>Returns the stable 32-byte PRF salt for a given {@code (tenantId, holderId,
- * credentialId)} triple. The salt is generated once per credential on the first call and
- * remains stable for its entire lifetime, ensuring the Wallet PWA always derives the same
- * wrap key across sessions (architecture.md §6.1 step 4).</p>
- *
- *
- * <p>The returned bytes MUST NOT be logged, included in API responses outside of the
- * {@code /onboarding/init} endpoint, or persisted in any location other than
- * {@code passkey_prf_salt} (NFR-06).</p>
- *
- * <p>Spec: EUDISTACK-534 EC-04; EUDISTACK-537 FR-12; architecture.md §5.1.</p>
+ * Salt of an attestation obtained with passkey custody (EUD-11 design §2.2). It is only given to a
+ * session opened with the passkey the attestation belongs to; for any other, the salt does not exist.
  */
 public interface PrfSaltUseCase {
 
     /**
-     * Returns the existing PRF salt for the credential, generating and persisting one if
-     * this is the first call for this {@code (tenantId, holderId, credentialId)} triple.
+     * Creates the salt of a new attestation bound to the passkey of the session, or returns the one it
+     * already created (idempotent per credential and passkey).
      *
-     * @param tenantId     the tenant owning the credential (extracted from Reactor context)
-     * @param holderId     the holder UUID (DPoP-bound, from controller)
-     * @param credentialId the credential being enrolled
-     * @return 32-byte raw PRF salt; never empty
+     * @throws com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException when the credential
+     *         already belongs to another passkey
      */
-    Mono<byte[]> getOrCreatePrfSalt(String tenantId, String holderId, String credentialId);
+    Mono<PrfSalt> createForPasskey(String tenantId, String holderId, String passkeyId, String credentialId);
 
     /**
-     * Read-only lookup of the PRF salt with holder isolation.
+     * Returns the salt and the public key of an attestation of the passkey of the session.
      *
-     * <p>Used by {@code PrepareSignUseCase} (US-04) during the signing handshake.
-     * Unlike {@link #getOrCreatePrfSalt}, this method NEVER generates a new salt —
-     * it only reads an existing one, enforcing holder isolation:
-     * <ul>
-     *   <li>Absent for {@code (holderId, credentialId)} AND {@code countByCredential == 0}
-     *       → {@link com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException}
-     *       (404 {@code wrap_handle_not_found}).</li>
-     *   <li>Absent for this holder but present for another
-     *       → {@link com.eudistack.ebw.keymanager.domain.exception.HolderIsolationViolationException}
-     *       (403).</li>
-     * </ul>
-     *
-     * @param tenantId     the tenant (for traceability — isolation enforced via DB {@code search_path})
-     * @param holderId     the holder UUID (DPoP-bound, never from body — ES-04)
-     * @param credentialId the credential being signed
-     * @return 32-byte raw PRF salt; never empty
+     * @throws com.eudistack.ebw.keymanager.domain.exception.PrfSaltNotFoundException when the attestation
+     *         does not exist, is not of the holder, was obtained with another passkey or has no public key yet
      */
-    Mono<byte[]> getForHolder(String tenantId, String holderId, String credentialId);
+    Mono<PrfSalt> getForPasskey(String tenantId, String holderId, String passkeyId, String credentialId);
 }

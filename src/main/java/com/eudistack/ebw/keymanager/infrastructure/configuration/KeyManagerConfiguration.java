@@ -1,28 +1,18 @@
 package com.eudistack.ebw.keymanager.infrastructure.configuration;
 
 import com.eudistack.ebw.keymanager.application.*;
-import com.eudistack.ebw.keymanager.domain.model.KeyAuditEvent;
 import com.eudistack.ebw.keymanager.domain.model.SigningType;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyReadPort;
 import com.eudistack.ebw.keymanager.domain.port.HolderKeyWritePort;
-import com.eudistack.ebw.keymanager.domain.port.PasskeyPrfKeyManagerTelemetryPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyAuditPort;
 import com.eudistack.ebw.keymanager.domain.port.KeyManagerPort;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditCloudWatchAdapter;
-import com.eudistack.ebw.keymanager.domain.port.WrappedKeyHandleRepository;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.cache.CaffeinePreparedSignStore;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.PasskeyPrfKeyManagerController;
-import com.eudistack.ebw.keymanager.infrastructure.observability.PasskeyPrfSignTelemetry;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.tracing.Tracer;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.audit.KeyAuditLogAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.PasskeyPrfKeyManagerExceptionHandler;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.http.PasskeyPrfOnboardingController;
+import com.eudistack.ebw.keymanager.infrastructure.adapter.http.PasskeyPrfSaltController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerController;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.http.KeyManagerExceptionHandler;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.HolderKeyR2dbcAdapter;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.PasskeyPrfWrappedKeyHandleR2dbcAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.PrfSaltRepository;
-import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.SessionPasskeyCredentialR2dbcAdapter;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.r2dbc.spring.SpringHolderKeyRepository;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.DbKeyManagerService;
 import com.eudistack.ebw.keymanager.infrastructure.adapter.service.PasskeyPrfKeyManagerAdapter;
@@ -35,7 +25,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.r2dbc.core.DatabaseClient;
-import reactor.core.publisher.Mono;
 
 import java.util.Map;
 
@@ -73,23 +62,10 @@ public class KeyManagerConfiguration {
         return new HolderKeyR2dbcAdapter(repository, objectMapper, databaseClient);
     }
 
-    /**
-     * The only {@link KeyAuditPort}: CloudWatch when {@code keymanager.audit.enabled=true} (which then
-     * requires {@code keymanager.audit.log-group-name}), a no-op otherwise. One bean instead of two
-     * conditional ones, so every injection point resolves to a single candidate.
-     */
+    /** The key events are recorded as structured log lines; the platform filters them from the service log. */
     @Bean
-    KeyAuditPort keyAuditPort(
-            @Value("${keymanager.audit.enabled:false}") boolean auditEnabled,
-            @Value("${keymanager.audit.log-group-name:}") String logGroupName,
-            ObjectMapper objectMapper) {
-        if (!auditEnabled) {
-            return (KeyAuditEvent event) -> Mono.empty();
-        }
-        if (logGroupName.isBlank()) {
-            throw new IllegalStateException("keymanager.audit.enabled=true requires keymanager.audit.log-group-name");
-        }
-        return new KeyAuditCloudWatchAdapter(logGroupName, objectMapper);
+    KeyAuditPort keyAuditPort() {
+        return new KeyAuditLogAdapter();
     }
 
     @Bean
@@ -146,45 +122,11 @@ public class KeyManagerConfiguration {
         return new DbKeyManagerService(generateUseCase, signUseCase);
     }
 
-    // --- EUDISTACK-533 US-01: passkey+prf adapter + per-tenant resolver ---
-
-    // --- EUDISTACK-536 US-04: passkey+prf sign handshake beans ---
+    // --- Passkey custody: the Wallet App signs; the service only keeps salt and public key ---
 
     @Bean
-    PreparedSignStore preparedSignStore() {
-        return new CaffeinePreparedSignStore();
-    }
-
-    @Bean
-    SessionPasskeyCredentialPort sessionPasskeyCredentialPort(DatabaseClient databaseClient) {
-        return new SessionPasskeyCredentialR2dbcAdapter(databaseClient);
-    }
-
-    @Bean
-    PrepareSignUseCase prepareSignUseCase(PrfSaltUseCase prfSaltUseCase,
-                                          WrappedKeyHandleRepository wrappedKeyHandleRepository,
-                                          PreparedSignStore preparedSignStore,
-                                          ObjectMapper objectMapper,
-                                          SessionPasskeyCredentialPort sessionPasskeyCredentialPort) {
-        return new PrepareSignUseCase(prfSaltUseCase, wrappedKeyHandleRepository, preparedSignStore, objectMapper,
-                sessionPasskeyCredentialPort);
-    }
-
-    @Bean
-    SubmitSignedUseCase submitSignedUseCase(PreparedSignStore preparedSignStore, KeyAuditPort auditPort) {
-        return new SubmitSignedUseCase(preparedSignStore, auditPort);
-    }
-
-    @Bean
-    PasskeyPrfSignTelemetry passkeyPrfSignTelemetry(Tracer tracer, MeterRegistry meterRegistry) {
-        return new PasskeyPrfSignTelemetry(tracer, meterRegistry);
-    }
-
-    @Bean
-    PasskeyPrfKeyManagerAdapter passkeyPrfKeyManagerAdapter(PrepareSignUseCase prepareSignUseCase,
-                                                    SubmitSignedUseCase submitSignedUseCase,
-                                                    PasskeyPrfSignTelemetry passkeyPrfSignTelemetry) {
-        return new PasskeyPrfKeyManagerAdapter(prepareSignUseCase, submitSignedUseCase, passkeyPrfSignTelemetry);
+    PasskeyPrfKeyManagerAdapter passkeyPrfKeyManagerAdapter() {
+        return new PasskeyPrfKeyManagerAdapter();
     }
 
     @Bean
@@ -197,14 +139,6 @@ public class KeyManagerConfiguration {
     KeyManagerController keyManagerController(KeyManagerPort keyManagerPort,
                                               WalletProfileQueryPort walletProfileQueryPort) {
         return new KeyManagerController(keyManagerPort, walletProfileQueryPort);
-    }
-
-    @Bean
-    PasskeyPrfKeyManagerController passkeyPrfKeyManagerController(
-            PasskeyPrfKeyManagerAdapter passkeyPrfKeyManagerAdapter,
-            WalletProfileQueryPort walletProfileQueryPort,
-            EnrollHolderUseCase enrollHolderUseCase) {
-        return new PasskeyPrfKeyManagerController(passkeyPrfKeyManagerAdapter, walletProfileQueryPort, enrollHolderUseCase);
     }
 
     @Bean
@@ -222,42 +156,30 @@ public class KeyManagerConfiguration {
         return new KeyManagerHealthController(connectionFactory);
     }
 
-    // --- EUDISTACK-534 US-02: passkey+prf onboarding beans ---
+    // --- Salt and public key of the attestations with passkey custody ---
 
     @Bean
-    PasskeyPrfWrappedKeyHandleR2dbcAdapter passkeyPrfWrappedKeyHandleR2dbcAdapter(
-            DatabaseClient databaseClient) {
-        return new PasskeyPrfWrappedKeyHandleR2dbcAdapter(databaseClient);
-    }
-
-    @Bean
-    EnrollHolderUseCase enrollHolderUseCase(PrfSaltUseCase prfSaltUseCase,
-                                            WrappedKeyHandleRepository wrappedKeyHandleRepository,
-                                            PasskeyPrfKeyManagerTelemetryPort passkeyPrfKeyManagerTelemetryPort,
-                                            KeyAuditPort keyAuditPort,
-                                            Tracer tracer) {
-        return new EnrollHolderUseCase(prfSaltUseCase, wrappedKeyHandleRepository,
-                passkeyPrfKeyManagerTelemetryPort, keyAuditPort, tracer);
-    }
-
-    @Bean
-    PasskeyPrfOnboardingController passkeyPrfOnboardingController(
-            EnrollHolderUseCase enrollHolderUseCase,
-            WalletProfileQueryPort walletProfileQueryPort,
-            ObjectMapper objectMapper) {
-        return new PasskeyPrfOnboardingController(enrollHolderUseCase, walletProfileQueryPort, objectMapper);
-    }
-
-    // --- EUDISTACK-537 US-05: PRF salt persistence ---
-
-    @Bean
-    PrfSaltRepository prfSaltRepository(DatabaseClient databaseClient) {
-        return new PrfSaltRepository(databaseClient);
+    PrfSaltRepository prfSaltRepository(DatabaseClient databaseClient, ObjectMapper objectMapper) {
+        return new PrfSaltRepository(databaseClient, objectMapper);
     }
 
     @Bean
     @Primary
-    PrfSaltService prfSaltService(PrfSaltRepository prfSaltRepository) {
-        return new PrfSaltService(prfSaltRepository);
+    PrfSaltService prfSaltService(PrfSaltRepository prfSaltRepository, KeyAuditPort keyAuditPort) {
+        return new PrfSaltService(prfSaltRepository, keyAuditPort);
+    }
+
+    @Bean
+    PasskeyPrfSaltController passkeyPrfSaltController(PrfSaltUseCase prfSaltUseCase,
+                                                      WalletProfileQueryPort walletProfileQueryPort) {
+        return new PasskeyPrfSaltController(prfSaltUseCase, walletProfileQueryPort);
+    }
+
+    @Bean
+    HolderKeyMaterialService holderKeyMaterialService(HolderKeyReadPort holderKeyReadPort,
+                                                      HolderKeyWritePort holderKeyWritePort,
+                                                      PrfSaltRepository prfSaltRepository,
+                                                      KeyAuditPort keyAuditPort) {
+        return new HolderKeyMaterialService(holderKeyReadPort, holderKeyWritePort, prfSaltRepository, keyAuditPort);
     }
 }

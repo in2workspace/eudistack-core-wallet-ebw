@@ -37,13 +37,14 @@ import java.util.concurrent.TimeoutException;
  *   <li>{@link InvalidConsumerOriginException} → 400 (F3 — present but unrecognised
  *       {@code X-Consumer-Origin} header value).</li>
  *   <li>{@link UnsupportedCredentialFormatException} → 400 (AC-02).</li>
- *   <li>{@link UnsupportedJwsAlgorithmException} → 422 (AC-03 / ADR-024).</li>
+ *   <li>{@link UnsupportedJwsAlgorithmException} → 400 (holder keys are ES256 only).</li>
  *   <li>{@link UnsupportedSigningTypeException} → 400 (AC-03 EUDISTACK-407).</li>
  *   <li>{@link SigningTypeFormatMismatchException} → 401 opaque (AC-04 / spec-delta SD-407-01
  *       — routes through the same opaque path as {@link KeyAccessDeniedException} per ADR-025).</li>
  *   <li>{@link KeyAccessDeniedException} → 401 with opaque body (AC-06 / ADR-025).</li>
- *   <li>{@link TenantWalletProfileUnsupportedException}, {@link TenantUnknownException}
- *       → 403 opaque with no body (ES-02 anti-probing — AD-119-2).</li>
+ *   <li>{@link TenantWalletProfileUnsupportedException} → 409 (the operation does not belong to the
+ *       tenant's custody mode).</li>
+ *   <li>{@link TenantUnknownException} → 403 opaque with no body (ES-02 anti-probing — AD-119-2).</li>
  *   <li>{@link R2dbcTimeoutException}, {@link R2dbcNonTransientResourceException} → 503
  *       (ES-04 DB unavailable — EUDISTACK-407).</li>
  *   <li>{@link TimeoutException} → 504 (ES-05 signing timeout — NFR-S-407-07).</li>
@@ -105,9 +106,9 @@ public class KeyManagerExceptionHandler {
 
     @ExceptionHandler(UnsupportedJwsAlgorithmException.class)
     public ResponseEntity<ProblemDetail> handleUnsupportedAlgorithm(UnsupportedJwsAlgorithmException ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         problem.setType(URI.create(TYPE_BASE + "unsupported-algorithm"));
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(problem);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
     }
 
     // --- EUDISTACK-407 additions ---
@@ -145,12 +146,17 @@ public class KeyManagerExceptionHandler {
                 .body(Map.of("error", "KeyAccessDenied"));
     }
 
-    /**
-     * ES-02 / AD-119-2: opaque 403 — no body, no distinguishing detail between
-     * "tenant not found" and "key_manager mode not supported" (anti-probing).
-     */
-    @ExceptionHandler({TenantWalletProfileUnsupportedException.class, TenantUnknownException.class})
-    public ResponseEntity<Void> handleForbidden(RuntimeException ex) {
+    /** The operation does not belong to the tenant's custody mode (EUD-11 openapi, {@code UnsupportedCustodyMode}). */
+    @ExceptionHandler(TenantWalletProfileUnsupportedException.class)
+    public ResponseEntity<ProblemDetail> handleUnsupportedCustodyMode(TenantWalletProfileUnsupportedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
+        problem.setType(URI.create(TYPE_BASE + "unsupported-custody-mode"));
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
+    }
+
+    /** ES-02 / AD-119-2: opaque 403 — no body, so an unknown tenant is not probeable. */
+    @ExceptionHandler(TenantUnknownException.class)
+    public ResponseEntity<Void> handleForbidden(TenantUnknownException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
 

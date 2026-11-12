@@ -1,57 +1,37 @@
 package com.eudistack.ebw.keymanager.application;
 
+import com.eudistack.ebw.keymanager.domain.model.PrfSalt;
 import reactor.core.publisher.Mono;
 
+import java.util.Map;
+
 /**
- * Outgoing port for PRF salt persistence.
+ * Outgoing port for the {@code passkey_prf_salt} table.
  *
- * <p>Defines the contract that the {@code passkey_prf_salt} storage adapter must implement.
- * The port is declared in the application layer; the R2DBC implementation lives in
- * {@code infrastructure.adapter.r2dbc} (technical-design.md §3.2 AD-4).</p>
- *
- * <p>The composite primary key {@code (holder_id, credential_id)} is the uniqueness
- * invariant (architecture.md §5.1 AD-3). INSERT on a duplicate key is treated as a
- * benign signal in get-or-create scenarios (EC-03).</p>
- *
- * <p>Spec: EUDISTACK-537 AC-01, AC-03, AC-08; architecture.md §5.1.</p>
+ * <p>The composite primary key {@code (holder_id, credential_id)} is the uniqueness invariant.
+ * Tenant isolation is enforced by the PostgreSQL {@code search_path} set per request.</p>
  */
 public interface PrfSaltPort {
 
-    /**
-     * Returns the raw 32-byte PRF salt for the given holder and credential.
-     *
-     * <p>Returns an empty {@link Mono} when no salt has been stored yet for
-     * {@code (holderId, credentialId)}. Never throws on a not-found condition.</p>
-     *
-     * @param holderId     the holder UUID (DPoP-bound, from controller)
-     * @param credentialId the credential identifier
-     * @return 32-byte PRF salt, or empty if not found
-     */
-    Mono<byte[]> findBy(String holderId, String credentialId);
+    /** @return the salt of the attestation of the holder, or empty when there is none */
+    Mono<PrfSalt> findBy(String holderId, String credentialId);
 
     /**
-     * Persists a new PRF salt for the given holder and credential.
+     * Persists a new salt bound to a passkey. A duplicate key (concurrent get-or-create race) is not an
+     * error: the caller reads the winner's row.
      *
-     * <p>On a duplicate-key violation (concurrent get-or-create race), the exception is
-     * swallowed silently. The caller must re-SELECT to obtain the winner's value (EC-03).</p>
-     *
-     * @param holderId     the holder UUID (DPoP-bound, from controller)
-     * @param credentialId the credential identifier
-     * @param prfSalt      exactly 32 raw bytes; not base64/hex-encoded
-     * @return empty Mono on success
+     * @param prfSalt exactly 32 raw bytes
+     * @return {@code true} when this call inserted the row
      */
-    Mono<Void> insert(String holderId, String credentialId, byte[] prfSalt);
+    Mono<Boolean> insert(String holderId, String credentialId, String passkeyId, byte[] prfSalt);
 
     /**
-     * Returns the count of distinct salt rows for the given credential across all holders.
+     * Keeps the public key of the attestation in the row of a salt of the given passkey.
      *
-     * <p>Used by the {@code salt_coherent} health indicator to detect missing or duplicate
-     * rows (AC-08). The result is 0 if no salt has been stored, 1 in the normal case
-     * (one holder per credential in the tenant scope), or &gt;1 if multiple holders share
-     * the same credential identifier — which is valid but must be counted correctly.</p>
-     *
-     * @param credentialId the credential identifier
-     * @return row count for this credential
+     * @return {@code true} when the row exists, belongs to the passkey and had no public key yet
      */
-    Mono<Long> countByCredential(String credentialId);
+    Mono<Boolean> setPublicJwk(String holderId, String credentialId, String passkeyId, Map<String, Object> publicJwk);
+
+    /** @return {@code true} when a row was deleted */
+    Mono<Boolean> delete(String holderId, String credentialId);
 }

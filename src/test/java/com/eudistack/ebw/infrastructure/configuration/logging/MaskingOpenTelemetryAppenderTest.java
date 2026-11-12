@@ -285,4 +285,28 @@ class MaskingOpenTelemetryAppenderTest {
         assertThat(masked.getFormattedMessage()).endsWith(MaskingPatternLayout.TRUNCATED);
         assertThat(masked.getMessage()).endsWith(MaskingPatternLayout.TRUNCATED);
     }
+
+    // ─── key audit logger (EUD-326 FR-04) ─────────────────────────────────────
+
+    @Test
+    void mask_AuditLoggerMessage_KeepsTheUuidsButMasksTheRest() {
+        ILoggingEvent source = mock(ILoggingEvent.class);
+        when(source.getLoggerName()).thenReturn(MaskingPatternLayout.AUDIT_LOGGER);
+        when(source.getFormattedMessage()).thenReturn("[###AUDIT###] holder_id=" + USER_ID
+                + " email=holder@empresa.com session=" + JWT_SAMPLE);
+
+        ILoggingEvent masked = MaskingOpenTelemetryAppender.mask(source);
+
+        assertThat(masked.getFormattedMessage()).contains(USER_ID)
+                .doesNotContain("holder@empresa.com", JWT_SAMPLE);
+    }
+
+    @Test
+    void mask_AnyOtherLoggerMessage_StillMasksTheUuids() {
+        ILoggingEvent source = mock(ILoggingEvent.class);
+        when(source.getLoggerName()).thenReturn("some.other.logger");
+        when(source.getFormattedMessage()).thenReturn("holder_id=" + USER_ID);
+
+        assertThat(MaskingOpenTelemetryAppender.mask(source).getFormattedMessage()).doesNotContain(USER_ID);
+    }
 }
