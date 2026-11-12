@@ -123,7 +123,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         lenient().when(passkeyRepository.markOnboarding(any(), any())).thenReturn(Mono.empty());
         lenient().when(sessionOpener.open(any(), any(), eq(null), eq("registration"))).thenReturn(Mono.just(session));
         lenient().when(disavowalRepository.insert(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-        lenient().when(onboardingNotice.notify(any(), any())).thenReturn(Mono.empty());
+        lenient().when(onboardingNotice.notify(any())).thenReturn(Mono.empty());
         lenient().when(userRepository.lockEmailIgnoreCase(any())).thenReturn(Mono.empty());
     }
 
@@ -197,26 +197,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         assertThat(row.getValue().passkeyId()).isNotNull();
         assertThat(row.getValue().accountCreated()).isTrue();
         // Provisional (P5): the new-account email goes right after the registration
-        verify(onboardingNotice).notify(row.getValue().passkeyId(), "Other device · Other browser");
-    }
-
-    @Test
-    void register_withTicket_theNoticeGetsTheDeviceLabelOfTheUserAgentNotTheNameOfTheClient() {
-        // Arrange: EC-16, P19 - the client name is free text: an attacker with the ticket can write it
-        when(userRepository.findAllByEmailIgnoreCase(EMAIL)).thenReturn(Flux.empty());
-        when(userRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-        var iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 "
-                + "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
-        var command = new RegisterPasskeyCommand("raw", ceremony.id(), "{json}", null,
-                "Registrado por RRHH, haga clic aqui", iphone, null);
-
-        // Act
-        StepVerifier.create(workflow.register(command)).expectNextCount(1).verifyComplete();
-
-        // Assert
-        var row = ArgumentCaptor.forClass(OnboardingDisavowal.class);
-        verify(disavowalRepository).insert(row.capture());
-        verify(onboardingNotice).notify(row.getValue().passkeyId(), "iPhone · Safari");
+        verify(onboardingNotice).notify(row.getValue().passkeyId());
     }
 
     @Test
@@ -240,7 +221,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         assertThat(row.getValue().accountCreated()).isFalse();
         assertThat(row.getValue().userId()).isEqualTo(account.getId());
         // P17: the account that already existed is warned too
-        verify(onboardingNotice).notify(eq(row.getValue().passkeyId()), any());
+        verify(onboardingNotice).notify(row.getValue().passkeyId());
         verify(preregistrationRepository).deleteById(preregistration.id());
     }
 

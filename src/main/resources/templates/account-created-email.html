@@ -14,7 +14,7 @@
                 <tr>
                     <td align="center" style="padding: 12px 40px 32px 40px; font-family: 'Blinker', Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.5; color: #000000; text-align: center;">
                         <p style="margin: 0 0 16px 0; font-size: 20px; font-weight: 700;" th:text="${accountCreated} ? #{email.account-created.header} : #{email.account-created.added.header}">Your wallet has been created</p>
-                        <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400;" th:text="${accountCreated} ? #{email.account-created.body(${createdAt}, ${deviceName})} : #{email.account-created.added.body(${createdAt}, ${deviceName})}">On 30/10/2026 10:42 your wallet was created on the device «iPhone · Safari».</p>
+                        <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400;" th:text="${accountCreated} ? #{email.account-created.body(${createdAt})} : #{email.account-created.added.body(${createdAt})}">On 30/10/2026 10:42 your wallet was created.</p>
                         <p style="margin: 0 0 24px 0; font-size: 14px; font-weight: 400;" th:text="#{email.account-created.hint}">If it was you, you do not need to do anything.</p>
                         <p style="margin: 0 0 12px 0; font-size: 14px; font-weight: 700;" th:text="#{email.account-created.question}">Was it not you?</p>
                         <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin: 0 auto 12px auto;">

@@ -88,7 +88,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
     @Test
     void notify_pendingRow_givesItTheTokenAndEmailsTheLink() {
         // Act
-        StepVerifier.create(workflow.notify(passkeyId, "iPhone · Safari")).verifyComplete();
+        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
 
         // Assert: decision P6, only the hash is stored and the link carries the raw token
         var expiresAt = ArgumentCaptor.forClass(Instant.class);
@@ -99,7 +99,6 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
         verify(emailSender).sendAccountCreatedNotice(eq("ana@cgcom.es"), notice.capture(), any());
         assertThat(notice.getValue().disavowalUrl())
                 .isEqualTo("https://cgcom.eudistack.net/no-he-sido-yo#" + expectedToken);
-        assertThat(notice.getValue().deviceName()).isEqualTo("iPhone · Safari");
         assertThat(notice.getValue().createdAt()).isEqualTo(Instant.parse("2026-10-30T09:42:00Z"));
         assertThat(notice.getValue().accountCreated()).isTrue();
         verify(auditService).record("onboarding_disavowal", withToken.id(), AuthAuditEvents.ONBOARDING_NOTICE_SENT,
@@ -115,7 +114,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
                 .thenReturn(Mono.just(withToken(recognized, false)));
 
         // Act
-        StepVerifier.create(workflow.notify(passkeyId, "iPhone · Safari")).verifyComplete();
+        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
 
         // Assert
         var notice = ArgumentCaptor.forClass(AccountCreatedNotice.class);
@@ -129,7 +128,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
         when(disavowalRepository.assignToken(eq(passkeyId), eq("hash"), any())).thenReturn(Mono.empty());
 
         // Act + Assert
-        StepVerifier.create(workflow.notify(passkeyId, "Passkey")).verifyComplete();
+        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
         verify(emailSender, never()).sendAccountCreatedNotice(anyString(), any(), any());
     }
 
@@ -140,7 +139,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
                 .thenReturn(Mono.error(new IllegalStateException("smtp down")));
 
         // Act + Assert
-        StepVerifier.create(workflow.notify(passkeyId, "Passkey")).verifyComplete();
+        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
         verify(auditService).record("onboarding_disavowal", withToken.id(), AuthAuditEvents.ONBOARDING_NOTICE_FAILED,
                 account.getId(), Map.of());
     }
@@ -152,6 +151,6 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
                 .thenReturn(Mono.error(new IllegalStateException("db down")));
 
         // Act + Assert
-        StepVerifier.create(workflow.notify(passkeyId, "Passkey")).verifyComplete();
+        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
     }
 }

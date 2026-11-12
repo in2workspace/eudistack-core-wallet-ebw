@@ -2,7 +2,6 @@ package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.application.workflow.PasskeyRegistrationWorkflow.RegisterPasskeyCommand;
 import com.eudistack.ebw.domain.model.AuthRejectionReason;
-import com.eudistack.ebw.domain.model.DeviceLabel;
 import com.eudistack.ebw.domain.model.IssuedSession;
 import com.eudistack.ebw.domain.model.OnboardingDisavowal;
 import com.eudistack.ebw.domain.model.OnboardingPreregistration;
@@ -138,10 +137,7 @@ public class RegisterOnboardingPasskeyWorkflow {
                         e -> AuthRejectionLog.log(log, REJECTION_SUBJECT, e.getReason()))
                 // PROVISIONAL (decision P5): the email goes after the commit, until the device
                 // registration of EUD-15 sends it. Best effort: it never fails the registration.
-                // The device is the label the service derives from the User-Agent, never the name the client
-                // sends (decision P19): that text is free and would reach an email with the tenant's brand.
-                .flatMap(stored -> onboardingNotice.notify(stored.passkey().getId(),
-                                DeviceLabel.of(command.userAgent()).value())
+                .flatMap(stored -> onboardingNotice.notify(stored.passkey().getId())
                         .thenReturn(stored.session()))
                 .onErrorResume(OnboardingAccountConflictException.class,
                         e -> preregistrationRepository.deleteById(preregistration.id())

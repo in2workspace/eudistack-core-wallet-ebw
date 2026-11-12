@@ -596,28 +596,6 @@ class OnboardingTicketIT extends IntegrationTestBase {
         assertThat(alerts.get(0).accountCreated()).isFalse();
     }
 
-    @Test
-    @SuppressWarnings("unchecked")
-    void onboarding_userAgentOfTheRegistration_isTheDeviceOfTheNoticeNotTheNameOfTheClient() {
-        // Arrange: EC-16, P19 - the client sends the name "Test device"; the notice shows what the service derives
-        var notices = captureNotices();
-        var email = email("devicelabel");
-        var client = authClient();
-        var registrationTicket = registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT);
-        var options = client.registrationOptions(registrationTicket);
-        var credential = new SoftwareAuthenticator(TEST_ORIGIN).register((Map<String, Object>) options.get("publicKey"));
-
-        // Act
-        client.registerSpec(registrationTicket, options.get("ceremonyId"), credential, true, null,
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) "
-                        + "Version/17.5 Mobile/15E148 Safari/604.1")
-                .expectStatus().isCreated();
-
-        // Assert
-        assertThat(notices).hasSize(1);
-        assertThat(notices.get(0).deviceName()).isEqualTo("iPhone · Safari");
-    }
-
     // ------------------------------------------------------------------ email in another case (P16)
 
     @Test
@@ -682,6 +660,22 @@ class OnboardingTicketIT extends IntegrationTestBase {
                 .expectBody().jsonPath("$.type").isEqualTo("invalid_ticket");
         assertThat(countInTestTenant("wallet_user WHERE lower(email) = '" + email + "'")).isEqualTo(1);
         assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isZero();
+    }
+
+    @Test
+    void onboarding_noticeOfTheRegistration_hasNeitherTheDeviceNorTheNameTheClientSent() {
+        // Arrange: the client sends the passkey name "Test device"; the notice carries only date and link
+        var notices = captureNotices();
+        var email = email("nodevice");
+
+        // Act
+        authClient().registerPasskey(registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT),
+                new SoftwareAuthenticator(TEST_ORIGIN));
+
+        // Assert
+        assertThat(notices).hasSize(1);
+        assertThat(notices.get(0).toString()).doesNotContainIgnoringCase("device")
+                .doesNotContain("Test device");
     }
 
     @Test

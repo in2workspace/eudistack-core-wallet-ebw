@@ -108,7 +108,6 @@ public class SmtpEmailSender implements EmailSender {
         var subjectKey = notice.accountCreated() ? ACCOUNT_CREATED_SUBJECT_KEY : ACCOUNT_CREATED_ADDED_SUBJECT_KEY;
         return sendBranded(email, ACCOUNT_CREATED_TEMPLATE, subjectKey, Map.of(
                 "createdAt", EMAIL_DATE_TIME.format(notice.createdAt().atZone(EMAIL_ZONE)),
-                "deviceName", notice.deviceName(),
                 "disavowalUrl", notice.disavowalUrl(),
                 "linkExpiresAt", EMAIL_DATE.format(notice.linkExpiresAt().atZone(EMAIL_ZONE)),
                 "accountCreated", notice.accountCreated()), locale);
