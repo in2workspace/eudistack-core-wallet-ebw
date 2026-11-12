@@ -56,16 +56,16 @@ class PurgeOrphanCredentialsWorkflowTest {
             var second = credential(UUID.randomUUID(), UUID.randomUUID(), CredentialStatus.REVOKED);
             when(custodyPolicy.isPasskeyCustody()).thenReturn(Mono.just(true));
             when(credentialRepository.findOrphanedExpired(NOW)).thenReturn(Flux.just(first, second));
-            when(credentialRemover.remove(first, REASON)).thenReturn(Mono.empty());
-            when(credentialRemover.remove(second, REASON)).thenReturn(Mono.empty());
+            when(credentialRemover.remove(first, null, REASON)).thenReturn(Mono.empty());
+            when(credentialRemover.remove(second, null, REASON)).thenReturn(Mono.empty());
 
             // Act
             var result = workflow.purgeExpiredOrphans(NOW);
 
             // Assert
             StepVerifier.create(result).expectNext(2L).verifyComplete();
-            verify(credentialRemover).remove(first, REASON);
-            verify(credentialRemover).remove(second, REASON);
+            verify(credentialRemover).remove(first, null, REASON);
+            verify(credentialRemover).remove(second, null, REASON);
         }
 
         @Test
@@ -94,7 +94,7 @@ class PurgeOrphanCredentialsWorkflowTest {
 
             // Assert
             StepVerifier.create(result).expectNext(0L).verifyComplete();
-            verify(credentialRemover, never()).remove(any(), any());
+            verify(credentialRemover, never()).remove(any(), any(), any());
         }
 
         @Test
@@ -105,15 +105,15 @@ class PurgeOrphanCredentialsWorkflowTest {
             var healthy = credential(UUID.randomUUID(), UUID.randomUUID(), CredentialStatus.VALID);
             when(custodyPolicy.isPasskeyCustody()).thenReturn(Mono.just(true));
             when(credentialRepository.findOrphanedExpired(NOW)).thenReturn(Flux.just(failing, healthy));
-            when(credentialRemover.remove(failing, REASON)).thenReturn(Mono.error(new IllegalStateException("db down")));
-            when(credentialRemover.remove(healthy, REASON)).thenReturn(Mono.empty());
+            when(credentialRemover.remove(failing, null, REASON)).thenReturn(Mono.error(new IllegalStateException("db down")));
+            when(credentialRemover.remove(healthy, null, REASON)).thenReturn(Mono.empty());
 
             // Act
             var result = workflow.purgeExpiredOrphans(NOW);
 
             // Assert
             StepVerifier.create(result).expectNext(1L).verifyComplete();
-            verify(credentialRemover).remove(healthy, REASON);
+            verify(credentialRemover).remove(healthy, null, REASON);
         }
     }
 }

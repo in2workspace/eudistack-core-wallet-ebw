@@ -38,10 +38,10 @@ public class PurgeOrphanCredentialsWorkflow {
 
     private Mono<Long> purge(Instant now) {
         return credentialRepository.findOrphanedExpired(now)
-                .concatMap(credential -> credentialRemover.remove(credential, Map.of("reason", AUDIT_REASON))
+                .concatMap(credential -> credentialRemover.remove(credential, null, Map.of("reason", AUDIT_REASON))
                         .thenReturn(credential.getId())
                         .onErrorResume(e -> {
-                            log.warn("Could not purge orphan credential: id={}, error={}", credential.getId(), e.getMessage());
+                            log.warn("Could not purge orphan credential: id={}", credential.getId(), e);
                             return Mono.empty();
                         }))
                 .count();

@@ -66,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated Netty to 4.1.132.Final to address CVE-2026-33870.
 - Updated Bouncy Castle (bcprov-jdk18on and bcpkix-jdk18on) to version 1.84 to address CVE-2026-0636.
 
-## [2.2.0] - 2026-11-11
+## [2.1.1] - 2026-11-11
 
 ### Added
 
@@ -79,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- **The `SUSPENDED` status**: it leaves `CredentialStatus` and the transitions. A `PATCH /api/v1/credentials/{id}/status` or a `status` filter with `SUSPENDED` now answers 400, as for any unknown value. Deployment note: no attestation had that status in DEV or STG, so there is no migration. Deploy the service before the Wallet App 3.20.0, which no longer sends it.
+- **The `SUSPENDED` status**: it leaves `CredentialStatus` and the transitions. A `PATCH /api/v1/credentials/{id}/status` or a `status` filter with `SUSPENDED` now answers 400, as for any unknown value. Deployment note: no attestation had that status in DEV or STG, so there is no migration. Deploy the service before the Wallet App 3.19.1, which no longer sends it.
 
 ## [2.1.0] - 2026-11-04
 

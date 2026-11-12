@@ -67,7 +67,7 @@ class CredentialRemoverTest {
             var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.REVOKED);
 
             // Act
-            var result = remover.remove(credential, Map.of());
+            var result = remover.remove(credential, USER_ID, Map.of());
 
             // Assert
             StepVerifier.create(result).verifyComplete();
@@ -88,11 +88,11 @@ class CredentialRemoverTest {
             var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.VALID);
 
             // Act
-            var result = remover.remove(credential, Map.of("reason", "orphan_expired"));
+            var result = remover.remove(credential, null, Map.of("reason", "orphan_expired"));
 
             // Assert
             StepVerifier.create(result).verifyComplete();
-            verify(auditService).record("credential", CREDENTIAL_ID, "DELETED", USER_ID,
+            verify(auditService).record("credential", CREDENTIAL_ID, "DELETED", null,
                     Map.of("reason", "orphan_expired",
                             "entity_hash", "sha256:hash",
                             "credential_type", "LEARCredentialEmployee",
@@ -102,13 +102,54 @@ class CredentialRemoverTest {
         }
 
         @Test
+        @DisplayName("records the audit entry inside the same transaction as the deletion")
+        void remove_credential_auditsInsideTheTransaction() {
+            // Arrange
+            var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.VALID);
+            var inTransaction = new java.util.concurrent.atomic.AtomicBoolean(false);
+            when(transactionRunner.inTransaction(any())).thenAnswer(inv -> {
+                Mono<?> body = inv.getArgument(0);
+                return Mono.defer(() -> {
+                    inTransaction.set(true);
+                    return body.doFinally(signal -> inTransaction.set(false));
+                });
+            });
+            var auditedInsideTransaction = new java.util.concurrent.atomic.AtomicBoolean(false);
+            when(auditService.record(any(), any(), any(), any(), any())).thenAnswer(inv -> {
+                auditedInsideTransaction.set(inTransaction.get());
+                return Mono.empty();
+            });
+
+            // Act
+            var result = remover.remove(credential, USER_ID, Map.of());
+
+            // Assert
+            StepVerifier.create(result).verifyComplete();
+            org.assertj.core.api.Assertions.assertThat(auditedInsideTransaction).isTrue();
+        }
+
+        @Test
+        @DisplayName("an audit failure rolls the deletion back instead of leaving it unrecorded")
+        void remove_auditFails_propagatesTheErrorSoTheTransactionRollsBack() {
+            // Arrange
+            var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.VALID);
+            when(auditService.record(any(), any(), any(), any(), any())).thenReturn(Mono.error(new IllegalStateException("audit down")));
+
+            // Act
+            var result = remover.remove(credential, USER_ID, Map.of());
+
+            // Assert
+            StepVerifier.create(result).expectError(IllegalStateException.class).verify();
+        }
+
+        @Test
         @DisplayName("deletes the key material before the row, in one transaction")
         void remove_credential_deletesItsKeyMaterialBeforeTheRowInOneTransaction() {
             // Arrange
             var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.VALID);
 
             // Act
-            var result = remover.remove(credential, Map.of());
+            var result = remover.remove(credential, USER_ID, Map.of());
 
             // Assert
             StepVerifier.create(result).verifyComplete();
@@ -126,7 +167,7 @@ class CredentialRemoverTest {
             when(holderKeyMaterial.delete(credential)).thenReturn(Mono.error(new IllegalStateException("db down")));
 
             // Act
-            var result = remover.remove(credential, Map.of());
+            var result = remover.remove(credential, USER_ID, Map.of());
 
             // Assert
             StepVerifier.create(result).expectError(IllegalStateException.class).verify();

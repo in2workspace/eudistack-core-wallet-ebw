@@ -32,7 +32,13 @@ public class OrphanCredentialPurgeJob {
         var now = Instant.now();
         return tenantDirectory.activeTenants()
                 .concatMap(tenant -> purgeWorkflow.purgeExpiredOrphans(now)
-                        .doOnNext(deleted -> log.debug("Purged {} expired orphan credentials in tenant '{}'", deleted, tenant))
+                        .doOnNext(deleted -> {
+                            if (deleted > 0) {
+                                log.info("Purged {} expired orphan credentials in tenant '{}'", deleted, tenant);
+                            } else {
+                                log.debug("No expired orphan credentials to purge in tenant '{}'", tenant);
+                            }
+                        })
                         .onErrorResume(e -> {
                             log.warn("Orphan credential purge failed for tenant '{}': {}", tenant, e.getMessage());
                             return Mono.just(0L);

@@ -29,7 +29,7 @@ public class DeleteCredentialWorkflow {
         return credentialRepository.findByIdAndUserId(credentialId, userId)
                 .flatMap(credential -> custodyPolicy.visibleToSession(credential, sessionPasskeyId))
                 .switchIfEmpty(Mono.error(new CredentialNotFoundException()))
-                .flatMap(credential -> credentialRemover.remove(credential, Map.of()))
+                .flatMap(credential -> credentialRemover.remove(credential, userId, Map.of()))
                 .doOnSuccess(v -> log.info("Credential deleted: id={}, userId={}", credentialId, userId))
                 .doOnError(e -> log.error("Failed to delete credential: id={}, userId={}, error={}", credentialId, userId, e.getMessage()));
     }

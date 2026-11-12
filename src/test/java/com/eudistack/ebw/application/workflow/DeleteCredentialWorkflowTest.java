@@ -58,14 +58,14 @@ class DeleteCredentialWorkflowTest {
             // Arrange
             var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.VALID);
             when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.just(credential));
-            when(credentialRemover.remove(credential, Map.of())).thenReturn(Mono.empty());
+            when(credentialRemover.remove(credential, USER_ID, Map.of())).thenReturn(Mono.empty());
 
             // Act
             var result = workflow.deleteCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID);
 
             // Assert
             StepVerifier.create(result).verifyComplete();
-            verify(credentialRemover).remove(credential, Map.of());
+            verify(credentialRemover).remove(credential, USER_ID, Map.of());
         }
 
         @Test
@@ -95,7 +95,7 @@ class DeleteCredentialWorkflowTest {
 
             // Assert
             StepVerifier.create(result).expectError(CredentialNotFoundException.class).verify();
-            verify(credentialRemover, never()).remove(any(), any());
+            verify(credentialRemover, never()).remove(any(), any(), any());
         }
 
         @Test
@@ -104,7 +104,7 @@ class DeleteCredentialWorkflowTest {
             // Arrange
             var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.VALID);
             when(credentialRepository.findByIdAndUserId(CREDENTIAL_ID, USER_ID)).thenReturn(Mono.just(credential));
-            when(credentialRemover.remove(credential, Map.of())).thenReturn(Mono.error(new IllegalStateException("db down")));
+            when(credentialRemover.remove(credential, USER_ID, Map.of())).thenReturn(Mono.error(new IllegalStateException("db down")));
 
             // Act
             var result = workflow.deleteCredential(USER_ID, PASSKEY_ID, CREDENTIAL_ID);
