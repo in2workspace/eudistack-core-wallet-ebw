@@ -38,7 +38,7 @@ public class NotifyOnboardingAccountCreatedWorkflow {
     static final int TOKEN_BYTES = 32;
     static final Duration NOTICE_TIMEOUT = Duration.ofSeconds(5);
     /** In the fragment, which never leaves the browser: not in access logs nor in Referer (P18). */
-    static final String DISAVOWAL_PATH = "/no-he-sido-yo#";
+    static final String DISAVOWAL_PATH = "/not-me#";
     /** PROVISIONAL (EUD-315 decision P10): the language of the account does not exist yet. */
     static final Locale NOTICE_LOCALE = Locale.ENGLISH;
 

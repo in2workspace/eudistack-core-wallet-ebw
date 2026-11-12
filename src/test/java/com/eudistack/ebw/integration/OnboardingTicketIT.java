@@ -733,7 +733,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
         // The new-account email went out with the "it was not me" link (provisional, P5)
         assertThat(notices).hasSize(1);
         var link = notices.get(0).disavowalUrl();
-        assertThat(link).startsWith(WALLET_URL + "/no-he-sido-yo#");
+        assertThat(link).startsWith(WALLET_URL + "/not-me#");
 
         // And the link works
         disavow(link.substring(link.indexOf('#') + 1)).expectStatus().isNoContent();

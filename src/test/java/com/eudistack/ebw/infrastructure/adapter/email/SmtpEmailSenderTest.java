@@ -174,7 +174,7 @@ class SmtpEmailSenderTest {
         // Arrange: EC-01, P17 (provisional texts)
         when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
         var notice = new AccountCreatedNotice(Instant.parse("2026-10-30T09:42:00Z"),
-                "https://cgcom.eudistack.net/no-he-sido-yo#tok", Instant.parse("2026-11-06T09:42:00Z"),
+                "https://cgcom.eudistack.net/not-me#tok", Instant.parse("2026-11-06T09:42:00Z"),
                 false);
 
         // Act
@@ -190,7 +190,7 @@ class SmtpEmailSenderTest {
         assertThat(htmlOf(message))
                 .contains("On 30/10/2026 10:42 a passkey was added to your CGCOM wallet.")
                 .contains("A passkey has been added to your wallet")
-                .contains("href=\"https://cgcom.eudistack.net/no-he-sido-yo#tok\"")
+                .contains("href=\"https://cgcom.eudistack.net/not-me#tok\"")
                 .doesNotContain("your wallet was created");
     }
 
@@ -199,7 +199,7 @@ class SmtpEmailSenderTest {
         // Arrange: FR-29
         when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
         var notice = new AccountCreatedNotice(Instant.parse("2026-10-30T09:42:00Z"),
-                "https://cgcom.eudistack.net/no-he-sido-yo#tok", Instant.parse("2026-11-06T09:42:00Z"),
+                "https://cgcom.eudistack.net/not-me#tok", Instant.parse("2026-11-06T09:42:00Z"),
                 true);
 
         // Act
@@ -216,7 +216,7 @@ class SmtpEmailSenderTest {
                 .contains("On 30/10/2026 10:42 your CGCOM wallet was created.")
                 .doesNotContain("on the device")
                 .doesNotContain("Test device")
-                .contains("href=\"https://cgcom.eudistack.net/no-he-sido-yo#tok\"")
+                .contains("href=\"https://cgcom.eudistack.net/not-me#tok\"")
                 .contains("The link expires on 06/11/2026.");
     }
 

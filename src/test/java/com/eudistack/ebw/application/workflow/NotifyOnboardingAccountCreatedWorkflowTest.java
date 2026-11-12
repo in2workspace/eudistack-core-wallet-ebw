@@ -96,7 +96,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
         var notice = ArgumentCaptor.forClass(AccountCreatedNotice.class);
         verify(emailSender).sendAccountCreatedNotice(eq("ana@cgcom.es"), notice.capture(), any());
         assertThat(notice.getValue().disavowalUrl())
-                .isEqualTo("https://cgcom.eudistack.net/wallet/no-he-sido-yo#" + expectedToken);
+                .isEqualTo("https://cgcom.eudistack.net/wallet/not-me#" + expectedToken);
         assertThat(notice.getValue().createdAt()).isEqualTo(Instant.parse("2026-10-30T09:42:00Z"));
         assertThat(notice.getValue().accountCreated()).isTrue();
         verify(auditService).record("onboarding_disavowal", withToken.id(), AuthAuditEvents.ONBOARDING_NOTICE_SENT,
