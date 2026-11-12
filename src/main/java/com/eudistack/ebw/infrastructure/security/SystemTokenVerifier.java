@@ -5,10 +5,8 @@ import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSVerifier;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
-import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.JWK;
-import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +16,10 @@ import reactor.core.publisher.Mono;
 
 import java.text.ParseException;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -28,8 +29,14 @@ import java.util.Objects;
  * Validates the system token of {@code POST /onboarding-tickets} (design §2.6, AD-9): an access
  * token issued by the tenant's Verifier to a system authenticated with its LEARCredentialMachine
  * (client_credentials). Checks, in this order: {@code iss}, signature with the Verifier JWK Set
- * (one reload for an unknown {@code kid}), {@code exp}, {@code tenant}, {@code credential_type}
- * and the tenant administrator power.
+ * (one reload for an unknown {@code kid}), {@code exp}, {@code nbf} and {@code iat}, {@code tenant},
+ * {@code credential_type} and the tenant administrator power.
+ *
+ * <p>Only ES256 with an EC key (SEC-04): the Verifier signs its access tokens with ES256 and a P-256
+ * key ({@code AuthorizationServerConfig.jwtCustomizer}, {@code CryptoComponent}). A {@code nbf} or
+ * {@code iat} later than now plus {@link #CLOCK_SKEW} is rejected; both are optional, as in the
+ * Issuer's {@code VerifierServiceImpl}, which does not check them and has no tolerance of its own
+ * (security audit F3-n).
  *
  * <p>Claims as the Verifier writes them ({@code JwsAccessTokenBuilder}): {@code tenant} is the
  * tenant of the client registration, which may carry an environment suffix ({@code -stg});
@@ -54,9 +61,9 @@ public class SystemTokenVerifier {
     private static final List<String> POWER_FIELDS = List.of("action", "domain", "function", "type");
     private static final String ALIAS_PREFIX = "tmf_";
     private static final int MAX_CALLER_LENGTH = 255;
-    private static final List<JWSAlgorithm> ACCEPTED_ALGORITHMS = List.of(JWSAlgorithm.ES256, JWSAlgorithm.ES384,
-            JWSAlgorithm.ES512, JWSAlgorithm.RS256, JWSAlgorithm.RS384, JWSAlgorithm.RS512, JWSAlgorithm.PS256,
-            JWSAlgorithm.PS384, JWSAlgorithm.PS512);
+    private static final JWSAlgorithm ACCEPTED_ALGORITHM = JWSAlgorithm.ES256;
+    /** Tolerance for the clocks of the Verifier and this service on {@code nbf} and {@code iat}. */
+    static final Duration CLOCK_SKEW = Duration.ofSeconds(60);
 
     private final VerifierJwksClient jwksClient;
     private final Clock clock;
@@ -85,7 +92,7 @@ public class SystemTokenVerifier {
             if (!sameIssuer(claims.getIssuer(), expectedIssuer)) {
                 return reject(SystemTokenRejectedException.invalidToken("issuer"));
             }
-            if (!ACCEPTED_ALGORITHMS.contains(token.getHeader().getAlgorithm())
+            if (!ACCEPTED_ALGORITHM.equals(token.getHeader().getAlgorithm())
                     || token.getHeader().getKeyID() == null) {
                 return reject(SystemTokenRejectedException.invalidToken("algorithm_or_kid"));
             }
@@ -107,9 +114,16 @@ public class SystemTokenVerifier {
     }
 
     private SystemCaller authorize(JWTClaimsSet claims, String tenant) {
+        var now = clock.instant();
         var expiration = claims.getExpirationTime();
-        if (expiration == null || !expiration.toInstant().isAfter(clock.instant())) {
+        if (expiration == null || !expiration.toInstant().isAfter(now)) {
             throw SystemTokenRejectedException.invalidToken("expired");
+        }
+        if (isInTheFuture(claims.getNotBeforeTime(), now)) {
+            throw SystemTokenRejectedException.invalidToken("not_yet_valid");
+        }
+        if (isInTheFuture(claims.getIssueTime(), now)) {
+            throw SystemTokenRejectedException.invalidToken("issued_in_the_future");
         }
         var expectedTenant = stripEnvSuffix(tenant);
         if (expectedTenant == null || !(claims.getClaim("tenant") instanceof String tokenTenant)
@@ -123,6 +137,10 @@ public class SystemTokenVerifier {
             throw SystemTokenRejectedException.insufficientPermission("power");
         }
         return new SystemCaller(callerOf(claims));
+    }
+
+    private static boolean isInTheFuture(Date time, Instant now) {
+        return time != null && time.toInstant().isAfter(now.plus(CLOCK_SKEW));
     }
 
     /**
@@ -230,11 +248,10 @@ public class SystemTokenVerifier {
 
     private static void verifySignature(SignedJWT token, JWK key) {
         try {
-            JWSVerifier verifier = switch (key) {
-                case ECKey ec -> new ECDSAVerifier(ec.toECPublicKey());
-                case RSAKey rsa -> new RSASSAVerifier(rsa.toRSAPublicKey());
-                default -> throw SystemTokenRejectedException.invalidToken("key_type");
-            };
+            if (!(key instanceof ECKey ec)) {
+                throw SystemTokenRejectedException.invalidToken("key_type");
+            }
+            JWSVerifier verifier = new ECDSAVerifier(ec.toECPublicKey());
             if (!token.verify(verifier)) {
                 throw SystemTokenRejectedException.invalidToken("signature");
             }

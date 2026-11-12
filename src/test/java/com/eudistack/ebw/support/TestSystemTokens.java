@@ -17,6 +17,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * A fake tenant Verifier: an EC key and system tokens laid out as the Verifier's
@@ -60,7 +61,18 @@ public final class TestSystemTokens {
 
     public String token(String issuer, String tenant, String credentialType, List<Map<String, Object>> powers,
                         Instant expiresAt) {
-        var claims = new JWTClaimsSet.Builder()
+        return token(issuer, tenant, credentialType, powers, expiresAt, claims -> { });
+    }
+
+    /** Valid system token of a tenant administrator machine, with its claims changed by {@code adjust}. */
+    public String token(String issuer, String tenant, Consumer<JWTClaimsSet.Builder> adjust) {
+        return token(issuer, tenant, "LEARCredentialMachine", List.of(onboardingPower(tenant)),
+                Instant.now().plus(Duration.ofMinutes(5)), adjust);
+    }
+
+    private String token(String issuer, String tenant, String credentialType, List<Map<String, Object>> powers,
+                         Instant expiresAt, Consumer<JWTClaimsSet.Builder> adjust) {
+        var builder = new JWTClaimsSet.Builder()
                 .issuer(issuer)
                 .audience(issuer)
                 .subject("portal-machine.example.org")
@@ -71,8 +83,9 @@ public final class TestSystemTokens {
                 .claim("credential_type", credentialType)
                 .claim("tenant", tenant)
                 .claim("power", powers)
-                .claim("mandatee", Map.of("domain", "portal-machine.example.org"))
-                .build();
+                .claim("mandatee", Map.of("domain", "portal-machine.example.org"));
+        adjust.accept(builder);
+        var claims = builder.build();
         try {
             var jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).keyID(key.getKeyID()).build(), claims);
             jwt.sign(new ECDSASigner(key));

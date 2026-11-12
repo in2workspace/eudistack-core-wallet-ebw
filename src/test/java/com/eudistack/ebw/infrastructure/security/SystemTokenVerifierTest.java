@@ -3,6 +3,18 @@ package com.eudistack.ebw.infrastructure.security;
 import com.eudistack.ebw.infrastructure.adapter.verifier.VerifierJwksClient;
 import com.eudistack.ebw.infrastructure.adapter.verifier.VerifierUnavailableException;
 import com.eudistack.ebw.support.TestSystemTokens;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.JWSSigner;
+import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jose.jwk.Curve;
+import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,6 +25,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -38,6 +51,23 @@ class SystemTokenVerifierTest {
     void setUp() {
         tokenVerifier = new SystemTokenVerifier(jwksClient);
         lenient().when(jwksClient.keys()).thenReturn(Mono.just(verifierKeys.publicJwks()));
+    }
+
+    private void expectRejectedFor(String token, String reason) {
+        StepVerifier.create(tokenVerifier.verify(token, TENANT, ISSUER))
+                .expectErrorSatisfies(e -> assertThat(e).isInstanceOf(SystemTokenRejectedException.class)
+                        .extracting("type", "reason").containsExactly("invalid_token", reason))
+                .verify();
+    }
+
+    /** A token with the claims of a valid one, signed with {@code alg} by {@code key}, published by the Verifier. */
+    private String tokenSignedWith(JWSAlgorithm alg, JWK key, JWSSigner signer) throws Exception {
+        JWTClaimsSet claims = SignedJWT.parse(verifierKeys.token(ISSUER, TENANT)).getJWTClaimsSet();
+        var jwt = new SignedJWT(new JWSHeader.Builder(alg).keyID(key.getKeyID()).build(), claims);
+        jwt.sign(signer);
+        lenient().when(jwksClient.keys()).thenReturn(Mono.just(new JWKSet(List.of(
+                verifierKeys.publicJwks().getKeys().getFirst(), key.toPublicJWK()))));
+        return jwt.serialize();
     }
 
     private void expectRejected(String token, String type) {
@@ -239,5 +269,73 @@ class SystemTokenVerifierTest {
         StepVerifier.create(tokenVerifier.verify(verifierKeys.token(ISSUER, TENANT), TENANT, ISSUER))
                 .expectError(VerifierUnavailableException.class)
                 .verify(Duration.ofSeconds(5));
+    }
+
+    // ------------------------------------------------------------------ F3-n: ES256 only, nbf and iat
+
+    @Test
+    void verify_rs256WithAnRsaKeyOfTheVerifier_isInvalidTokenWithoutReadingKeys() throws Exception {
+        // Arrange: SEC-04, the Verifier signs its access tokens with ES256 only
+        var rsa = new RSAKeyGenerator(2048).keyID("rsa-key").generate();
+        var token = tokenSignedWith(JWSAlgorithm.RS256, rsa, new RSASSASigner(rsa));
+
+        // Act + Assert
+        expectRejectedFor(token, "algorithm_or_kid");
+        verify(jwksClient, never()).keys();
+    }
+
+    @Test
+    void verify_es384WithAP384KeyOfTheVerifier_isInvalidToken() throws Exception {
+        // Arrange
+        var p384 = new ECKeyGenerator(Curve.P_384).keyID("p384-key").generate();
+
+        // Act + Assert
+        expectRejectedFor(tokenSignedWith(JWSAlgorithm.ES384, p384, new ECDSASigner(p384)), "algorithm_or_kid");
+    }
+
+    @Test
+    void verify_es256HeaderNamingAnRsaKey_isInvalidToken() throws Exception {
+        // Arrange: the kid names an RSA key of the set, the header says ES256
+        var rsa = new RSAKeyGenerator(2048).keyID("rsa-key").generate();
+        var ec = new ECKeyGenerator(Curve.P_256).keyID("rsa-key").generate();
+        var token = tokenSignedWith(JWSAlgorithm.ES256, rsa, new ECDSASigner(ec));
+
+        // Act + Assert
+        expectRejectedFor(token, "key_type");
+    }
+
+    @Test
+    void verify_notBeforeLaterThanTheClockSkew_isInvalidToken() {
+        var token = verifierKeys.token(ISSUER, TENANT,
+                claims -> claims.notBeforeTime(Date.from(Instant.now().plus(SystemTokenVerifier.CLOCK_SKEW).plusSeconds(30))));
+
+        expectRejectedFor(token, "not_yet_valid");
+    }
+
+    @Test
+    void verify_issuedLaterThanTheClockSkew_isInvalidToken() {
+        var token = verifierKeys.token(ISSUER, TENANT,
+                claims -> claims.issueTime(Date.from(Instant.now().plus(SystemTokenVerifier.CLOCK_SKEW).plusSeconds(30))));
+
+        expectRejectedFor(token, "issued_in_the_future");
+    }
+
+    @Test
+    void verify_notBeforeAndIssueTimeWithinTheClockSkew_isAccepted() {
+        // Arrange: the clock of the Verifier 30 s ahead of this service
+        var ahead = Date.from(Instant.now().plusSeconds(30));
+        var token = verifierKeys.token(ISSUER, TENANT, claims -> claims.notBeforeTime(ahead).issueTime(ahead));
+
+        // Act + Assert
+        StepVerifier.create(tokenVerifier.verify(token, TENANT, ISSUER)).expectNextCount(1).verifyComplete();
+    }
+
+    @Test
+    void verify_withoutNotBeforeNorIssueTime_isAccepted() {
+        // Arrange: both optional, as in the Issuer
+        var token = verifierKeys.token(ISSUER, TENANT, claims -> claims.notBeforeTime(null).issueTime(null));
+
+        // Act + Assert
+        StepVerifier.create(tokenVerifier.verify(token, TENANT, ISSUER)).expectNextCount(1).verifyComplete();
     }
 }
