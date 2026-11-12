@@ -188,7 +188,7 @@ class SmtpEmailSenderTest {
         MimeMessage message = captor.getValue();
         assertThat(message.getSubject()).isEqualTo("A passkey has been added to your CGCOM wallet");
         assertThat(htmlOf(message))
-                .contains("On 30/10/2026 10:42 a passkey was added to your wallet.")
+                .contains("On 30/10/2026 10:42 a passkey was added to your CGCOM wallet.")
                 .contains("A passkey has been added to your wallet")
                 .contains("href=\"https://cgcom.eudistack.net/no-he-sido-yo#tok\"")
                 .doesNotContain("your wallet was created");
@@ -213,7 +213,7 @@ class SmtpEmailSenderTest {
         MimeMessage message = captor.getValue();
         assertThat(message.getSubject()).isEqualTo("Your CGCOM wallet has been created");
         assertThat(htmlOf(message))
-                .contains("On 30/10/2026 10:42 your wallet was created.")
+                .contains("On 30/10/2026 10:42 your CGCOM wallet was created.")
                 .doesNotContain("on the device")
                 .doesNotContain("Test device")
                 .contains("href=\"https://cgcom.eudistack.net/no-he-sido-yo#tok\"")
