@@ -86,9 +86,9 @@ class OnboardingSettingsServiceTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"PT10M,PT10M", "PT24H,PT24H", "P1D,P1D", "PT24H1S,PT30M", "PT0S,PT30M", "-PT1M,PT30M",
-            "1800,PT30M", "nonsense,PT30M"})
-    void current_registrationTtl_isAtMostOneDayElseDefault(String raw, String expected) {
+    @CsvSource({"PT10M,PT10M", "PT1H,PT1H", "PT1H1S,PT30M", "PT24H,PT30M", "P1D,PT30M", "PT0S,PT30M",
+            "-PT1M,PT30M", "1800,PT30M", "nonsense,PT30M"})
+    void current_registrationTtl_isAtMostOneHourElseDefault(String raw, String expected) {
         // Arrange: P8, provisional figure
         config(OnboardingSettingsService.REGISTRATION_TTL, raw);
 

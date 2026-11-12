@@ -20,7 +20,7 @@ import java.time.format.DateTimeParseException;
  *   <li>{@value #TTL}: ISO-8601 lifetime of a pre-registration, default {@code PT5M}, at most
  *       {@code PT10M}; an invalid or out-of-range value falls back to the default.</li>
  *   <li>{@value #REGISTRATION_TTL}: ISO-8601 time to create the passkey after the redemption, default
- *       {@code PT30M} (provisional, EUD-315 decision P8), at most {@code PT24H}; an invalid or
+ *       {@code PT30M}, at most {@code PT1H} (both provisional, EUD-315 decision P8); an invalid or
  *       out-of-range value falls back to the default.</li>
  *   <li>{@value #SECURITY_CONTACT}: email warned when an account holder disavows an onboarding.</li>
  *   <li>{@value #MODE}: {@code open} (default) or {@code restricted}; an unknown value is

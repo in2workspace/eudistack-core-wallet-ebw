@@ -21,7 +21,11 @@ public record OnboardingSettings(boolean enabled, Duration ttl, Duration registr
     public static final Duration MAX_TTL = Duration.ofMinutes(10);
     /** PROVISIONAL (EUD-315 decision P8): the figure is pending the Tech Lead. */
     public static final Duration DEFAULT_REGISTRATION_TTL = Duration.ofMinutes(30);
-    public static final Duration MAX_REGISTRATION_TTL = Duration.ofHours(24);
+    /**
+     * PROVISIONAL (EUD-315 decision P8, security finding F2-n): bounds the retention of the email and
+     * the life of the registration ticket, a bearer; to be reviewed with the Tech Lead.
+     */
+    public static final Duration MAX_REGISTRATION_TTL = Duration.ofHours(1);
 
     public OnboardingSettings {
         Objects.requireNonNull(ttl, "ttl");
