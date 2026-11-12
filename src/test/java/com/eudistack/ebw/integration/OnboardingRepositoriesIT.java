@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 /**
- * V10 and the onboarding repositories against PostgreSQL (EUD-315 task 2): atomic redemption,
+ * V11 and the onboarding repositories against PostgreSQL (EUD-315 task 2): atomic redemption,
  * hash-only storage (NFR-6), physical deletion, registration tickets of a pre-registration.
  */
 class OnboardingRepositoriesIT extends IntegrationTestBase {

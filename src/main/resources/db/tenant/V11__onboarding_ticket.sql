@@ -1,5 +1,5 @@
 -- =============================================================================
--- V10__onboarding_ticket.sql
+-- V11__onboarding_ticket.sql
 -- Onboarding ticket and onboarding mode (EUD-315, feature EUD-8 design §2.6, §5):
 --   - onboarding_preregistration: email and credential offer sent by an authorized
 --     system, until the first passkey is registered or the ticket expires. Only the
