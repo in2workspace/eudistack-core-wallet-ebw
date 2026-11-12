@@ -179,7 +179,8 @@ class RedeemOnboardingTicketWorkflowTest {
         verify(preregistrationRepository).deleteById(preregistration.id());
         verify(ticketService, never()).issueForPreregistration(any(), any(), any());
         verify(auditService).record("onboarding_preregistration", preregistration.id(),
-                AuthAuditEvents.ONBOARDING_TICKET_REJECTED, null, Map.of("reason", "ambiguous_account"));
+                AuthAuditEvents.ONBOARDING_TICKET_REJECTED, null,
+                Map.of("reason", "ambiguous_account", "requested_by", "portal-machine.example.org"));
     }
 
     @Test

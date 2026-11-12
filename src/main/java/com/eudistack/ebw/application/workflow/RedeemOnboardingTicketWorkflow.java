@@ -134,12 +134,14 @@ public class RedeemOnboardingTicketWorkflow {
 
     /**
      * Two accounts whose email differs only in case (decision P16): the account cannot be told, so it
-     * counts as an existing one and the ticket gives no registration. The trace has the reason.
+     * counts as an existing one and the ticket gives no registration. The trace has the reason and, like
+     * the other traces of the pre-registration, the system that asked for it (security audit F4-n).
      */
     private Mono<OnboardingTicketRedemption> rejectAmbiguous(OnboardingPreregistration preregistration) {
         return preregistrationRepository.deleteById(preregistration.id())
                 .then(auditService.record(AuthAuditEvents.ENTITY_PREREGISTRATION, preregistration.id(),
-                        AuthAuditEvents.ONBOARDING_TICKET_REJECTED, null, Map.of("reason", REASON_AMBIGUOUS_ACCOUNT)))
+                        AuthAuditEvents.ONBOARDING_TICKET_REJECTED, null,
+                        Map.of("reason", REASON_AMBIGUOUS_ACCOUNT, "requested_by", preregistration.requestedBy())))
                 .then(Mono.error(new InvalidTicketException()));
     }
 

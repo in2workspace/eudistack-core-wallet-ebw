@@ -666,7 +666,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
         assertThat(countInTestTenant("wallet_user WHERE lower(email) = '" + email + "'")).isEqualTo(2);
         assertThat(countInTestTenant("onboarding_preregistration WHERE lower(email) = '" + email + "'")).isZero();
         assertThat(countInTestTenant("audit_log WHERE action = 'ONBOARDING_TICKET_REJECTED'"
-                + " AND metadata LIKE '%ambiguous_account%'")).isPositive();
+                + " AND metadata LIKE '%ambiguous_account%' AND metadata LIKE '%requested_by%'")).isPositive();
     }
 
     @Test
