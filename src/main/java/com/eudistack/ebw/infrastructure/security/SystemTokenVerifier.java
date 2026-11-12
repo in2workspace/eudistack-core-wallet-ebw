@@ -19,7 +19,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
-import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -119,10 +118,12 @@ public class SystemTokenVerifier {
         if (expiration == null || !expiration.toInstant().isAfter(now)) {
             throw SystemTokenRejectedException.invalidToken("expired");
         }
-        if (isInTheFuture(claims.getNotBeforeTime(), now)) {
+        var notBefore = claims.getNotBeforeTime();
+        if (notBefore != null && isInTheFuture(notBefore.toInstant(), now)) {
             throw SystemTokenRejectedException.invalidToken("not_yet_valid");
         }
-        if (isInTheFuture(claims.getIssueTime(), now)) {
+        var issuedAt = claims.getIssueTime();
+        if (issuedAt != null && isInTheFuture(issuedAt.toInstant(), now)) {
             throw SystemTokenRejectedException.invalidToken("issued_in_the_future");
         }
         var expectedTenant = stripEnvSuffix(tenant);
@@ -139,8 +140,8 @@ public class SystemTokenVerifier {
         return new SystemCaller(callerOf(claims));
     }
 
-    private static boolean isInTheFuture(Date time, Instant now) {
-        return time != null && time.toInstant().isAfter(now.plus(CLOCK_SKEW));
+    private static boolean isInTheFuture(Instant time, Instant now) {
+        return time.isAfter(now.plus(CLOCK_SKEW));
     }
 
     /**
