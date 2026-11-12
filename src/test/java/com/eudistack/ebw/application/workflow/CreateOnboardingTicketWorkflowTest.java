@@ -4,13 +4,12 @@ import com.eudistack.ebw.application.workflow.CreateOnboardingTicketWorkflow.Cre
 import com.eudistack.ebw.domain.model.OnboardingMode;
 import com.eudistack.ebw.domain.model.OnboardingPreregistration;
 import com.eudistack.ebw.domain.model.OnboardingSettings;
-import com.eudistack.ebw.domain.model.RelyingPartySettings;
+import com.eudistack.ebw.domain.model.exception.TenantConfigMissingException;
 import com.eudistack.ebw.domain.model.exception.InvalidOnboardingRequestException;
 import com.eudistack.ebw.domain.model.exception.OnboardingDisabledException;
 import com.eudistack.ebw.domain.repository.OnboardingPreregistrationRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.OnboardingSettingsService;
-import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +25,6 @@ import reactor.test.StepVerifier;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,7 +42,6 @@ class CreateOnboardingTicketWorkflowTest {
     private static final String OFFER = "openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fi.example%2Fo";
 
     @Mock private OnboardingSettingsService onboardingSettings;
-    @Mock private WalletAuthSettingsService authSettings;
     @Mock private OnboardingPreregistrationRepository preregistrationRepository;
     @Mock private HashProvider hashProvider;
     @Mock private SecureRandomGenerator randomGenerator;
@@ -54,11 +51,10 @@ class CreateOnboardingTicketWorkflowTest {
 
     @BeforeEach
     void setUp() {
-        workflow = new CreateOnboardingTicketWorkflow(onboardingSettings, authSettings, preregistrationRepository,
+        workflow = new CreateOnboardingTicketWorkflow(onboardingSettings, preregistrationRepository,
                 hashProvider, randomGenerator, auditService);
         lenient().when(onboardingSettings.current()).thenReturn(Mono.just(settings(true)));
-        lenient().when(authSettings.relyingParty()).thenReturn(Mono.just(new RelyingPartySettings(
-                "sandbox.stg.eudistack.net", "EUDIStack Wallet", List.of("https://sandbox.stg.eudistack.net"))));
+        lenient().when(onboardingSettings.walletUrl()).thenReturn(Mono.just("https://sandbox.stg.eudistack.net/wallet"));
         lenient().when(randomGenerator.generateBytes(16)).thenReturn(new byte[16]);
         lenient().when(hashProvider.sha256(anyString())).thenReturn("h".repeat(64));
         lenient().when(preregistrationRepository.insert(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
@@ -66,7 +62,7 @@ class CreateOnboardingTicketWorkflowTest {
     }
 
     private static OnboardingSettings settings(boolean enabled) {
-        return new OnboardingSettings(enabled, Duration.ofMinutes(5), OnboardingSettings.DEFAULT_REGISTRATION_TTL, null, OnboardingMode.OPEN, null);
+        return new OnboardingSettings(enabled, Duration.ofMinutes(5), OnboardingSettings.DEFAULT_REGISTRATION_TTL, null, OnboardingMode.OPEN, null, null);
     }
 
     @Test
@@ -78,7 +74,7 @@ class CreateOnboardingTicketWorkflowTest {
         StepVerifier.create(workflow.create(new CreateOnboardingTicketCommand("ana@example.com", OFFER, null, "portal")))
                 .assertNext(issued -> {
                     assertThat(issued.onboardingUrl())
-                            .isEqualTo("https://sandbox.stg.eudistack.net/t#AAAAAAAAAAAAAAAAAAAAAA");
+                            .isEqualTo("https://sandbox.stg.eudistack.net/wallet/t#AAAAAAAAAAAAAAAAAAAAAA");
                     assertThat(issued.onboardingUrl().substring(issued.onboardingUrl().indexOf('#') + 1))
                             .matches("^[A-Za-z0-9_-]{22}$");
                     assertThat(issued.expiresIn()).isEqualTo(300);
@@ -104,6 +100,19 @@ class CreateOnboardingTicketWorkflowTest {
         // Act + Assert
         StepVerifier.create(workflow.create(new CreateOnboardingTicketCommand("ana@example.com", null, null, "portal")))
                 .expectError(OnboardingDisabledException.class)
+                .verify();
+        verify(preregistrationRepository, never()).insert(any());
+    }
+
+    @Test
+    void create_tenantWithoutWalletUrl_failsWithoutStoringAnything() {
+        // Arrange: task 44, no address that does not open the wallet
+        when(onboardingSettings.walletUrl()).thenReturn(Mono.error(
+                new TenantConfigMissingException("sandbox", OnboardingSettingsService.WALLET_URL)));
+
+        // Act + Assert
+        StepVerifier.create(workflow.create(new CreateOnboardingTicketCommand("ana@example.com", OFFER, null, "portal")))
+                .expectError(TenantConfigMissingException.class)
                 .verify();
         verify(preregistrationRepository, never()).insert(any());
     }

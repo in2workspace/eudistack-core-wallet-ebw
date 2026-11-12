@@ -2,6 +2,8 @@ package com.eudistack.ebw.domain.service;
 
 import com.eudistack.ebw.domain.model.OnboardingMode;
 import com.eudistack.ebw.domain.model.OnboardingSettings;
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.domain.model.exception.TenantConfigMissingException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,7 +23,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
-/** Unit tests for {@link OnboardingSettingsService}: defaults, ttl clamp, unknown mode and signup URL. */
+/** Unit tests for {@link OnboardingSettingsService}: defaults, ttl clamp, unknown mode, signup and wallet URLs. */
 @ExtendWith(MockitoExtension.class)
 class OnboardingSettingsServiceTest {
 
@@ -51,6 +53,7 @@ class OnboardingSettingsServiceTest {
                     assertThat(settings.securityContact()).isNull();
                     assertThat(settings.mode()).isEqualTo(OnboardingMode.OPEN);
                     assertThat(settings.signupUrl()).isNull();
+                    assertThat(settings.walletUrl()).isNull();
                 })
                 .verifyComplete();
     }
@@ -64,12 +67,13 @@ class OnboardingSettingsServiceTest {
         config(OnboardingSettingsService.SECURITY_CONTACT, " security@example.org ");
         config(OnboardingSettingsService.MODE, "restricted");
         config(OnboardingSettingsService.SIGNUP_URL, "https://portal.example.org/alta");
+        config(OnboardingSettingsService.WALLET_URL, " https://sandbox.stg.eudistack.net/wallet/ ");
 
         // Act + Assert
         StepVerifier.create(service.current())
                 .assertNext(settings -> assertThat(settings).isEqualTo(new OnboardingSettings(true,
                         Duration.ofMinutes(2), Duration.ofHours(1), "security@example.org", OnboardingMode.RESTRICTED,
-                        "https://portal.example.org/alta")))
+                        "https://portal.example.org/alta", "https://sandbox.stg.eudistack.net/wallet")))
                 .verifyComplete();
     }
 
@@ -120,5 +124,56 @@ class OnboardingSettingsServiceTest {
         StepVerifier.create(service.current())
                 .assertNext(settings -> assertThat(settings.signupUrl()).isNull())
                 .verifyComplete();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"https://sandbox.127.0.0.1.nip.io:4443/wallet,https://sandbox.127.0.0.1.nip.io:4443/wallet",
+            "https://sandbox.stg.eudistack.net/wallet/,https://sandbox.stg.eudistack.net/wallet",
+            "https://wallet.dome-marketplace-sbx.org/,https://wallet.dome-marketplace-sbx.org",
+            "https://wallet.dome-marketplace-sbx.org,https://wallet.dome-marketplace-sbx.org"})
+    void current_walletUrl_isKeptWithoutTheTrailingSlash(String raw, String expected) {
+        // Arrange: task 44
+        config(OnboardingSettingsService.WALLET_URL, raw);
+
+        // Act + Assert
+        StepVerifier.create(service.current())
+                .assertNext(settings -> assertThat(settings.walletUrl()).isEqualTo(expected))
+                .verifyComplete();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"http://sandbox.example.org/wallet", "sandbox.example.org/wallet", "https://",
+            "https://exa mple.org", "https://sandbox.example.org/wallet?x=1", "https://sandbox.example.org/wallet#t"})
+    void current_walletUrlNotHttpsOrWithQueryOrFragment_isIgnored(String raw) {
+        // Arrange
+        config(OnboardingSettingsService.WALLET_URL, raw);
+
+        // Act + Assert
+        StepVerifier.create(service.current())
+                .assertNext(settings -> assertThat(settings.walletUrl()).isNull())
+                .verifyComplete();
+    }
+
+    @Test
+    void walletUrl_configured_isTheAddress() {
+        // Arrange
+        config(OnboardingSettingsService.WALLET_URL, "https://cgcom.stg.eudistack.net/wallet");
+
+        // Act + Assert
+        StepVerifier.create(service.walletUrl())
+                .expectNext("https://cgcom.stg.eudistack.net/wallet")
+                .verifyComplete();
+    }
+
+    @Test
+    void walletUrl_missing_failsAsMissingTenantConfigOfTheTenant() {
+        // Act + Assert: task 44, no default address
+        StepVerifier.create(service.walletUrl()
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "cgcom")))
+                .expectErrorSatisfies(e -> assertThat(e)
+                        .isInstanceOf(TenantConfigMissingException.class)
+                        .hasMessageContaining("cgcom")
+                        .hasMessageContaining(OnboardingSettingsService.WALLET_URL))
+                .verify();
     }
 }

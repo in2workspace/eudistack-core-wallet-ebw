@@ -8,7 +8,6 @@ import com.eudistack.ebw.domain.model.exception.OnboardingDisabledException;
 import com.eudistack.ebw.domain.repository.OnboardingPreregistrationRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.OnboardingSettingsService;
-import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import org.springframework.stereotype.Service;
@@ -21,7 +20,8 @@ import java.util.Map;
 /**
  * Pre-registration requested by an authorized system (design §2.6, FR-22 to FR-26): stores the
  * email, the offer and the system, never an account, and returns the onboarding URL
- * {@code https://<rpId>/t#<ticket>}, with the ticket in the fragment (P18). The ticket is 16
+ * {@code <ebw.wallet_url>/t#<ticket>}, with the ticket in the fragment (P18). Without
+ * {@code ebw.wallet_url} nothing is stored and the request fails as a server error (task 44). The ticket is 16
  * random bytes (128 bits, 22 base64url characters, AD-8); only its SHA-256 is stored. It lives
  * the tenant's {@code ttl}, or the shorter lifetime the system asks for (EC-03).
  */
@@ -33,7 +33,6 @@ public class CreateOnboardingTicketWorkflow {
     static final String ONBOARDING_PATH = "/t#";
 
     private final OnboardingSettingsService onboardingSettings;
-    private final WalletAuthSettingsService authSettings;
     private final OnboardingPreregistrationRepository preregistrationRepository;
     private final HashProvider hashProvider;
     private final SecureRandomGenerator randomGenerator;
@@ -53,12 +52,10 @@ public class CreateOnboardingTicketWorkflow {
     }
 
     public CreateOnboardingTicketWorkflow(OnboardingSettingsService onboardingSettings,
-                                          WalletAuthSettingsService authSettings,
                                           OnboardingPreregistrationRepository preregistrationRepository,
                                           HashProvider hashProvider, SecureRandomGenerator randomGenerator,
                                           AuditService auditService) {
         this.onboardingSettings = onboardingSettings;
-        this.authSettings = authSettings;
         this.preregistrationRepository = preregistrationRepository;
         this.hashProvider = hashProvider;
         this.randomGenerator = randomGenerator;
@@ -80,13 +77,13 @@ public class CreateOnboardingTicketWorkflow {
                             .encodeToString(randomGenerator.generateBytes(TICKET_BYTES));
                     var preregistration = OnboardingPreregistration.create(hashProvider.sha256(ticket),
                             command.email(), command.credentialOffer(), command.requestedBy(), ttl);
-                    return authSettings.relyingParty()
-                            .flatMap(relyingParty -> preregistrationRepository.insert(preregistration)
+                    return onboardingSettings.walletUrl()
+                            .flatMap(walletUrl -> preregistrationRepository.insert(preregistration)
                                     .then(auditService.record(AuthAuditEvents.ENTITY_PREREGISTRATION,
                                             preregistration.id(), AuthAuditEvents.PREREGISTRATION_CREATED, null,
                                             Map.of("requested_by", command.requestedBy())))
                                     .thenReturn(new OnboardingTicketIssued(
-                                            "https://" + relyingParty.rpId() + ONBOARDING_PATH + ticket,
+                                            walletUrl + ONBOARDING_PATH + ticket,
                                             ttl.toSeconds())));
                 });
     }

@@ -23,7 +23,7 @@ class WalletConfigMetadataResponseTest {
 
     private static final Instant NOW = Instant.parse("2026-05-22T10:00:00Z");
     private static final OnboardingSettings OPEN = new OnboardingSettings(false, OnboardingSettings.DEFAULT_TTL, OnboardingSettings.DEFAULT_REGISTRATION_TTL, null,
-            OnboardingMode.OPEN, null);
+            OnboardingMode.OPEN, null, null);
     private static final TenantWalletProfile BROWSER =
             new TenantWalletProfile("tenant1", WalletMode.BROWSER, null, NOW, NOW);
 
@@ -31,7 +31,7 @@ class WalletConfigMetadataResponseTest {
     void from_openMode_hasOnboardingModeOpenAndNoSignupUrl() {
         // Arrange
         var open = new OnboardingSettings(true, OnboardingSettings.DEFAULT_TTL, OnboardingSettings.DEFAULT_REGISTRATION_TTL, null, OnboardingMode.OPEN,
-                "https://portal.example.org/");
+                "https://portal.example.org/", null);
 
         // Act
         WalletConfigMetadataResponse response = WalletConfigMetadataResponse.from(BROWSER, open);
@@ -45,7 +45,7 @@ class WalletConfigMetadataResponseTest {
     void from_restrictedMode_hasOnboardingModeAndSignupUrl() {
         // Arrange
         var restricted = new OnboardingSettings(true, OnboardingSettings.DEFAULT_TTL, OnboardingSettings.DEFAULT_REGISTRATION_TTL, null,
-                OnboardingMode.RESTRICTED, "https://portal.example.org/");
+                OnboardingMode.RESTRICTED, "https://portal.example.org/", null);
 
         // Act
         WalletConfigMetadataResponse response = WalletConfigMetadataResponse.from(BROWSER, restricted);

@@ -85,7 +85,7 @@ class RedeemOnboardingTicketWorkflowTest {
     }
 
     private static OnboardingSettings settings(Duration registrationTtl) {
-        return new OnboardingSettings(true, Duration.ofMinutes(5), registrationTtl, null, OnboardingMode.OPEN, null);
+        return new OnboardingSettings(true, Duration.ofMinutes(5), registrationTtl, null, OnboardingMode.OPEN, null, null);
     }
 
     @Test

@@ -2,6 +2,8 @@ package com.eudistack.ebw.domain.service;
 
 import com.eudistack.ebw.domain.model.OnboardingMode;
 import com.eudistack.ebw.domain.model.OnboardingSettings;
+import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.domain.model.exception.TenantConfigMissingException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -26,6 +28,10 @@ import java.time.format.DateTimeParseException;
  *   <li>{@value #MODE}: {@code open} (default) or {@code restricted}; an unknown value is
  *       {@code restricted}.</li>
  *   <li>{@value #SIGNUP_URL}: onboarding address of the tenant, only if it is an https URL.</li>
+ *   <li>{@value #WALLET_URL}: https address of the tenant's Wallet App, like {@code issuer.wallet_url}
+ *       (EUD-315 task 44). The Wallet App is served on a path of the tenant host ({@code /wallet}) and
+ *       this service on another ({@code /business-wallet}), so the address is neither the WebAuthn
+ *       {@code rpId} nor the origin of the request. Required for onboarding tickets; no default.</li>
  * </ul>
  */
 public class OnboardingSettingsService {
@@ -36,6 +42,7 @@ public class OnboardingSettingsService {
     public static final String SECURITY_CONTACT = "ebw.onboarding.security_contact";
     public static final String MODE = "ebw.onboarding.mode";
     public static final String SIGNUP_URL = "ebw.onboarding.signup_url";
+    public static final String WALLET_URL = "ebw.wallet_url";
 
     private static final Logger log = LoggerFactory.getLogger(OnboardingSettingsService.class);
 
@@ -53,7 +60,8 @@ public class OnboardingSettingsService {
                         tenantConfigService.getStringOrDefault(SECURITY_CONTACT, ""),
                         tenantConfigService.getStringOrDefault(MODE, ""),
                         tenantConfigService.getStringOrDefault(SIGNUP_URL, ""),
-                        tenantConfigService.getStringOrDefault(REGISTRATION_TTL, ""))
+                        tenantConfigService.getStringOrDefault(REGISTRATION_TTL, ""),
+                        tenantConfigService.getStringOrDefault(WALLET_URL, ""))
                 .map(tuple -> new OnboardingSettings(
                         "true".equalsIgnoreCase(tuple.getT1().trim()),
                         parseDuration(tuple.getT2(), TTL, OnboardingSettings.DEFAULT_TTL, OnboardingSettings.MAX_TTL),
@@ -61,7 +69,20 @@ public class OnboardingSettingsService {
                                 OnboardingSettings.MAX_REGISTRATION_TTL),
                         blankToNull(tuple.getT3()),
                         parseMode(tuple.getT4()),
-                        parseSignupUrl(tuple.getT5())));
+                        parseSignupUrl(tuple.getT5()),
+                        parseWalletUrl(tuple.getT7())));
+    }
+
+    /**
+     * Address of the current tenant's Wallet App ({@value #WALLET_URL}), without the trailing slash.
+     * Without it, a {@link TenantConfigMissingException}: like a tenant without {@code ebw.webauthn.rp_id},
+     * a server error that is logged, never an address that does not open the wallet.
+     */
+    public Mono<String> walletUrl() {
+        return current().flatMap(settings -> settings.walletUrl() != null
+                ? Mono.just(settings.walletUrl())
+                : Mono.deferContextual(ctx -> Mono.error(new TenantConfigMissingException(
+                        ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown"), WALLET_URL))));
     }
 
     private static Duration parseDuration(String raw, String key, Duration defaultValue, Duration max) {
@@ -102,6 +123,27 @@ public class OnboardingSettingsService {
             // Logged below.
         }
         log.warn("tenant_config '{}' is not an https URL; it is ignored", SIGNUP_URL);
+        return null;
+    }
+
+    private static String parseWalletUrl(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            var uri = new URI(raw.trim());
+            if ("https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null && uri.getRawQuery() == null
+                    && uri.getRawFragment() == null) {
+                var url = uri.toString();
+                while (url.endsWith("/")) {
+                    url = url.substring(0, url.length() - 1);
+                }
+                return url;
+            }
+        } catch (URISyntaxException _) {
+            // Logged below.
+        }
+        log.warn("tenant_config '{}' is not an https URL without query nor fragment; it is ignored", WALLET_URL);
         return null;
     }
 

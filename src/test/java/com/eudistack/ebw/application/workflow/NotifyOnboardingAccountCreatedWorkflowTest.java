@@ -2,12 +2,12 @@ package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.domain.model.AccountCreatedNotice;
 import com.eudistack.ebw.domain.model.OnboardingDisavowal;
-import com.eudistack.ebw.domain.model.RelyingPartySettings;
+import com.eudistack.ebw.domain.model.exception.TenantConfigMissingException;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.repository.OnboardingDisavowalRepository;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.domain.service.AuditService;
-import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
+import com.eudistack.ebw.domain.service.OnboardingSettingsService;
 import com.eudistack.ebw.domain.spi.EmailSender;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
@@ -23,7 +23,6 @@ import reactor.test.StepVerifier;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -41,12 +40,11 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class NotifyOnboardingAccountCreatedWorkflowTest {
 
-    private static final RelyingPartySettings RP = new RelyingPartySettings("cgcom.eudistack.net", "Wallet",
-            List.of("https://cgcom.eudistack.net"));
+    private static final String WALLET_URL = "https://cgcom.eudistack.net/wallet";
 
     @Mock private OnboardingDisavowalRepository disavowalRepository;
     @Mock private WalletUserRepository userRepository;
-    @Mock private WalletAuthSettingsService authSettings;
+    @Mock private OnboardingSettingsService onboardingSettings;
     @Mock private EmailSender emailSender;
     @Mock private HashProvider hashProvider;
     @Mock private SecureRandomGenerator randomGenerator;
@@ -60,7 +58,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
 
     @BeforeEach
     void setUp() {
-        workflow = new NotifyOnboardingAccountCreatedWorkflow(disavowalRepository, userRepository, authSettings,
+        workflow = new NotifyOnboardingAccountCreatedWorkflow(disavowalRepository, userRepository, onboardingSettings,
                 emailSender, hashProvider, randomGenerator, auditService);
         account = WalletUser.create("ana@cgcom.es", new byte[WalletUser.USER_HANDLE_LENGTH]);
         passkeyId = UUID.randomUUID();
@@ -74,7 +72,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
         lenient().when(hashProvider.sha256(expectedToken)).thenReturn("hash");
         lenient().when(disavowalRepository.assignToken(eq(passkeyId), eq("hash"), any())).thenReturn(Mono.just(withToken));
         lenient().when(userRepository.findById(account.getId())).thenReturn(Mono.just(account));
-        lenient().when(authSettings.relyingParty()).thenReturn(Mono.just(RP));
+        lenient().when(onboardingSettings.walletUrl()).thenReturn(Mono.just(WALLET_URL));
         lenient().when(emailSender.sendAccountCreatedNotice(anyString(), any(), any())).thenReturn(Mono.empty());
         lenient().when(auditService.record(anyString(), any(), anyString(), any(), any())).thenReturn(Mono.empty());
     }
@@ -98,7 +96,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
         var notice = ArgumentCaptor.forClass(AccountCreatedNotice.class);
         verify(emailSender).sendAccountCreatedNotice(eq("ana@cgcom.es"), notice.capture(), any());
         assertThat(notice.getValue().disavowalUrl())
-                .isEqualTo("https://cgcom.eudistack.net/no-he-sido-yo#" + expectedToken);
+                .isEqualTo("https://cgcom.eudistack.net/wallet/no-he-sido-yo#" + expectedToken);
         assertThat(notice.getValue().createdAt()).isEqualTo(Instant.parse("2026-10-30T09:42:00Z"));
         assertThat(notice.getValue().accountCreated()).isTrue();
         verify(auditService).record("onboarding_disavowal", withToken.id(), AuthAuditEvents.ONBOARDING_NOTICE_SENT,
@@ -130,6 +128,19 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
         // Act + Assert
         StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
         verify(emailSender, never()).sendAccountCreatedNotice(anyString(), any(), any());
+    }
+
+    @Test
+    void notify_tenantWithoutWalletUrl_sendsNothingAndTracesTheFailure() {
+        // Arrange: task 44, never a link that does not open the wallet
+        when(onboardingSettings.walletUrl()).thenReturn(Mono.error(
+                new TenantConfigMissingException("cgcom", OnboardingSettingsService.WALLET_URL)));
+
+        // Act + Assert
+        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
+        verify(emailSender, never()).sendAccountCreatedNotice(anyString(), any(), any());
+        verify(auditService).record("onboarding_disavowal", withToken.id(), AuthAuditEvents.ONBOARDING_NOTICE_FAILED,
+                account.getId(), Map.of());
     }
 
     @Test

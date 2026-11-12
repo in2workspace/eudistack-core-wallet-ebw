@@ -13,9 +13,11 @@ import java.util.Objects;
  * @param securityContact email warned when an account holder disavows an onboarding; {@code null} if not set
  * @param mode            onboarding mode
  * @param signupUrl       https address where a user gets the wallet; {@code null} if not set
+ * @param walletUrl       https address of the tenant's Wallet App, without the trailing slash, where the
+ *                        onboarding address and the "it was not me" link point; {@code null} if not set
  */
 public record OnboardingSettings(boolean enabled, Duration ttl, Duration registrationTtl, String securityContact,
-                                 OnboardingMode mode, String signupUrl) {
+                                 OnboardingMode mode, String signupUrl, String walletUrl) {
 
     public static final Duration DEFAULT_TTL = Duration.ofMinutes(5);
     public static final Duration MAX_TTL = Duration.ofMinutes(10);

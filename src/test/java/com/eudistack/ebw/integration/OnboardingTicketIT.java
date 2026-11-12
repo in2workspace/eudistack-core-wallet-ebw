@@ -57,6 +57,8 @@ class OnboardingTicketIT extends IntegrationTestBase {
     private static final String SECURITY_CONTACT = "security@integrationtest.example";
     private static final String PUBLIC_HOST = TEST_TENANT + ".eudistack.test";
     private static final String ISSUER = "https://" + PUBLIC_HOST + "/verifier";
+    /** The Wallet App on a path of the tenant host, as in every environment (task 44). */
+    private static final String WALLET_URL = "https://" + PUBLIC_HOST + "/wallet";
     private static final String OFFER =
             "openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fissuer.example%2Fcredential-offer%2F3f2a";
 
@@ -69,7 +71,8 @@ class OnboardingTicketIT extends IntegrationTestBase {
         configureTenant(TEST_TENANT + "_business_wallet", Map.of(
                 "ebw.onboarding.enabled", "true",
                 "ebw.onboarding.mode", "open",
-                "ebw.onboarding.security_contact", SECURITY_CONTACT));
+                "ebw.onboarding.security_contact", SECURITY_CONTACT,
+                "ebw.wallet_url", WALLET_URL + "/"));
         provisionSchema(RESTRICTED_SCHEMA);
         configureTenant(RESTRICTED_SCHEMA, Map.of(
                 "ebw.webauthn.rp_id", RESTRICTED_TENANT + ".eudistack.test",
@@ -77,7 +80,8 @@ class OnboardingTicketIT extends IntegrationTestBase {
                 "ebw.onboarding.enabled", "true",
                 "ebw.onboarding.mode", "restricted",
                 "ebw.onboarding.registration_ttl", "PT10M",
-                "ebw.onboarding.signup_url", SIGNUP_URL));
+                "ebw.onboarding.signup_url", SIGNUP_URL,
+                "ebw.wallet_url", RESTRICTED_ORIGIN + "/wallet"));
         provisionSchema(DISABLED_TENANT + "_business_wallet");
         configureTenant(DISABLED_TENANT + "_business_wallet", Map.of(
                 "ebw.webauthn.rp_id", DISABLED_TENANT + ".eudistack.test",
@@ -203,7 +207,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
 
         // Assert
         var url = (String) body.get("onboardingUrl");
-        assertThat(url).matches("https://" + PUBLIC_HOST.replace(".", "\\.") + "/t#[A-Za-z0-9_-]{22}");
+        assertThat(url).matches("https://" + PUBLIC_HOST.replace(".", "\\.") + "/wallet/t#[A-Za-z0-9_-]{22}");
         assertThat(body).containsEntry("expiresIn", 300);
         var ticket = url.substring(url.indexOf('#') + 1);
         assertThat(ticket).hasSize(22);
@@ -729,7 +733,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
         // The new-account email went out with the "it was not me" link (provisional, P5)
         assertThat(notices).hasSize(1);
         var link = notices.get(0).disavowalUrl();
-        assertThat(link).startsWith("https://" + PUBLIC_HOST + "/no-he-sido-yo#");
+        assertThat(link).startsWith(WALLET_URL + "/no-he-sido-yo#");
 
         // And the link works
         disavow(link.substring(link.indexOf('#') + 1)).expectStatus().isNoContent();

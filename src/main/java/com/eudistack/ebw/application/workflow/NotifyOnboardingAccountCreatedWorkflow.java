@@ -5,7 +5,7 @@ import com.eudistack.ebw.domain.model.OnboardingDisavowal;
 import com.eudistack.ebw.domain.repository.OnboardingDisavowalRepository;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.domain.service.AuditService;
-import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
+import com.eudistack.ebw.domain.service.OnboardingSettingsService;
 import com.eudistack.ebw.domain.spi.EmailSender;
 import com.eudistack.ebw.domain.spi.HashProvider;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
@@ -44,7 +44,7 @@ public class NotifyOnboardingAccountCreatedWorkflow {
 
     private final OnboardingDisavowalRepository disavowalRepository;
     private final WalletUserRepository userRepository;
-    private final WalletAuthSettingsService authSettings;
+    private final OnboardingSettingsService onboardingSettings;
     private final EmailSender emailSender;
     private final HashProvider hashProvider;
     private final SecureRandomGenerator randomGenerator;
@@ -53,12 +53,13 @@ public class NotifyOnboardingAccountCreatedWorkflow {
     @SuppressWarnings("java:S107")
     public NotifyOnboardingAccountCreatedWorkflow(OnboardingDisavowalRepository disavowalRepository,
                                                   WalletUserRepository userRepository,
-                                                  WalletAuthSettingsService authSettings, EmailSender emailSender,
+                                                  OnboardingSettingsService onboardingSettings,
+                                                  EmailSender emailSender,
                                                   HashProvider hashProvider, SecureRandomGenerator randomGenerator,
                                                   AuditService auditService) {
         this.disavowalRepository = disavowalRepository;
         this.userRepository = userRepository;
-        this.authSettings = authSettings;
+        this.onboardingSettings = onboardingSettings;
         this.emailSender = emailSender;
         this.hashProvider = hashProvider;
         this.randomGenerator = randomGenerator;
@@ -87,10 +88,11 @@ public class NotifyOnboardingAccountCreatedWorkflow {
     }
 
     private Mono<Void> send(OnboardingDisavowal disavowal, String token) {
-        return Mono.zip(userRepository.findById(disavowal.userId()), authSettings.relyingParty())
+        // The link points at the tenant's Wallet App (ebw.wallet_url, task 44); without it, the email fails.
+        return Mono.zip(userRepository.findById(disavowal.userId()), onboardingSettings.walletUrl())
                 .flatMap(tuple -> emailSender.sendAccountCreatedNotice(tuple.getT1().getEmail(),
                         new AccountCreatedNotice(disavowal.registeredAt(),
-                                "https://" + tuple.getT2().rpId() + DISAVOWAL_PATH + token,
+                                tuple.getT2() + DISAVOWAL_PATH + token,
                                 disavowal.expiresAt(), disavowal.accountCreated()),
                         NOTICE_LOCALE))
                 .timeout(NOTICE_TIMEOUT);

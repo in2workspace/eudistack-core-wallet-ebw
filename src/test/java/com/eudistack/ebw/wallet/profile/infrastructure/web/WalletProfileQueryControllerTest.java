@@ -162,7 +162,7 @@ class WalletProfileQueryControllerTest {
     }
 
     private static OnboardingSettings onboarding(OnboardingMode mode, String signupUrl) {
-        return new OnboardingSettings(true, OnboardingSettings.DEFAULT_TTL, OnboardingSettings.DEFAULT_REGISTRATION_TTL, null, mode, signupUrl);
+        return new OnboardingSettings(true, OnboardingSettings.DEFAULT_TTL, OnboardingSettings.DEFAULT_REGISTRATION_TTL, null, mode, signupUrl, null);
     }
 
     @Test

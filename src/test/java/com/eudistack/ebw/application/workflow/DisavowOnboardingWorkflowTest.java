@@ -87,7 +87,7 @@ class DisavowOnboardingWorkflowTest {
     }
 
     private static OnboardingSettings settings(String securityContact) {
-        return new OnboardingSettings(true, Duration.ofMinutes(5), OnboardingSettings.DEFAULT_REGISTRATION_TTL, securityContact, OnboardingMode.OPEN, null);
+        return new OnboardingSettings(true, Duration.ofMinutes(5), OnboardingSettings.DEFAULT_REGISTRATION_TTL, securityContact, OnboardingMode.OPEN, null, null);
     }
 
     @Test
