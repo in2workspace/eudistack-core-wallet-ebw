@@ -45,6 +45,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -123,6 +124,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         lenient().when(sessionOpener.open(any(), any(), eq(null), eq("registration"))).thenReturn(Mono.just(session));
         lenient().when(disavowalRepository.insert(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         lenient().when(onboardingNotice.notify(any(), any())).thenReturn(Mono.empty());
+        lenient().when(userRepository.lockEmailIgnoreCase(any())).thenReturn(Mono.empty());
     }
 
     private static OnboardingPreregistration withHandle(OnboardingPreregistration p, byte[] handle) {
@@ -165,6 +167,10 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         var created = ArgumentCaptor.forClass(WalletUser.class);
         verify(userRepository).save(created.capture());
         assertThat(created.getValue().getEmail()).isEqualTo(EMAIL);
+        // F1-n: the email is locked before the lookup, so a registration in another case waits for this one
+        var order = inOrder(userRepository);
+        order.verify(userRepository).lockEmailIgnoreCase(EMAIL);
+        order.verify(userRepository).findAllByEmailIgnoreCase(EMAIL);
         assertThat(created.getValue().getWebauthnUserHandle()).isEqualTo(handle);
         verify(transactionRunner).inTransaction(any());
         verify(passkeyRepository).markOnboarding(any(), eq(preregistration.id()));

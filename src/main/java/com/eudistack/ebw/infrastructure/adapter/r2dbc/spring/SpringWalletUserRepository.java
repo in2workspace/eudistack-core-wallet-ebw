@@ -17,4 +17,8 @@ public interface SpringWalletUserRepository extends ReactiveCrudRepository<Walle
 
     @Query("SELECT * FROM wallet_user WHERE id = :id FOR UPDATE")
     Mono<WalletUserEntity> lockById(UUID id);
+
+    /** Transaction-scoped advisory lock on the email ignoring case; the row only signals the lock was taken. */
+    @Query("SELECT 1 FROM pg_advisory_xact_lock(hashtext(lower(:email)))")
+    Mono<Integer> lockEmailIgnoreCase(String email);
 }

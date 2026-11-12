@@ -24,5 +24,12 @@ public interface WalletUserRepository {
      */
     Mono<WalletUser> lockById(UUID id);
 
+    /**
+     * Locks {@code email} ignoring case until the end of the transaction, whether or not an account
+     * has it, so two creations of the same account in different case are serialized (EUD-315, F1-n
+     * of the security audit). Must run inside a transaction: outside one the lock is released at once.
+     */
+    Mono<Void> lockEmailIgnoreCase(String email);
+
     Mono<WalletUser> save(WalletUser user);
 }

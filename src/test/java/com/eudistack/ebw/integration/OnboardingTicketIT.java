@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
@@ -813,6 +814,38 @@ class OnboardingTicketIT extends IntegrationTestBase {
         assertThat(results).containsExactlyInAnyOrder(HttpStatus.CREATED, HttpStatus.UNAUTHORIZED);
         assertThat(countInTestTenant("wallet_user WHERE email = '" + email + "'")).isEqualTo(1);
         assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isEqualTo(1);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void onboarding_twoConcurrentRegistrationsOfTheEmailInDifferentCase_createOneAccount() {
+        // Arrange: EC-04 and EC-15 (F1-n of the security audit), "Ana@x" and "ana@x" without account, both
+        // redeemed. wallet_user.email is unique only exactly: only the email lock keeps a second account out.
+        captureNotices();
+        var email = email("concurrentcase");
+        var client = authClient();
+        var registrations = new ArrayList<Supplier<EntityExchangeResult<String>>>();
+        for (var spelling : List.of(email, Character.toUpperCase(email.charAt(0)) + email.substring(1))) {
+            var registrationTicket = registrationTicketOf(ticketFor(spelling, TEST_TENANT), TEST_TENANT);
+            var options = client.registrationOptions(registrationTicket);
+            var credential = new SoftwareAuthenticator(TEST_ORIGIN).register((Map<String, Object>) options.get("publicKey"));
+            registrations.add(() -> client.registerSpec(registrationTicket, options.get("ceremonyId"), credential,
+                    true, null).expectBody(String.class).returnResult());
+        }
+
+        // Act
+        var running = registrations.stream().map(CompletableFuture::supplyAsync).toList();
+        var results = running.stream().map(CompletableFuture::join).toList();
+
+        // Assert: one account with one passkey; the other registration is invalid_ticket
+        assertThat(results).extracting(result -> result.getStatus().value())
+                .containsExactlyInAnyOrder(HttpStatus.CREATED.value(), HttpStatus.UNAUTHORIZED.value());
+        assertThat(results).filteredOn(result -> result.getStatus().value() == HttpStatus.UNAUTHORIZED.value())
+                .singleElement().extracting(EntityExchangeResult::getResponseBody).asString()
+                .contains("\"invalid_ticket\"");
+        assertThat(countInTestTenant("wallet_user WHERE lower(email) = '" + email + "'")).isEqualTo(1);
+        assertThat(countInTestTenant("user_passkey WHERE user_id = (SELECT id FROM " + TEST_TENANT
+                + "_business_wallet.wallet_user WHERE lower(email) = '" + email + "')")).isEqualTo(1);
     }
 
     @Test

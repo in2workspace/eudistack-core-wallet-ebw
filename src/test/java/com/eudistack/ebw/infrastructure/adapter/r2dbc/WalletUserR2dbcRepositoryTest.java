@@ -98,4 +98,14 @@ class WalletUserR2dbcRepositoryTest {
         verify(springRepository).save(saved.capture());
         assertThat(saved.getValue().isNew()).isFalse();
     }
+
+    @Test
+    void lockEmailIgnoreCase_takesTheLockAndCompletesEmpty() {
+        // Arrange
+        when(springRepository.lockEmailIgnoreCase("Holder@Example.com")).thenReturn(Mono.just(1));
+
+        // Act + Assert
+        StepVerifier.create(repository.lockEmailIgnoreCase("Holder@Example.com")).verifyComplete();
+        verify(springRepository).lockEmailIgnoreCase("Holder@Example.com");
+    }
 }

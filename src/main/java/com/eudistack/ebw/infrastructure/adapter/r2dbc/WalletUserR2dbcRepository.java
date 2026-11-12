@@ -32,6 +32,11 @@ public class WalletUserR2dbcRepository implements WalletUserRepository {
     }
 
     @Override
+    public Mono<Void> lockEmailIgnoreCase(String email) {
+        return springRepository.lockEmailIgnoreCase(email).then();
+    }
+
+    @Override
     public Mono<WalletUser> findByEmail(String email) {
         return springRepository.findByEmail(email).map(UserMapper::toDomain);
     }

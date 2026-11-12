@@ -181,8 +181,12 @@ public class RegisterOnboardingPasskeyWorkflow {
                                                     AuthAuditEvents.ACCOUNT_RECOGNIZED, user.getId(), Map.of())
                                             .thenReturn(new OnboardingAccount(user, false))));
         }
-        // Ignoring the case of the email (decision P16): one account or several, the ticket does not create another
-        return userRepository.findAllByEmailIgnoreCase(preregistration.email())
+        // Ignoring the case of the email (decision P16): one account or several, the ticket does not create another.
+        // wallet_user.email is unique only exactly, so two registrations of "Ana@x" and "ana@x" could both find
+        // nothing and both insert: the advisory lock serializes them and the second finds the first (F1-n of the
+        // security audit). It becomes redundant once a unique index on lower(email) exists (issue P16, tasks.md).
+        return userRepository.lockEmailIgnoreCase(preregistration.email())
+                .thenMany(userRepository.findAllByEmailIgnoreCase(preregistration.email()))
                 .next()
                 .flatMap(existing -> Mono.<OnboardingAccount>error(
                         new OnboardingAccountConflictException("account_appeared")))
