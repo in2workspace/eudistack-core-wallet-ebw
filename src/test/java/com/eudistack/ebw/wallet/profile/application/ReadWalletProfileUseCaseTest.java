@@ -107,7 +107,7 @@ class ReadWalletProfileUseCaseTest {
     @Test
     void queryByCurrentTenant_portReturnsServerProfile_emitsProfileUnchanged() {
         TenantWalletProfile profile =
-                new TenantWalletProfile("kpmg", WalletMode.SERVER, KeyManager.HSM, NOW, NOW);
+                new TenantWalletProfile("kpmg", WalletMode.SERVER, KeyManager.DB, NOW, NOW);
         when(walletProfileReadPort.findCurrent()).thenReturn(Mono.just(profile));
 
         StepVerifier.create(
@@ -116,7 +116,7 @@ class ReadWalletProfileUseCaseTest {
                 .assertNext(result -> {
                     assertThat(result.tenant()).isEqualTo("kpmg");
                     assertThat(result.walletMode()).isEqualTo(WalletMode.SERVER);
-                    assertThat(result.keyManager()).isEqualTo(KeyManager.HSM);
+                    assertThat(result.keyManager()).isEqualTo(KeyManager.DB);
                 })
                 .verifyComplete();
     }

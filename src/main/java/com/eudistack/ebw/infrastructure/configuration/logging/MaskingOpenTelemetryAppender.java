@@ -29,24 +29,30 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
         return new MaskedLoggingEvent(event);
     }
 
-    /** Masks the message, the MDC, the key-value pairs and the exception; forwards everything else. */
+    /**
+     * Masks the message, the MDC, the key-value pairs and the exception; forwards everything else. The
+     * message of the key audit events keeps its UUIDs.
+     */
     private static final class MaskedLoggingEvent extends DelegatingLoggingEvent {
 
         private final IThrowableProxy throwableProxy;
+        // The key audit events keep their UUIDs (EUD-326 FR-04); every other record masks them
+        private final boolean maskUuids;
 
         private MaskedLoggingEvent(ILoggingEvent delegate) {
             super(delegate);
+            this.maskUuids = !MaskingPatternLayout.keepsIdentifiers(delegate);
             this.throwableProxy = MaskedThrowableProxy.of(delegate.getThrowableProxy());
         }
 
         @Override
         public String getFormattedMessage() {
-            return MaskingPatternLayout.mask(MaskingPatternLayout.truncate(super.getFormattedMessage()));
+            return MaskingPatternLayout.mask(MaskingPatternLayout.truncate(super.getFormattedMessage()), maskUuids);
         }
 
         @Override
         public String getMessage() {
-            return MaskingPatternLayout.mask(MaskingPatternLayout.truncate(super.getMessage()));
+            return MaskingPatternLayout.mask(MaskingPatternLayout.truncate(super.getMessage()), maskUuids);
         }
 
         // Emptied so no downstream consumer re-renders the unmasked original from

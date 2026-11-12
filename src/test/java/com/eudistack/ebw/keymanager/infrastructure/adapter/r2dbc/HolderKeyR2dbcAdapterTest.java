@@ -192,6 +192,35 @@ class HolderKeyR2dbcAdapterTest {
                 .hasMessage("Failed to serialize public JWK for database");
     }
 
+    @Test
+    void deleteById_keyOfTheHolder_bindsTenantHolderAndKeyAndReportsDeleted() {
+        // Arrange
+        var keyId = HolderKeyId.generate();
+
+        // Act
+        var result = adapter.deleteById(TENANT, HOLDER, keyId);
+
+        // Assert
+        StepVerifier.create(result).expectNext(true).verifyComplete();
+        assertThat(db.bindings)
+                .containsEntry("tenantId", TENANT)
+                .containsEntry("holderId", HOLDER)
+                .containsEntry("keyId", keyId.value().toString());
+        assertThat(db.executedSql.get(0)).contains("DELETE FROM holder_key");
+    }
+
+    @Test
+    void deleteById_noMatchingKey_reportsNotDeleted() {
+        // Arrange
+        db.rowsUpdated = Mono.just(0L);
+
+        // Act
+        var result = adapter.deleteById(TENANT, HOLDER, HolderKeyId.generate());
+
+        // Assert
+        StepVerifier.create(result).expectNext(false).verifyComplete();
+    }
+
     private static HolderKey holderKey(Instant revokedAt) {
         return new HolderKey(HolderKeyId.generate(), TENANT, HOLDER, CREDENTIAL, CredentialFormat.SD_JWT_VC,
                 KeyAlgorithm.ES256, new byte[]{1, 2, 3}, new JwkPublic(JWK), CREATED_AT, revokedAt);

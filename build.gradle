@@ -11,7 +11,7 @@ plugins {
 }
 
 group = 'com.eudistack'
-version = '2.0.2'
+version = '2.1.0'
 ext['netty.version'] = '4.1.132.Final'
 
 java {
@@ -67,9 +67,6 @@ dependencies {
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.22.2'
     implementation 'com.nimbusds:nimbus-jose-jwt:10.9.1'
 
-    // --- AWS SDK v2 ---
-    implementation 'software.amazon.awssdk:cloudwatchlogs:2.31.78'
-
     // --- WebAuthn Relying Party (EUD-308, design AD-1) ---
     implementation 'com.webauthn4j:webauthn4j-core:0.31.11.RELEASE'
 
@@ -107,7 +104,6 @@ dependencies {
     testImplementation 'org.springframework.security:spring-security-test'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.0'
     testImplementation 'org.testcontainers:junit-jupiter'
-    testImplementation 'org.testcontainers:localstack'
     testImplementation 'org.testcontainers:postgresql'
     testImplementation 'org.testcontainers:r2dbc'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

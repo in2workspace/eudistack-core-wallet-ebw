@@ -59,8 +59,8 @@ public class CredentialController {
             JwtAuthenticationToken auth) {
         return storeCredentialWorkflow.storeCredential(
                         auth.getUserId(), request.credentialRaw(), request.format(),
-                        request.credentialConfigurationId(), request.kid(), request.issuerMetadata(), null,
-                        auth.getPasskeyId())
+                        request.credentialConfigurationId(), request.kid(), request.issuerMetadata(),
+                        request.holderKeyId(), request.holderPublicJwk(), auth.getPasskeyId())
                 .map(credential -> ResponseEntity
                         .created(URI.create("/api/v1/credentials/" + credential.getId()))
                         .body(CredentialDetailResponse.from(credential)));

@@ -33,6 +33,8 @@ public class WalletCredential {
     private UUID passkeyId;
     /** Whether the attestation is cryptographically bound to the holder (has {@code cnf}). */
     private boolean bound;
+    /** Custody mode the attestation was obtained with; {@code null} when it is not bound or has no custody. */
+    private CustodyMode custodyMode;
 
     @SuppressWarnings("java:S107")
     public static WalletCredential create(UUID userId, String credentialRaw, CredentialFormat format,
@@ -40,12 +42,12 @@ public class WalletCredential {
                                            String vct, String issuer, String subject,
                                            Instant issuanceDate, Instant expirationDate,
                                            Map<String, Object> issuerMetadata, String holderKeyId,
-                                           boolean bound, UUID passkeyId) {
+                                           boolean bound, UUID passkeyId, CustodyMode custodyMode) {
         var now = Instant.now();
         return new WalletCredential(UUID.randomUUID(), userId, credentialRaw, format,
                 credentialConfigId, kid, credentialType, vct, issuer, subject,
                 issuanceDate, expirationDate, CredentialStatus.VALID, issuerMetadata, holderKeyId, now, now,
-                bound ? passkeyId : null, bound);
+                bound ? passkeyId : null, bound, bound ? custodyMode : null);
     }
 
     /**

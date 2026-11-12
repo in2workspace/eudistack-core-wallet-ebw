@@ -109,6 +109,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
     }
 
+    @ExceptionHandler(HolderKeyMismatchException.class)
+    public ResponseEntity<ProblemDetail> handleHolderKeyMismatch(HolderKeyMismatchException ex) {
+        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setType(URI.create("urn:eudistack:error:holder-key-mismatch"));
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(problem);
+    }
+
     @ExceptionHandler(UnsupportedFormatException.class)
     public ResponseEntity<ProblemDetail> handleUnsupportedFormat(UnsupportedFormatException ex) {
         var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
