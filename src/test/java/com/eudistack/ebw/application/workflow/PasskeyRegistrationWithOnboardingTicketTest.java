@@ -51,7 +51,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for the onboarding path of {@link PasskeyRegistrationWorkflow} (EUD-315 task 6: AC-03,
+ * Unit tests for the onboarding path of {@link PasskeyRegistrationWorkflow}, registered by
+ * {@link RegisterOnboardingPasskeyWorkflow} (EUD-315 task 6: AC-03,
  * EC-01, EC-04, EC-07, EC-11, EC-13; decisions P2, P6, P7 and P9).
  */
 @ExtendWith(MockitoExtension.class)
@@ -87,9 +88,14 @@ class PasskeyRegistrationWithOnboardingTicketTest {
 
     @BeforeEach
     void setUp() {
+        var steps = new PasskeyRegistrationSteps(passkeyRepository, ceremonyRepository, settingsService, custodyPolicy,
+                webAuthnVerifier, auditService);
+        var onboardingRegistration = new RegisterOnboardingPasskeyWorkflow(ticketService, userRepository,
+                passkeyRepository, sessionOpener, auditService, transactionRunner, preregistrationRepository,
+                disavowalRepository, onboardingNotice, steps);
         workflow = new PasskeyRegistrationWorkflow(ticketService, userRepository, passkeyRepository, ceremonyRepository,
-                settingsService, custodyPolicy, webAuthnVerifier, randomGenerator, sessionOpener, emailSender,
-                auditService, transactionRunner, preregistrationRepository, disavowalRepository, onboardingNotice);
+                randomGenerator, sessionOpener, emailSender, auditService, transactionRunner, steps,
+                onboardingRegistration);
         handle = new byte[WalletUser.USER_HANDLE_LENGTH];
         Arrays.fill(handle, (byte) 7);
         preregistration = withHandle(OnboardingPreregistration.create("h", EMAIL, null, "portal-machine.example.org",

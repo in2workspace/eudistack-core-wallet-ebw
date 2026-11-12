@@ -81,9 +81,14 @@ class PasskeyRegistrationWorkflowTest {
 
     @BeforeEach
     void setUp() {
+        var steps = new PasskeyRegistrationSteps(passkeyRepository, ceremonyRepository, settingsService, custodyPolicy,
+                webAuthnVerifier, auditService);
+        var onboardingRegistration = new RegisterOnboardingPasskeyWorkflow(ticketService, userRepository,
+                passkeyRepository, sessionOpener, auditService, transactionRunner, preregistrationRepository,
+                disavowalRepository, onboardingNotice, steps);
         workflow = new PasskeyRegistrationWorkflow(ticketService, userRepository, passkeyRepository, ceremonyRepository,
-                settingsService, custodyPolicy, webAuthnVerifier, randomGenerator, sessionOpener, emailSender,
-                auditService, transactionRunner, preregistrationRepository, disavowalRepository, onboardingNotice);
+                randomGenerator, sessionOpener, emailSender, auditService, transactionRunner, steps,
+                onboardingRegistration);
         user = TestPasskeys.user("holder@example.com");
         ticket = RegistrationTicket.issue(user.getId(), "hash");
         ceremony = WebAuthnCeremony.startRegistration(new byte[32], user.getId(), ticket.id());
