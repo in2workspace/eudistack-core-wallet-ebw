@@ -143,8 +143,10 @@ class OnboardingSettingsServiceTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"http://sandbox.example.org/wallet", "sandbox.example.org/wallet", "https://",
-            "https://exa mple.org", "https://sandbox.example.org/wallet?x=1", "https://sandbox.example.org/wallet#t"})
-    void current_walletUrlNotHttpsOrWithQueryOrFragment_isIgnored(String raw) {
+            "https://exa mple.org", "https://sandbox.example.org/wallet?x=1", "https://sandbox.example.org/wallet#t",
+            "https://user@sandbox.example.org/wallet", "https://cgcom.eudistack.net@evil.example/wallet",
+            "https://user:pass@sandbox.example.org/wallet"})
+    void current_walletUrlNotHttpsOrWithUserinfoQueryOrFragment_isIgnored(String raw) {
         // Arrange
         config(OnboardingSettingsService.WALLET_URL, raw);
 

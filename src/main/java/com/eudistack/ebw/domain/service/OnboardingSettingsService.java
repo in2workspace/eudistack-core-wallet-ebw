@@ -29,9 +29,10 @@ import java.time.format.DateTimeParseException;
  *       {@code restricted}.</li>
  *   <li>{@value #SIGNUP_URL}: onboarding address of the tenant, only if it is an https URL.</li>
  *   <li>{@value #WALLET_URL}: https address of the tenant's Wallet App, like {@code issuer.wallet_url}
- *       (EUD-315 task 44). The Wallet App is served on a path of the tenant host ({@code /wallet}) and
- *       this service on another ({@code /business-wallet}), so the address is neither the WebAuthn
- *       {@code rpId} nor the origin of the request. Required for onboarding tickets; no default.</li>
+ *       (EUD-315 task 44), without userinfo, query nor fragment; any other value is ignored. The Wallet
+ *       App is served on a path of the tenant host ({@code /wallet}) and this service on another
+ *       ({@code /business-wallet}), so the address is neither the WebAuthn {@code rpId} nor the origin
+ *       of the request. Required for onboarding tickets; no default.</li>
  * </ul>
  */
 public class OnboardingSettingsService {
@@ -132,8 +133,10 @@ public class OnboardingSettingsService {
         }
         try {
             var uri = new URI(raw.trim());
-            if ("https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null && uri.getRawQuery() == null
-                    && uri.getRawFragment() == null) {
+            // Userinfo is rejected: https://<tenant host>@evil.example/wallet reads like the tenant's address
+            // but opens another host (EUD-315 review round 3, F1-r3).
+            if ("https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null && uri.getRawUserInfo() == null
+                    && uri.getRawQuery() == null && uri.getRawFragment() == null) {
                 var url = uri.toString();
                 while (url.endsWith("/")) {
                     url = url.substring(0, url.length() - 1);
@@ -143,7 +146,8 @@ public class OnboardingSettingsService {
         } catch (URISyntaxException _) {
             // Logged below.
         }
-        log.warn("tenant_config '{}' is not an https URL without query nor fragment; it is ignored", WALLET_URL);
+        log.warn("tenant_config '{}' is not an https URL without userinfo, query nor fragment; it is ignored",
+                WALLET_URL);
         return null;
     }
 
