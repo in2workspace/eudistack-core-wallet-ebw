@@ -1,5 +1,6 @@
 package com.eudistack.ebw.integration;
 
+import com.eudistack.ebw.domain.model.CredentialFormat;
 import com.eudistack.ebw.domain.model.CredentialStatus;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.model.WalletCredential;
@@ -12,6 +13,7 @@ import org.springframework.r2dbc.core.DatabaseClient;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -92,16 +94,44 @@ class CredentialRepositoryInsertUpdateIntegrationTest extends IntegrationTestBas
         assertThat(loaded).isNotNull();
         assertThat(loaded.getStatus()).isEqualTo(CredentialStatus.VALID);
 
-        loaded.setStatus(CredentialStatus.SUSPENDED);
+        loaded.setStatus(CredentialStatus.REVOKED);
         loaded.setUpdatedAt(Instant.now());
 
         StepVerifier.create(withTenantContext(credentialRepository.update(loaded)))
-                .assertNext(saved -> assertThat(saved.getStatus()).isEqualTo(CredentialStatus.SUSPENDED))
+                .assertNext(saved -> assertThat(saved.getStatus()).isEqualTo(CredentialStatus.REVOKED))
                 .verifyComplete();
 
         var reloaded = findByIdAndUserId(id, userId);
         assertThat(reloaded).isNotNull();
-        assertThat(reloaded.getStatus()).isEqualTo(CredentialStatus.SUSPENDED);
+        assertThat(reloaded.getStatus()).isEqualTo(CredentialStatus.REVOKED);
+    }
+
+    @Test
+    void findOrphanedExpired_mixedCredentials_returnsOnlyBoundWithoutPasskeyAndExpired() {
+        // Arrange
+        var userId = resolveUserId(email);
+        var now = Instant.now();
+        var orphanExpired = insertCredential(userId, true, now.minus(Duration.ofDays(1)));
+        var orphanNotExpired = insertCredential(userId, true, now.plus(Duration.ofDays(1)));
+        var orphanWithoutExpiration = insertCredential(userId, true, null);
+        var unboundExpired = insertCredential(userId, false, now.minus(Duration.ofDays(1)));
+
+        // Act
+        var result = withTenantContext(credentialRepository.findOrphanedExpired(now).collectList()).block();
+
+        // Assert
+        assertThat(result).extracting(WalletCredential::getId)
+                .contains(orphanExpired.getId())
+                .doesNotContain(orphanNotExpired.getId(), orphanWithoutExpiration.getId(), unboundExpired.getId());
+    }
+
+    private WalletCredential insertCredential(UUID userId, boolean bound, Instant expirationDate) {
+        var suffix = System.nanoTime();
+        var credential = WalletCredential.create(userId, "raw-" + suffix, CredentialFormat.JWT_VC_JSON,
+                "config-orphan-" + suffix, "kid-orphan-" + suffix, "TestCredential", null,
+                "https://issuer-orphan.com", "did:example:orphan", Instant.now().minus(Duration.ofDays(30)),
+                expirationDate, Map.of(), null, bound, null, null);
+        return withTenantContext(credentialRepository.insert(credential)).block();
     }
 
     @SuppressWarnings("unchecked")

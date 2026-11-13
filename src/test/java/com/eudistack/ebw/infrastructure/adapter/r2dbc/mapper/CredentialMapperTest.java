@@ -28,7 +28,7 @@ class CredentialMapperTest {
         var metadata = Map.<String, Object>of("credential_issuer", "https://issuer", "display", List.of("x"));
         var credential = new WalletCredential(UUID.randomUUID(), UUID.randomUUID(), "raw", CredentialFormat.JWT_VC_JSON,
                 "cfg-1", "kid-1", "LEARCredentialEmployee", "urn:vct", "https://issuer", "did:sub",
-                now, now.plusSeconds(3600), CredentialStatus.SUSPENDED, metadata, "hk-1", now, now.plusSeconds(1), null, false, null);
+                now, now.plusSeconds(3600), CredentialStatus.REVOKED, metadata, "hk-1", now, now.plusSeconds(1), null, false, null);
 
         // Act
         var entity = CredentialMapper.toEntity(credential);
@@ -36,7 +36,7 @@ class CredentialMapperTest {
 
         // Assert
         assertThat(entity.getFormat()).isEqualTo("jwt_vc_json");
-        assertThat(entity.getStatus()).isEqualTo("SUSPENDED");
+        assertThat(entity.getStatus()).isEqualTo("REVOKED");
         assertThat(entity.isNew()).isFalse();
         assertThat(roundTripped).usingRecursiveComparison().isEqualTo(credential);
     }
