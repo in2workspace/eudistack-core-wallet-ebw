@@ -25,7 +25,7 @@ class ClientIpResolverTest {
 
     private static ClientIpResolver resolverWithProxies(int proxies) {
         return new ClientIpResolver(
-                new RateLimitProperties(10, 10, 10, 10, 10, 10, 10, 10, proxies, Duration.ofHours(1)));
+                new RateLimitProperties(10, 10, 10, 10, 10, 10, 10, 10, 10, 10, proxies, Duration.ofHours(1)));
     }
 
     private static MockServerHttpRequest.BaseBuilder<?> request() {

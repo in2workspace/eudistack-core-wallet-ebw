@@ -69,11 +69,20 @@ ebw:
     passkey-registration-per-ip: 20
     session-per-ip: 60
     passkey-prf-sign-per-ip: 30
+    # Onboarding ticket redemption and "it was not me" per origin IP and window (FR-30).
+    onboarding-redeem-per-ip: 10
+    onboarding-disavowal-per-ip: 10
     # Proxies of ours in front of the service (CloudFront + ALB): the client address is the entry this
     # many places from the end of X-Forwarded-For, never the first one, which the client controls.
     # A request with fewer entries did not go through all of them and is counted by its connection address.
     trusted-proxies: ${RATE_LIMIT_TRUSTED_PROXIES:2}
     window: 1h
+  # Tenant's Verifier, issuer of the system tokens of POST /onboarding-tickets (EUD-315).
+  # Without internal-url the service starts, and that endpoint answers 503.
+  verifier:
+    internal-url: ${APP_VERIFIER_INTERNAL_URL:}
+    # Public base path of the Verifier on the tenant host: expected iss = request origin + base-path.
+    base-path: ${APP_VERIFIER_BASE_PATH:/verifier}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:4200}
     origins-path: ${APP_CORS_ORIGINS_PATH:}

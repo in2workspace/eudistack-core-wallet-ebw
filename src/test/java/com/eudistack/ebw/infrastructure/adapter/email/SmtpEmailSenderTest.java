@@ -1,5 +1,7 @@
 package com.eudistack.ebw.infrastructure.adapter.email;
 
+import com.eudistack.ebw.domain.model.AccountCreatedNotice;
+import com.eudistack.ebw.domain.model.OnboardingAlert;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.repository.TenantRegistryRepository;
 import com.eudistack.ebw.domain.service.TenantConfigService;
@@ -22,8 +24,10 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 
@@ -114,6 +118,106 @@ class SmtpEmailSenderTest {
                 .contains("https://assets.example.com/tenants/dome/email/logo.png")
                 .contains("cid:icon-github.png");
         assertThat(contentIds(message)).containsExactly("<icon-github.png>");
+    }
+
+    @Test
+    void sendOnboardingAlert_securityContact_getsTheMaskedEmailAndTheDateWithoutTheSystem() throws Exception {
+        // Arrange: FR-32, the alert never carries the holder's full email
+        when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
+        var alert = new OnboardingAlert(OnboardingAlert.mask("ana.garcia@cgcom.es"),
+                Instant.parse("2026-10-30T09:42:00Z"), true);
+
+        // Act
+        StepVerifier.create(sender.sendOnboardingAlert("security@cgcom.es", alert, Locale.ENGLISH)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "cgcom")))
+                .verifyComplete();
+
+        // Assert
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).isEqualTo("Wallet onboarding not recognized — CGCOM");
+        assertThat(message.getAllRecipients()).extracting(Address::toString).containsExactly("security@cgcom.es");
+        assertThat(htmlOf(message))
+                .contains("The holder of a***@cgcom.es has said they did not create their wallet.")
+                .contains("Created: 30/10/2026 10:42")
+                .doesNotContain("System that requested the onboarding")
+                .doesNotContain("ana.garcia");
+    }
+
+    @Test
+    void sendOnboardingAlert_accountThatAlreadyExisted_saysAPasskeyWasAdded() throws Exception {
+        // Arrange: EC-01, P17 (provisional texts)
+        when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
+        var alert = new OnboardingAlert(OnboardingAlert.mask("ana.garcia@cgcom.es"),
+                Instant.parse("2026-10-30T09:42:00Z"), false);
+
+        // Act
+        StepVerifier.create(sender.sendOnboardingAlert("security@cgcom.es", alert, Locale.ENGLISH)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "cgcom")))
+                .verifyComplete();
+
+        // Assert
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).isEqualTo("Wallet passkey not recognized — CGCOM");
+        assertThat(htmlOf(message))
+                .contains("The holder of a***@cgcom.es has said they did not add the new passkey to their wallet.")
+                .contains("Added: 30/10/2026 10:42")
+                .doesNotContain("did not create their wallet")
+                .doesNotContain("ana.garcia");
+    }
+
+    @Test
+    void sendAccountCreatedNotice_accountThatAlreadyExisted_saysAPasskeyWasAdded() throws Exception {
+        // Arrange: EC-01, P17 (provisional texts)
+        when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
+        var notice = new AccountCreatedNotice(Instant.parse("2026-10-30T09:42:00Z"),
+                "https://cgcom.eudistack.net/not-me#tok", Instant.parse("2026-11-06T09:42:00Z"),
+                false);
+
+        // Act
+        StepVerifier.create(sender.sendAccountCreatedNotice("ana@cgcom.es", notice, Locale.ENGLISH)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "cgcom")))
+                .verifyComplete();
+
+        // Assert
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).isEqualTo("A passkey has been added to your CGCOM wallet");
+        assertThat(htmlOf(message))
+                .contains("On 30/10/2026 10:42 a passkey was added to your CGCOM wallet.")
+                .contains("A passkey has been added to your wallet")
+                .contains("href=\"https://cgcom.eudistack.net/not-me#tok\"")
+                .doesNotContain("your wallet was created");
+    }
+
+    @Test
+    void sendAccountCreatedNotice_holder_getsOnlyTheDateAndTheLinkWithoutTheSystem() throws Exception {
+        // Arrange: FR-29
+        when(tenantRegistryRepository.findDisplayName("cgcom")).thenReturn(Mono.just("CGCOM"));
+        var notice = new AccountCreatedNotice(Instant.parse("2026-10-30T09:42:00Z"),
+                "https://cgcom.eudistack.net/not-me#tok", Instant.parse("2026-11-06T09:42:00Z"),
+                true);
+
+        // Act
+        StepVerifier.create(sender.sendAccountCreatedNotice("ana@cgcom.es", notice, Locale.ENGLISH)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "cgcom")))
+                .verifyComplete();
+
+        // Assert
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).isEqualTo("Your CGCOM wallet has been created");
+        assertThat(htmlOf(message))
+                .contains("On 30/10/2026 10:42 your CGCOM wallet was created.")
+                .doesNotContain("on the device")
+                .doesNotContain("Test device")
+                .contains("href=\"https://cgcom.eudistack.net/not-me#tok\"")
+                .contains("The link expires on 06/11/2026.");
     }
 
     @Test

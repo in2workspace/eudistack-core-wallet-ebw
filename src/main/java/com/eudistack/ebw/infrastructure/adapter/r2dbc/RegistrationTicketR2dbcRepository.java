@@ -15,12 +15,12 @@ import java.util.UUID;
 public class RegistrationTicketR2dbcRepository implements RegistrationTicketRepository {
 
     private static final String INSERT_SQL = """
-            INSERT INTO registration_ticket (id, user_id, token_hash, expires_at, created_at)
-            VALUES (:id, :userId, :tokenHash, :expiresAt, :createdAt)
+            INSERT INTO registration_ticket (id, user_id, preregistration_id, token_hash, expires_at, created_at)
+            VALUES (:id, :userId, :preregistrationId, :tokenHash, :expiresAt, :createdAt)
             """;
 
     private static final String FIND_USABLE_SQL = """
-            SELECT id, user_id, token_hash, expires_at, consumed_at, created_at FROM registration_ticket
+            SELECT id, user_id, preregistration_id, token_hash, expires_at, consumed_at, created_at FROM registration_ticket
              WHERE token_hash = :tokenHash AND consumed_at IS NULL AND expires_at > now()
             """;
 
@@ -39,14 +39,16 @@ public class RegistrationTicketR2dbcRepository implements RegistrationTicketRepo
 
     @Override
     public Mono<RegistrationTicket> insert(RegistrationTicket ticket) {
-        return databaseClient.sql(INSERT_SQL)
+        var spec = databaseClient.sql(INSERT_SQL)
                 .bind("id", ticket.id())
-                .bind("userId", ticket.userId())
                 .bind("tokenHash", ticket.tokenHash())
                 .bind("expiresAt", ticket.expiresAt())
-                .bind("createdAt", ticket.createdAt())
-                .fetch().rowsUpdated()
-                .thenReturn(ticket);
+                .bind("createdAt", ticket.createdAt());
+        spec = ticket.userId() == null ? spec.bindNull("userId", UUID.class) : spec.bind("userId", ticket.userId());
+        spec = ticket.preregistrationId() == null
+                ? spec.bindNull("preregistrationId", UUID.class)
+                : spec.bind("preregistrationId", ticket.preregistrationId());
+        return spec.fetch().rowsUpdated().thenReturn(ticket);
     }
 
     @Override
@@ -71,6 +73,7 @@ public class RegistrationTicketR2dbcRepository implements RegistrationTicketRepo
         return new RegistrationTicket(
                 row.get("id", UUID.class),
                 row.get("user_id", UUID.class),
+                row.get("preregistration_id", UUID.class),
                 row.get("token_hash", String.class),
                 row.get("expires_at", Instant.class),
                 row.get("consumed_at", Instant.class),

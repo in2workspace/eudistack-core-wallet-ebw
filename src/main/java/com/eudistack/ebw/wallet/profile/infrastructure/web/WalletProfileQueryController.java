@@ -1,6 +1,7 @@
 package com.eudistack.ebw.wallet.profile.infrastructure.web;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.domain.service.OnboardingSettingsService;
 import com.eudistack.ebw.wallet.profile.infrastructure.observability.WalletProfileQueryTelemetry;
 import com.eudistack.ebw.wallet.profile.infrastructure.web.dto.WalletConfigMetadataResponse;
 import com.eudistack.ebw.wallet.profile.domain.port.WalletProfileQueryPort;
@@ -42,11 +43,14 @@ public class WalletProfileQueryController {
 
     private final WalletProfileQueryPort walletProfileQueryPort;
     private final WalletProfileQueryTelemetry telemetry;
+    private final OnboardingSettingsService onboardingSettingsService;
 
     public WalletProfileQueryController(WalletProfileQueryPort walletProfileQueryPort,
-                                        WalletProfileQueryTelemetry telemetry) {
+                                        WalletProfileQueryTelemetry telemetry,
+                                        OnboardingSettingsService onboardingSettingsService) {
         this.walletProfileQueryPort = walletProfileQueryPort;
         this.telemetry = telemetry;
+        this.onboardingSettingsService = onboardingSettingsService;
     }
 
     /**
@@ -54,7 +58,8 @@ public class WalletProfileQueryController {
      *
      * <p>The tenant is resolved implicitly from the Reactor Context set by
      * {@code TenantDomainWebFilter}. The response body is a {@link WalletConfigMetadataResponse}
-     * JSON object with {@code wallet_mode} and, when applicable, {@code key_manager}.
+     * JSON object with {@code wallet_mode}, {@code onboarding_mode} and, when applicable,
+     * {@code key_manager} and {@code signup_url} (EUD-315, design §2.7).
      *
      * @return 200 with the discovery JSON + security and cache headers on success;
      *         error signals propagated to {@link WalletProfileQueryExceptionHandler}
@@ -63,10 +68,11 @@ public class WalletProfileQueryController {
     public Mono<ResponseEntity<WalletConfigMetadataResponse>> getWalletConfigMetadata() {
         long startNanos = System.nanoTime();
         return walletProfileQueryPort.queryByCurrentTenant()
-                .flatMap(profile -> Mono.deferContextual(ctx -> {
+                .zipWith(onboardingSettingsService.current())
+                .flatMap(tuple -> Mono.deferContextual(ctx -> {
                     String tenant = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "unknown");
                     telemetry.recordSuccess(tenant, startNanos);
-                    WalletConfigMetadataResponse body = WalletConfigMetadataResponse.from(profile);
+                    WalletConfigMetadataResponse body = WalletConfigMetadataResponse.from(tuple.getT1(), tuple.getT2());
                     ResponseEntity<WalletConfigMetadataResponse> response =
                             ResponseEntity.status(HttpStatus.OK)
                                     .header(HEADER_CACHE_CONTROL, HEADER_CACHE_CONTROL_VALUE)

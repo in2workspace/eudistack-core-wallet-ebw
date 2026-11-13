@@ -35,6 +35,9 @@ ebw:
     passkey-registration-per-ip: 1000
     session-per-ip: 1000
     passkey-prf-sign-per-ip: 1000
+    # Onboarding ticket redemption and "it was not me" per origin IP and window (FR-30).
+    onboarding-redeem-per-ip: 10
+    onboarding-disavowal-per-ip: 10
     trusted-proxies: 2
     window: 1h
   cors:

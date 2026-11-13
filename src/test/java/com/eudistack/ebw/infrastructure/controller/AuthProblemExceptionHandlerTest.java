@@ -5,6 +5,7 @@ import com.eudistack.ebw.domain.model.exception.AuthenticationFailedException;
 import com.eudistack.ebw.domain.model.exception.InvalidOtpException;
 import com.eudistack.ebw.domain.model.exception.InvalidSessionException;
 import com.eudistack.ebw.domain.model.exception.InvalidTicketException;
+import com.eudistack.ebw.domain.model.exception.NoAccountException;
 import com.eudistack.ebw.domain.model.exception.OtpExpiredException;
 import com.eudistack.ebw.domain.model.exception.PasskeyPrfUnsupportedException;
 import com.eudistack.ebw.domain.model.exception.RateLimitExceededException;
@@ -75,6 +76,28 @@ class AuthProblemExceptionHandlerTest {
         assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
         assertThat(response.getBody().getType()).hasToString(type);
         assertThat(response.getBody().getDetail()).isNull();
+    }
+
+    @Test
+    void handleNoAccount_withSignupUrl_returns403WithIt() {
+        // Act: AC-13, FR-34
+        var response = handler.handleNoAccount(new NoAccountException("https://portal.example.org/"));
+
+        // Assert
+        assertThat(response.getStatusCode().value()).isEqualTo(403);
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(response.getBody().getType()).hasToString("no_account");
+        assertThat(response.getBody().getProperties()).containsEntry("signupUrl", "https://portal.example.org/");
+    }
+
+    @Test
+    void handleNoAccount_withoutSignupUrl_leavesItOut() {
+        // Act: EC-09
+        var response = handler.handleNoAccount(new NoAccountException(null));
+
+        // Assert
+        assertThat(response.getBody().getType()).hasToString("no_account");
+        assertThat(response.getBody().getProperties()).isNull();
     }
 
     @Test

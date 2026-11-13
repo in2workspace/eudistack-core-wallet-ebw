@@ -16,14 +16,15 @@ import java.util.UUID;
 public class WebAuthnCeremonyR2dbcRepository implements WebAuthnCeremonyRepository {
 
     private static final String INSERT_SQL = """
-            INSERT INTO webauthn_ceremony (id, type, challenge, user_id, expires_at, created_at)
-            VALUES (:id, :type, :challenge, :userId, :expiresAt, :createdAt)
+            INSERT INTO webauthn_ceremony (id, type, challenge, user_id, registration_ticket_id, expires_at,
+                                           created_at)
+            VALUES (:id, :type, :challenge, :userId, :registrationTicketId, :expiresAt, :createdAt)
             """;
 
     private static final String CONSUME_SQL = """
             UPDATE webauthn_ceremony SET consumed_at = now()
              WHERE id = :id AND type = :type AND consumed_at IS NULL AND expires_at > now()
-            RETURNING id, type, challenge, user_id, expires_at, consumed_at, created_at
+            RETURNING id, type, challenge, user_id, registration_ticket_id, expires_at, consumed_at, created_at
             """;
 
     private static final String DELETE_SQL = "DELETE FROM webauthn_ceremony WHERE created_at < :cutoff";
@@ -43,6 +44,9 @@ public class WebAuthnCeremonyR2dbcRepository implements WebAuthnCeremonyReposito
                 .bind("expiresAt", ceremony.expiresAt())
                 .bind("createdAt", ceremony.createdAt());
         spec = ceremony.userId() == null ? spec.bindNull("userId", UUID.class) : spec.bind("userId", ceremony.userId());
+        spec = ceremony.registrationTicketId() == null
+                ? spec.bindNull("registrationTicketId", UUID.class)
+                : spec.bind("registrationTicketId", ceremony.registrationTicketId());
         return spec.fetch().rowsUpdated().thenReturn(ceremony);
     }
 
@@ -66,6 +70,7 @@ public class WebAuthnCeremonyR2dbcRepository implements WebAuthnCeremonyReposito
                 CeremonyType.valueOf(row.get("type", String.class)),
                 row.get("challenge", byte[].class),
                 row.get("user_id", UUID.class),
+                row.get("registration_ticket_id", UUID.class),
                 row.get("expires_at", Instant.class),
                 row.get("consumed_at", Instant.class),
                 row.get("created_at", Instant.class));

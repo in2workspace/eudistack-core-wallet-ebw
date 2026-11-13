@@ -1,5 +1,8 @@
 package com.eudistack.ebw.wallet.profile.infrastructure.web;
 
+import com.eudistack.ebw.domain.model.OnboardingMode;
+import com.eudistack.ebw.domain.model.OnboardingSettings;
+import com.eudistack.ebw.domain.service.OnboardingSettingsService;
 import com.eudistack.ebw.wallet.profile.domain.exception.TenantUnknownException;
 import com.eudistack.ebw.wallet.profile.domain.model.KeyManager;
 import com.eudistack.ebw.wallet.profile.domain.model.TenantWalletProfile;
@@ -50,6 +53,9 @@ class WalletProfileQueryControllerTest {
     @Mock
     private WalletProfileQueryTelemetry telemetry;
 
+    @Mock
+    private OnboardingSettingsService onboardingSettingsService;
+
     private WebTestClient webTestClient;
 
     private static final Instant NOW = Instant.parse("2026-05-22T10:00:00Z");
@@ -57,13 +63,17 @@ class WalletProfileQueryControllerTest {
     @BeforeEach
     void setUp() {
         WalletProfileQueryController controller =
-                new WalletProfileQueryController(walletProfileQueryPort, telemetry);
+                new WalletProfileQueryController(walletProfileQueryPort, telemetry,
+                        onboardingSettingsService);
         WalletProfileQueryExceptionHandler handler =
                 new WalletProfileQueryExceptionHandler(telemetry);
 
         webTestClient = WebTestClient.bindToController(controller)
                 .controllerAdvice(handler)
                 .build();
+
+        when(onboardingSettingsService.current()).thenReturn(Mono.just(onboarding(OnboardingMode.OPEN,
+                "https://portal.example.org/")));
 
         // Telemetry calls do nothing in unit tests
         doNothing().when(telemetry).recordSuccess(anyString(), anyLong());
@@ -127,7 +137,32 @@ class WalletProfileQueryControllerTest {
                 .expectHeader().contentType(MediaType.APPLICATION_JSON)
                 .expectBody()
                 .jsonPath("$.wallet_mode").isEqualTo("browser")
-                .jsonPath("$.key_manager").doesNotExist();
+                .jsonPath("$.key_manager").doesNotExist()
+                .jsonPath("$.onboarding_mode").isEqualTo("open")
+                .jsonPath("$.signup_url").doesNotExist();
+    }
+
+    @Test
+    void getWalletConfigMetadata_restrictedOnboarding_includesModeAndSignupUrl() {
+        // Arrange
+        TenantWalletProfile profile =
+                new TenantWalletProfile("cgcom", WalletMode.BROWSER, null, NOW, NOW);
+        when(walletProfileQueryPort.queryByCurrentTenant()).thenReturn(Mono.just(profile));
+        when(onboardingSettingsService.current()).thenReturn(Mono.just(onboarding(OnboardingMode.RESTRICTED,
+                "https://portal.example.org/")));
+
+        // Act + Assert
+        webTestClient.get()
+                .uri(WalletProfileQueryController.WELL_KNOWN_PATH)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.onboarding_mode").isEqualTo("restricted")
+                .jsonPath("$.signup_url").isEqualTo("https://portal.example.org/");
+    }
+
+    private static OnboardingSettings onboarding(OnboardingMode mode, String signupUrl) {
+        return new OnboardingSettings(true, OnboardingSettings.DEFAULT_TTL, OnboardingSettings.DEFAULT_REGISTRATION_TTL, null, mode, signupUrl, null);
     }
 
     @Test

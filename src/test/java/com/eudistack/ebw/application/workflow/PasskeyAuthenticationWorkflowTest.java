@@ -11,6 +11,7 @@ import com.eudistack.ebw.domain.model.VerifiedPasskeyAssertion;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.WebAuthnCeremony;
 import com.eudistack.ebw.domain.model.exception.AuthenticationFailedException;
+import com.eudistack.ebw.domain.model.exception.InvalidTicketException;
 import com.eudistack.ebw.domain.model.exception.UnknownCredentialException;
 import com.eudistack.ebw.domain.model.exception.WebAuthnVerificationException;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
@@ -246,6 +247,30 @@ class PasskeyAuthenticationWorkflowTest {
                     assertThat(options.rpId()).isEqualTo("rp.example");
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void startAuthentication_ticketOfAPreregistrationWithoutAccount_isInvalidTicket() {
+        // Arrange: EC-07, the registration ticket of an onboarding pre-registration names no account
+        var ticket = RegistrationTicket.issueForPreregistration(null, UUID.randomUUID(), "hash", RegistrationTicket.TTL);
+        when(ticketService.resolve("raw")).thenReturn(Mono.just(ticket));
+
+        // Act + Assert
+        StepVerifier.create(workflow.startAuthentication("raw")).expectError(InvalidTicketException.class).verify();
+        verify(ceremonyRepository, never()).insert(any());
+    }
+
+    @Test
+    void openSession_ticketOfAPreregistrationWithoutAccount_isInvalidTicket() {
+        // Arrange
+        var ticket = RegistrationTicket.issueForPreregistration(null, UUID.randomUUID(), "hash", RegistrationTicket.TTL);
+        when(ticketService.resolve("raw")).thenReturn(Mono.just(ticket));
+
+        // Act + Assert
+        StepVerifier.create(workflow.openSession(new OpenSessionCommand("raw", ceremony.id(), "{json}", null)))
+                .expectError(InvalidTicketException.class).verify();
+        verify(ceremonyRepository, never()).consume(any(), any());
+        verify(sessionOpener, never()).open(any(), any(), any(), any());
     }
 
     @Test

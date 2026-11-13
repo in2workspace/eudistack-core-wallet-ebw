@@ -45,6 +45,10 @@ public interface SpringUserPasskeyRepository extends ReactiveCrudRepository<User
     Mono<Long> recordUncountedAuthentication(UUID id, boolean backupState, boolean userVerified);
 
     @Modifying
+    @Query("UPDATE user_passkey SET onboarding_preregistration_id = :preregistrationId WHERE id = :id")
+    Mono<Long> markOnboarding(UUID id, UUID preregistrationId);
+
+    @Modifying
     @Query("UPDATE user_passkey SET last_used_at = NOW() WHERE id = :id")
     Mono<Void> touchLastUsed(UUID id);
 }

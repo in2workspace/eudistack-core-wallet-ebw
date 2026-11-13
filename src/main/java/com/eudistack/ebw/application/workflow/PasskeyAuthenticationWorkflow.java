@@ -10,6 +10,7 @@ import com.eudistack.ebw.domain.model.UserPasskey;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.WebAuthnCeremony;
 import com.eudistack.ebw.domain.model.exception.AuthenticationFailedException;
+import com.eudistack.ebw.domain.model.exception.InvalidTicketException;
 import com.eudistack.ebw.domain.model.exception.UnknownCredentialException;
 import com.eudistack.ebw.domain.model.exception.WebAuthnVerificationException;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
@@ -115,11 +116,19 @@ public class PasskeyAuthenticationWorkflow {
                         e -> auditRejection(command.ceremonyId(), passkeyRef.get(), e).then(Mono.error(e)));
     }
 
+    /**
+     * A sign-in ticket names an account. The registration ticket of an onboarding pre-registration
+     * whose email had no account (EUD-315) names none: it only registers the first passkey, so it is
+     * an invalid ticket here (EC-07).
+     */
     private Mono<Optional<RegistrationTicket>> resolveOptionalTicket(String rawTicket) {
         if (rawTicket == null) {
             return Mono.just(Optional.empty());
         }
-        return ticketService.resolve(rawTicket).map(Optional::of);
+        return ticketService.resolve(rawTicket)
+                .filter(ticket -> ticket.userId() != null)
+                .switchIfEmpty(Mono.error(new InvalidTicketException()))
+                .map(Optional::of);
     }
 
     private Mono<List<UserPasskey>> allowCredentials(Optional<RegistrationTicket> ticket) {

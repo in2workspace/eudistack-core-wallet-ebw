@@ -21,7 +21,12 @@ public final class PublicRoutes {
                     "/api/v1/auth/passkeys/registration",
                     // Sign-in with a passkey, with an optional registration ticket.
                     "/api/v1/auth/sessions/options",
-                    "/api/v1/auth/sessions"),
+                    "/api/v1/auth/sessions",
+                    // Onboarding ticket (EUD-315): system token checked by SystemTokenWebFilter.
+                    "/api/v1/onboarding-tickets",
+                    // Redemption (optional session) and "it was not me": validated by the endpoints.
+                    "/api/v1/auth/onboarding-tickets/redeem",
+                    "/api/v1/auth/onboarding-tickets/disavowals"),
             ServerWebExchangeMatchers.pathMatchers("/health", "/health/**"),
             // EUDISTACK-413: public wallet discovery endpoint (AC-03 — no auth required).
             // The canonical path is served by WellKnownCanonicalHandler at Netty level
