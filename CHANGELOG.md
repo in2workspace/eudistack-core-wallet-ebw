@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (EUD-244, version 2.2.0)
+
+- **EUD-244 — Audit events (catalogue 2.2.0)**: `ExternalSystemAccess` (`MailProvider`) for every email it sends (verification code and new-passkey notice), without the recipient or the code, handed through the `AuditTrailPort` to the transactional audit outbox of `auditoria-spring-boot-starter` when `auditoria.publisher.enabled=true`. Both switches (`auditoria.publisher.enabled`, `auditoria.dispatcher.enabled`) are off by default and the EBW behaves as before.
+
 ### Fixed (EUD-326)
 
 - **The key audit events keep the identifiers**: the log masking of EUD-208 hid every UUID, so the events of the logger `audit.holder-key` came out as `holder_id=*** credential_id=holder-***` and did not name the holder or the attestation that EUD-11 FR-04 and AC-07 require. `MaskingPatternLayout` and `MaskingOpenTelemetryAppender` now skip only the UUID rule for that logger; emails, tokens, secrets and OTPs are still masked on those lines, and every other log keeps masking the UUIDs.
@@ -25,8 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deployment note**: the AWS environments must stop attaching the ADOT Java agent (`JAVA_TOOL_OPTIONS`, `OTEL_*_EXPORTER`, X-Ray endpoints) when they turn the exports on (`eudistack-platform-iac`), and only once this image is deployed: with both, traces are duplicated, and the agent's gRPC instrumentation clashes with the metrics sender. The ADOT jar stays in the image, inert without `JAVA_TOOL_OPTIONS`.
 
 ### Added
-
-- **EUD-244 — Audit events (catalogue 2.2.0)**: `ExternalSystemAccess` (`MailProvider`) for every email it sends (verification code and new-passkey notice), without the recipient or the code, handed through the `AuditTrailPort` to the transactional audit outbox of `auditoria-spring-boot-starter` when `auditoria.publisher.enabled=true`. Both switches (`auditoria.publisher.enabled`, `auditoria.dispatcher.enabled`) are off by default and the EBW behaves as before.
 
 - **DOME Wallet → EBW migration scripts (US06)** in `dev-tools/scripts/dome-migration/`: `joiner.py`, `generate_migration.py` and their runbook, moved from `eudistack-platform-dev` with their content unchanged except for the folder paths in the runbook. The input CSVs and the generated SQL (private keys, credentials and personal data) and `.env` are git-ignored.
 - **Unit test coverage of the EBW raised from 46.1% to 87.0%** (JaCoCo/Sonar overall of `./gradlew clean test jacocoTestReport`, `main` vs this branch; lines 46.4% → 87.7%, branches 44.3% → 83.8%; 495 → 759 unit tests, none tagged `integration`, no Docker needed). New Mockito/StepVerifier tests for the credential, auth and passkey workflows, `CredentialService` (SD-JWT / JWT VC parsing and fallbacks), `Es256TokenSigner`, the `SecurityConfig` filter chain (built with `ServerHttpSecurity.http()`, no Spring context), the JWT and rate-limit web filters, every REST controller and exception handler, the R2DBC adapters and mappers (including the raw-SQL key manager adapters, via a `DatabaseClient` test stub) and `KeyAuditCloudWatchAdapter` (hash chain verified against the published payload). Production code is unchanged; the PR gate (40% / 60%) is unchanged.
