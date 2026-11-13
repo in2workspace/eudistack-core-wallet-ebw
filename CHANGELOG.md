@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (EUD-244, version 2.2.0)
+
+- **EUD-244 — Audit events (catalogue 2.2.0)**: `ExternalSystemAccess` (`MailProvider`) for every email it sends (verification code and new-passkey notice), without the recipient or the code, handed through the `AuditTrailPort` to the transactional audit outbox of `auditoria-spring-boot-starter` when `auditoria.publisher.enabled=true`. Both switches (`auditoria.publisher.enabled`, `auditoria.dispatcher.enabled`) are off by default and the EBW behaves as before.
+
 ### Fixed (EUD-326)
 
 - **The key audit events keep the identifiers**: the log masking of EUD-208 hid every UUID, so the events of the logger `audit.holder-key` came out as `holder_id=*** credential_id=holder-***` and did not name the holder or the attestation that EUD-11 FR-04 and AC-07 require. `MaskingPatternLayout` and `MaskingOpenTelemetryAppender` now skip only the UUID rule for that logger; emails, tokens, secrets and OTPs are still masked on those lines, and every other log keeps masking the UUIDs.
