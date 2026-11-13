@@ -348,4 +348,37 @@ class MaskingPatternLayoutTest {
 
         assertThat(line).contains(MaskingPatternLayout.TRUNCATED, "java.lang.IllegalStateException: failure", "\tat ");
     }
+
+    // ─── key audit logger (EUD-326 FR-04) ────────────────────────
+
+    @Test
+    void doLayout_AuditLoggerLine_KeepsTheUuidsButMasksTheRest() {
+        LoggerContext context = new LoggerContext();
+        MaskingPatternLayout patternLayout = new MaskingPatternLayout();
+        patternLayout.setContext(context);
+        patternLayout.setPattern("%msg");
+        patternLayout.start();
+        LoggingEvent event = new LoggingEvent(MaskingPatternLayoutTest.class.getName(),
+                context.getLogger(MaskingPatternLayout.AUDIT_LOGGER), Level.INFO,
+                "[###AUDIT###] holder_id=" + USER_ID + " credential_id=" + CREDENTIAL_ID
+                        + " email=holder@empresa.com token=abc123", null, null);
+
+        String line = patternLayout.doLayout(event);
+
+        assertThat(line).contains(USER_ID, CREDENTIAL_ID)
+                .doesNotContain("holder@empresa.com", "abc123");
+    }
+
+    @Test
+    void doLayout_AnyOtherLoggerLine_StillMasksTheUuids() {
+        LoggerContext context = new LoggerContext();
+        MaskingPatternLayout patternLayout = new MaskingPatternLayout();
+        patternLayout.setContext(context);
+        patternLayout.setPattern("%msg");
+        patternLayout.start();
+        LoggingEvent event = new LoggingEvent(MaskingPatternLayoutTest.class.getName(),
+                context.getLogger("some.other.logger"), Level.INFO, "holder_id=" + USER_ID, null, null);
+
+        assertThat(patternLayout.doLayout(event)).doesNotContain(USER_ID);
+    }
 }

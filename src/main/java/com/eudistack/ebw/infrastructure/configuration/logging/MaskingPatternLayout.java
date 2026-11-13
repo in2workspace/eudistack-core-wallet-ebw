@@ -13,10 +13,17 @@ import java.util.regex.Pattern;
  * tokens or secrets written as {@code key=value} / JSON fields, and every UUID — the user,
  * credential, passkey, key and session identifiers are all UUIDs, and together with the activity
  * type and time they would let anyone rebuild an individual holder's use of the wallet.
+ *
+ * <p>The only exception is the audit logger {@value #AUDIT_LOGGER} of the key operations (EUD-326 FR-04,
+ * AC-07): an audit event must name the holder and the attestation, so its UUIDs are kept. Everything else
+ * is still masked on those lines (emails, tokens, secrets, OTPs).
  */
 public class MaskingPatternLayout extends PatternLayout {
 
     static final String REPLACEMENT = "***";
+
+    /** Logger of the key audit events: its lines keep the identifiers the audit has to show. */
+    static final String AUDIT_LOGGER = "audit.holder-key";
 
     /** Longest message kept. A longer one costs more in every output and is rarely readable. */
     static final int MAX_MESSAGE_LENGTH = 16_384;
@@ -50,12 +57,11 @@ public class MaskingPatternLayout extends PatternLayout {
             new AbstractMap.SimpleImmutableEntry<>(
                     Pattern.compile(
                             "(?i)(?<!\\w)(\"code\"\\s*:\\s*\"?|code\\s*=\\s*)(?=[^\"&\\s,}]{0,256}\\d)[^\"&\\s,}]+"),
-                    "$1" + REPLACEMENT),
-            new AbstractMap.SimpleImmutableEntry<>(
-                    Pattern.compile(
-                            "(?i)\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b"),
-                    REPLACEMENT)
+                    "$1" + REPLACEMENT)
     );
+
+    private static final Pattern UUID_MASK = Pattern.compile(
+            "(?i)\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b");
 
     // Masks the value of the given keys written as key=value or as a JSON field ("key":"value"),
     // up to the closing quote when the value is quoted, since it may hold spaces.
@@ -67,7 +73,7 @@ public class MaskingPatternLayout extends PatternLayout {
 
     @Override
     public String doLayout(ILoggingEvent event) {
-        return mask(super.doLayout(new TruncatedMessageEvent(event)));
+        return mask(super.doLayout(new TruncatedMessageEvent(event)), !keepsIdentifiers(event));
     }
 
     // Applied before masking, on the message only: the stack trace of the line stays whole. It cuts at
@@ -99,8 +105,17 @@ public class MaskingPatternLayout extends PatternLayout {
         }
     }
 
+    /** True for the events of the key audit logger: they keep their UUIDs. */
+    static boolean keepsIdentifiers(ILoggingEvent event) {
+        return AUDIT_LOGGER.equals(event.getLoggerName());
+    }
+
     // Shared with MaskingOpenTelemetryAppender, which reads the raw event and bypasses doLayout
     static String mask(final String input) {
+        return mask(input, true);
+    }
+
+    static String mask(final String input, final boolean maskUuids) {
         if (input == null || input.isBlank()) {
             return input;
         }
@@ -108,6 +123,6 @@ public class MaskingPatternLayout extends PatternLayout {
         for (Map.Entry<Pattern, String> entry : MASKS) {
             result = entry.getKey().matcher(result).replaceAll(entry.getValue());
         }
-        return result;
+        return maskUuids ? UUID_MASK.matcher(result).replaceAll(REPLACEMENT) : result;
     }
 }
