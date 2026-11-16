@@ -80,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- **The `SUSPENDED` status**: it leaves `CredentialStatus` and the transitions. A `PATCH /api/v1/credentials/{id}/status` or a `status` filter with `SUSPENDED` now answers 400, as for any unknown value. Deployment note: no attestation had that status in DEV or STG, so there is no migration. Deploy the service before the Wallet App 3.20.0, which no longer sends it.
+- **The `SUSPENDED` status**: it leaves `CredentialStatus` and the transitions. A `PATCH /api/v1/credentials/{id}/status` or a `status` filter with `SUSPENDED` now answers 400, as for any unknown value. Deployment note: no attestation has that status in DEV (checked in every active tenant schema); it is not checked in STG, so check it in each environment before promoting, because a row that still holds it fails when it is read. Deploy the service before the Wallet App 3.20.0, which no longer sends it.
 
 ## [2.1.0] - 2026-11-04
 
