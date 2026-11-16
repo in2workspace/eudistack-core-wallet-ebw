@@ -160,6 +160,37 @@ class SmtpEmailSenderTest {
         assertThat(entry.reason()).isEqualTo("ErrorResponse");
     }
 
+    @Test
+    void sendNewPasskeyNotice_smtpAccepts_stagesTheAccessAsTheNewPasskeyEmailWithoutTheRecipient() {
+        when(tenantRegistryRepository.findDisplayName("dome")).thenReturn(Mono.just("DOME"));
+
+        StepVerifier.create(sender.sendNewPasskeyNotice(TO)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "dome")))
+                .verifyComplete();
+
+        AuditEntry entry = auditTrail.staged().getFirst();
+        assertThat(entry.result()).isEqualTo(AuditResult.SUCCESS);
+        assertThat(entry.details()).containsEntry("system_type", "MailProvider")
+                .containsEntry("operation", "new-passkey-email");
+        assertThat(entry.toString()).doesNotContain(TO);
+    }
+
+    @Test
+    void sendNewPasskeyNotice_smtpRejectsTheMessage_stagesAFailedAccessAndKeepsTheError() {
+        when(tenantRegistryRepository.findDisplayName("dome")).thenReturn(Mono.just("DOME"));
+        doThrow(new MailSendException("relay denied")).when(mailSender).send(any(MimeMessage.class));
+
+        StepVerifier.create(sender.sendNewPasskeyNotice(TO)
+                        .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, "dome")))
+                .expectError(MailSendException.class)
+                .verify();
+
+        AuditEntry entry = auditTrail.staged().getFirst();
+        assertThat(entry.result()).isEqualTo(AuditResult.FAILURE);
+        assertThat(entry.details()).containsEntry("operation", "new-passkey-email");
+        assertThat(entry.toString()).doesNotContain(TO);
+    }
+
     private MimeMessage send(String tenant) {
         StepVerifier.create(sender.sendOtp(TO, "123456")
                         .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, tenant)))

@@ -76,6 +76,22 @@ class StarterAuditTrailAdapterTest {
     }
 
     @Test
+    void stageInNewTransaction_deniedEntry_handsTheFactAsDeniedWithTheReason() {
+        // Arrange
+        AuditEntry entry = AuditEntry.forReason(AuditEventType.EXTERNAL_SYSTEM_ACCESS, "external-system:smtp",
+                "AuthenticationRejected", Map.of("system", "smtp"));
+
+        // Act
+        StepVerifier.create(adapter.stageInNewTransaction(entry)).verifyComplete();
+
+        // Assert
+        ArgumentCaptor<AuditDraft> draft = ArgumentCaptor.forClass(AuditDraft.class);
+        verify(publisher).stage(draft.capture());
+        assertEquals(AuditResult.DENIED, draft.getValue().result());
+        assertEquals("AuthenticationRejected", draft.getValue().reason());
+    }
+
+    @Test
     void stageInNewTransaction_entry_opensATransactionOfItsOwn() {
         // Arrange
         AuditEntry entry = AuditEntry.success(AuditEventType.EXTERNAL_SYSTEM_ACCESS, "external-system:smtp", Map.of());

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **EUD-244 — Audit events (catalogue 2.2.0)**: `ExternalSystemAccess` (`MailProvider`) for every email it sends (verification code and new-passkey notice), without the recipient or the code, handed through the `AuditTrailPort` to the transactional audit outbox of `auditoria-spring-boot-starter` when `auditoria.publisher.enabled=true`. Both switches (`auditoria.publisher.enabled`, `auditoria.dispatcher.enabled`) are off by default and the EBW behaves as before.
 
+- **EUD-244 — Audit API token as a machine**: with `auditoria.dispatcher.enabled=true` the Wallet EBW asks the Verifier for its own token (`client_credentials` with its machine attestation), instead of holding a bearer. It needs `AUDIT_M2M_TOKEN_URL` (https; plain http only on localhost or with `auditoria.client.allow-insecure-http=true`), `AUDIT_M2M_TENANT`, `AUDIT_M2M_CLIENT_ID`, `AUDIT_M2M_CREDENTIAL`, `AUDIT_M2M_PRIVATE_KEY` and `AUDIT_M2M_ASSERTION_AUDIENCE`, and does not start without them. The call has timeouts and calls that arrive while the token is renewed share one request. The token has the audience of the Verifier (PA-03).
+
 ### Fixed (EUD-326)
 
 - **The key audit events keep the identifiers**: the log masking of EUD-208 hid every UUID, so the events of the logger `audit.holder-key` came out as `holder_id=*** credential_id=holder-***` and did not name the holder or the attestation that EUD-11 FR-04 and AC-07 require. `MaskingPatternLayout` and `MaskingOpenTelemetryAppender` now skip only the UUID rule for that logger; emails, tokens, secrets and OTPs are still masked on those lines, and every other log keeps masking the UUIDs.
