@@ -14,7 +14,7 @@ import java.net.InetSocketAddress;
 
 /**
  * Resolves the tenant identifier from the request and stores it in the Reactor
- * subscriber context.
+ * subscriber context and as an exchange attribute, both under {@code tenantDomain}.
  *
  * <p>Resolution order when {@code ebw.security.trust-forwarded-host=true}:
  * <ol>
@@ -67,6 +67,9 @@ public class TenantDomainWebFilter implements WebFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String tenant = resolveTenant(exchange);
         if (tenant != null) {
+            // Also on the exchange: the http.server.requests convention runs when the observation
+            // stops, once the Reactor context is no longer reachable
+            exchange.getAttributes().put(ReactorContextKeys.TENANT_DOMAIN, tenant);
             return chain.filter(exchange)
                     .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, tenant));
         }
