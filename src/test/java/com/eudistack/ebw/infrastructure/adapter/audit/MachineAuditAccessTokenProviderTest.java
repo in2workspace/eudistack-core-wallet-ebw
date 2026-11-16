@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -204,10 +205,10 @@ class MachineAuditAccessTokenProviderTest {
     void constructor_httpsOrLoopbackTokenUrl_isAcceptedWithoutTheSwitch() {
         WebClient webClient = WebClient.create();
 
-        new MachineAuditAccessTokenProvider(webClient, clock, "https://dome.dev.eudistack.net/verifier/oidc/token",
-                "dome", CLIENT_ID, factory, false);
-        new MachineAuditAccessTokenProvider(webClient, clock, "http://localhost:8082/verifier/oidc/token",
-                "dome", CLIENT_ID, factory, false);
+        assertDoesNotThrow(() -> new MachineAuditAccessTokenProvider(webClient, clock,
+                "https://dome.dev.eudistack.net/verifier/oidc/token", "dome", CLIENT_ID, factory, false));
+        assertDoesNotThrow(() -> new MachineAuditAccessTokenProvider(webClient, clock,
+                "http://localhost:8082/verifier/oidc/token", "dome", CLIENT_ID, factory, false));
     }
 
     private static final class MutableClock extends Clock {
