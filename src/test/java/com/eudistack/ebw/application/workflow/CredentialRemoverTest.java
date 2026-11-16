@@ -52,7 +52,7 @@ class CredentialRemoverTest {
         lenient().when(holderKeyMaterial.delete(any())).thenReturn(Mono.empty());
         lenient().when(transactionRunner.inTransaction(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(credentialService.computeAuditHash("raw-credential")).thenReturn("hash");
-        lenient().when(credentialRepository.deleteById(CREDENTIAL_ID)).thenReturn(Mono.empty());
+        lenient().when(credentialRepository.deleteIfExists(CREDENTIAL_ID)).thenReturn(Mono.just(true));
         lenient().when(auditService.record(any(), any(), any(), any(), any())).thenReturn(Mono.empty());
     }
 
@@ -72,7 +72,7 @@ class CredentialRemoverTest {
             // Assert
             StepVerifier.create(result).verifyComplete();
             var order = inOrder(credentialRepository, auditService);
-            order.verify(credentialRepository).deleteById(CREDENTIAL_ID);
+            order.verify(credentialRepository).deleteIfExists(CREDENTIAL_ID);
             order.verify(auditService).record("credential", CREDENTIAL_ID, "DELETED", USER_ID,
                     Map.of("entity_hash", "sha256:hash",
                             "credential_type", "LEARCredentialEmployee",
@@ -143,6 +143,21 @@ class CredentialRemoverTest {
         }
 
         @Test
+        @DisplayName("does not audit when the row was already deleted by another replica")
+        void remove_rowAlreadyDeleted_doesNotAudit() {
+            // Arrange
+            var credential = credential(CREDENTIAL_ID, USER_ID, CredentialStatus.VALID);
+            when(credentialRepository.deleteIfExists(CREDENTIAL_ID)).thenReturn(Mono.just(false));
+
+            // Act
+            var result = remover.remove(credential, null, Map.of("reason", "orphan_expired"));
+
+            // Assert
+            StepVerifier.create(result).verifyComplete();
+            verifyNoInteractions(auditService);
+        }
+
+        @Test
         @DisplayName("deletes the key material before the row, in one transaction")
         void remove_credential_deletesItsKeyMaterialBeforeTheRowInOneTransaction() {
             // Arrange
@@ -156,7 +171,7 @@ class CredentialRemoverTest {
             var order = inOrder(transactionRunner, holderKeyMaterial, credentialRepository);
             order.verify(transactionRunner).inTransaction(any());
             order.verify(holderKeyMaterial).delete(credential);
-            order.verify(credentialRepository).deleteById(CREDENTIAL_ID);
+            order.verify(credentialRepository).deleteIfExists(CREDENTIAL_ID);
         }
 
         @Test
@@ -171,7 +186,7 @@ class CredentialRemoverTest {
 
             // Assert
             StepVerifier.create(result).expectError(IllegalStateException.class).verify();
-            verify(credentialRepository, never()).deleteById(any());
+            verify(credentialRepository, never()).deleteIfExists(any());
             verifyNoInteractions(auditService);
         }
     }

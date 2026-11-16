@@ -30,10 +30,12 @@ public interface WalletCredentialRepository {
                                                       String credentialConfigId, String issuer);
 
     /**
-     * Bound attestations whose passkey is no longer in the account ({@code passkey_id} is null) and whose
-     * expiration date is before {@code now}. Those without an expiration date are not returned.
+     * Attestations obtained with passkey custody whose passkey is no longer in the account ({@code passkey_id}
+     * is null) and whose expiration date is before {@code now}. Those without an expiration date, and those of
+     * server custody (which never have a passkey to lose), are not returned.
      */
     Flux<WalletCredential> findOrphanedExpired(Instant now);
 
-    Mono<Void> deleteById(UUID id);
+    /** Emits {@code true} if this call deleted the row, {@code false} if it was already gone. */
+    Mono<Boolean> deleteIfExists(UUID id);
 }

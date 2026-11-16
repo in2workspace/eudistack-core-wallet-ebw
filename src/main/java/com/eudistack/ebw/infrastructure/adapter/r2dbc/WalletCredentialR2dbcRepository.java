@@ -74,7 +74,7 @@ public class WalletCredentialR2dbcRepository implements WalletCredentialReposito
     }
 
     @Override
-    public Mono<Void> deleteById(UUID id) {
-        return springRepository.deleteById(id);
+    public Mono<Boolean> deleteIfExists(UUID id) {
+        return springRepository.deleteRowById(id).map(rows -> rows > 0);
     }
 }

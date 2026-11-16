@@ -30,7 +30,8 @@ public class CredentialRemover {
 
     /**
      * Deletes the attestation and its key material and records {@code DELETED}, all in one transaction: a
-     * rolled-back deletion leaves no entry, and a deletion is never left without its entry.
+     * rolled-back deletion leaves no entry, and a deletion is never left without its entry. The entry is only
+     * written by the call that deleted the row, so replicas that read the same orphans do not audit it twice.
      *
      * @param actorId            who asked for the deletion; {@code null} when the service itself does it
      * @param extraAuditMetadata added to the audit entry, e.g. why the attestation was deleted
@@ -46,8 +47,9 @@ public class CredentialRemover {
 
         return transactionRunner.inTransaction(Mono.defer(() ->
                 holderKeyMaterial.delete(credential)
-                        .then(Mono.defer(() -> credentialRepository.deleteById(credential.getId())))
-                        .then(Mono.defer(() -> auditService.record("credential", credential.getId(), "DELETED",
-                                actorId, metadata)))));
+                        .then(Mono.defer(() -> credentialRepository.deleteIfExists(credential.getId())))
+                        .flatMap(deleted -> Boolean.TRUE.equals(deleted)
+                                ? auditService.record("credential", credential.getId(), "DELETED", actorId, metadata)
+                                : Mono.<Void>empty())));
     }
 }

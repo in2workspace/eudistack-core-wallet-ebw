@@ -66,20 +66,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated Netty to 4.1.132.Final to address CVE-2026-33870.
 - Updated Bouncy Castle (bcprov-jdk18on and bcpkix-jdk18on) to version 1.84 to address CVE-2026-0636.
 
-## [2.1.1] - 2026-11-11
+## [2.2.0] - 2026-11-11
 
 ### Added
 
-- **EUD-325 — Purge of expired orphan attestations**: once a day (03:30) every active tenant with passkey custody deletes the attestations that are bound to the holder, whose passkey is no longer in the account (`passkey_id` is null) and whose expiration date has passed. Their key material is deleted too, and each one leaves a `DELETED` audit event with `reason = orphan_expired`. Orphans without an expiration date are kept, and nothing is deleted with server custody. No new configuration.
+- **EUD-325 — Purge of expired orphan attestations**: once a day (03:30) every active tenant with passkey custody deletes the attestations that are bound to the holder, whose passkey is no longer in the account (`passkey_id` is null), that were obtained with passkey custody (`custody_mode = 'passkey'`), and whose expiration date has passed. Their key material is deleted too, and each one leaves a `DELETED` audit event with `reason = orphan_expired`. Orphans without an expiration date are kept, and nothing is deleted with server custody. No new configuration.
 
 ### Changed
 
 - **Status changes of an attestation are limited to `VALID` to `REVOKED` or `EXPIRED`**: any other change answers 422, as `REVOKED` and `EXPIRED` are final.
 - **Deleting an attestation and purging an orphan share one component** (`CredentialRemover`), so both delete the key material in the same transaction and write the same audit event.
+- **The `DELETED` audit event of a deletion is now written in the same transaction as the deletion** (behavior change for the deletion the user asks for). Before, it was written after the commit, so an audit failure left an attestation deleted without its event, and the purge could not retry it. Now both commit or roll back together, which means an audit failure makes the deletion fail. The event is only written by the call that actually deleted the row, so replicas that read the same orphans do not audit it twice.
 
 ### Removed
 
-- **The `SUSPENDED` status**: it leaves `CredentialStatus` and the transitions. A `PATCH /api/v1/credentials/{id}/status` or a `status` filter with `SUSPENDED` now answers 400, as for any unknown value. Deployment note: no attestation had that status in DEV or STG, so there is no migration. Deploy the service before the Wallet App 3.19.1, which no longer sends it.
+- **The `SUSPENDED` status**: it leaves `CredentialStatus` and the transitions. A `PATCH /api/v1/credentials/{id}/status` or a `status` filter with `SUSPENDED` now answers 400, as for any unknown value. Deployment note: no attestation had that status in DEV or STG, so there is no migration. Deploy the service before the Wallet App 3.20.0, which no longer sends it.
 
 ## [2.1.0] - 2026-11-04
 

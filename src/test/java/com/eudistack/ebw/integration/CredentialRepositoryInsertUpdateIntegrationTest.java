@@ -1,6 +1,7 @@
 package com.eudistack.ebw.integration;
 
 import com.eudistack.ebw.domain.model.CredentialFormat;
+import com.eudistack.ebw.domain.model.CustodyMode;
 import com.eudistack.ebw.domain.model.CredentialStatus;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.model.WalletCredential;
@@ -111,10 +112,11 @@ class CredentialRepositoryInsertUpdateIntegrationTest extends IntegrationTestBas
         // Arrange
         var userId = resolveUserId(email);
         var now = Instant.now();
-        var orphanExpired = insertCredential(userId, true, now.minus(Duration.ofDays(1)));
-        var orphanNotExpired = insertCredential(userId, true, now.plus(Duration.ofDays(1)));
-        var orphanWithoutExpiration = insertCredential(userId, true, null);
-        var unboundExpired = insertCredential(userId, false, now.minus(Duration.ofDays(1)));
+        var orphanExpired = insertCredential(userId, true, CustodyMode.PASSKEY, now.minus(Duration.ofDays(1)));
+        var orphanNotExpired = insertCredential(userId, true, CustodyMode.PASSKEY, now.plus(Duration.ofDays(1)));
+        var orphanWithoutExpiration = insertCredential(userId, true, CustodyMode.PASSKEY, null);
+        var unboundExpired = insertCredential(userId, false, null, now.minus(Duration.ofDays(1)));
+        var serverCustodyExpired = insertCredential(userId, true, CustodyMode.SERVER, now.minus(Duration.ofDays(1)));
 
         // Act
         var result = withTenantContext(credentialRepository.findOrphanedExpired(now).collectList()).block();
@@ -122,15 +124,16 @@ class CredentialRepositoryInsertUpdateIntegrationTest extends IntegrationTestBas
         // Assert
         assertThat(result).extracting(WalletCredential::getId)
                 .contains(orphanExpired.getId())
-                .doesNotContain(orphanNotExpired.getId(), orphanWithoutExpiration.getId(), unboundExpired.getId());
+                .doesNotContain(orphanNotExpired.getId(), orphanWithoutExpiration.getId(), unboundExpired.getId(),
+                        serverCustodyExpired.getId());
     }
 
-    private WalletCredential insertCredential(UUID userId, boolean bound, Instant expirationDate) {
+    private WalletCredential insertCredential(UUID userId, boolean bound, CustodyMode custodyMode, Instant expirationDate) {
         var suffix = System.nanoTime();
         var credential = WalletCredential.create(userId, "raw-" + suffix, CredentialFormat.JWT_VC_JSON,
                 "config-orphan-" + suffix, "kid-orphan-" + suffix, "TestCredential", null,
                 "https://issuer-orphan.com", "did:example:orphan", Instant.now().minus(Duration.ofDays(30)),
-                expirationDate, Map.of(), null, bound, null, null);
+                expirationDate, Map.of(), null, bound, null, custodyMode);
         return withTenantContext(credentialRepository.insert(credential)).block();
     }
 
