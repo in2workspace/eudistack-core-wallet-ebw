@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (EUD-244, version 2.2.0)
+
+- **EUD-244 — Audit events (catalogue 2.2.0)**: `ExternalSystemAccess` (`MailProvider`) for every email it sends (verification code and new-passkey notice), without the recipient or the code, handed through the `AuditTrailPort` to the transactional audit outbox of `auditoria-spring-boot-starter` when `auditoria.publisher.enabled=true`. Both switches (`auditoria.publisher.enabled`, `auditoria.dispatcher.enabled`) are off by default and the EBW behaves as before.
+
+- **EUD-244 — Audit API token as a machine**: with `auditoria.dispatcher.enabled=true` the Wallet EBW asks the Verifier for its own token (`client_credentials` with its machine attestation), instead of holding a bearer. It needs `AUDIT_M2M_TOKEN_URL` (https; plain http only on localhost or with `auditoria.client.allow-insecure-http=true`), `AUDIT_M2M_TENANT`, `AUDIT_M2M_CLIENT_ID`, `AUDIT_M2M_CREDENTIAL`, `AUDIT_M2M_PRIVATE_KEY` and `AUDIT_M2M_ASSERTION_AUDIENCE`, and does not start without them. The call has timeouts and calls that arrive while the token is renewed share one request. The token has the audience of the Verifier (PA-03).
 ### Added (EUD-26)
 
 - **Every operation carries the `tenant` tag**, as in the Issuer and the Verifier: spans, the metrics derived from them and `http.server.requests` (`TenantServerRequestObservationConvention`, which reads the tenant from the exchange because the Reactor context is gone when the HTTP observation stops). Only a tenant active in `public.tenant_registry` becomes the tag, loaded when the application is ready and refreshed every 5 minutes (`ObservedTenants`); any other value is `unknown`, so an invented subdomain creates no metric series. The request itself is not affected.
