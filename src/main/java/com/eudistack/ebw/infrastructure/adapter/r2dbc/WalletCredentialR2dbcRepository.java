@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -67,7 +68,13 @@ public class WalletCredentialR2dbcRepository implements WalletCredentialReposito
     }
 
     @Override
-    public Mono<Void> deleteById(UUID id) {
-        return springRepository.deleteById(id);
+    public Flux<WalletCredential> findOrphanedExpired(Instant now) {
+        return springRepository.findOrphanedExpired(now)
+                .map(CredentialMapper::toDomain);
+    }
+
+    @Override
+    public Mono<Boolean> deleteIfExists(UUID id) {
+        return springRepository.deleteRowById(id).map(rows -> rows > 0);
     }
 }

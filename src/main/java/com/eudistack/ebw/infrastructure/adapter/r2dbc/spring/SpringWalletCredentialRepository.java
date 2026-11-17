@@ -1,11 +1,13 @@
 package com.eudistack.ebw.infrastructure.adapter.r2dbc.spring;
 
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.entity.WalletCredentialEntity;
+import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.UUID;
 
 public interface SpringWalletCredentialRepository extends ReactiveCrudRepository<WalletCredentialEntity, UUID> {
@@ -32,6 +34,20 @@ public interface SpringWalletCredentialRepository extends ReactiveCrudRepository
                                                            String status,
                                                            String credentialConfigId,
                                                            String issuer);
+
+    @Query("""
+            SELECT id, user_id, credential_raw, format, credential_config_id, kid, credential_type, vct,
+                   issuer, subject, issuance_date, expiration_date, status, issuer_metadata,
+                   holder_key_id, created_at, updated_at, passkey_id, bound, custody_mode
+            FROM wallet_credential
+            WHERE bound = TRUE AND custody_mode = 'passkey' AND passkey_id IS NULL
+              AND expiration_date IS NOT NULL AND expiration_date < :now
+            """)
+    Flux<WalletCredentialEntity> findOrphanedExpired(Instant now);
+
+    @Modifying
+    @Query("DELETE FROM wallet_credential WHERE id = :id")
+    Mono<Long> deleteRowById(UUID id);
 
     Mono<WalletCredentialEntity> findByIdAndUserId(UUID id, UUID userId);
 }

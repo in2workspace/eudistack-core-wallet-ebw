@@ -5,6 +5,7 @@ import com.eudistack.ebw.domain.model.WalletCredential;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.UUID;
 
 public interface WalletCredentialRepository {
@@ -28,5 +29,13 @@ public interface WalletCredentialRepository {
     Flux<WalletCredential> findAllByUserIdAndFilters(UUID userId, CredentialStatus status,
                                                       String credentialConfigId, String issuer);
 
-    Mono<Void> deleteById(UUID id);
+    /**
+     * Attestations obtained with passkey custody whose passkey is no longer in the account ({@code passkey_id}
+     * is null) and whose expiration date is before {@code now}. Those without an expiration date, and those of
+     * server custody (which never have a passkey to lose), are not returned.
+     */
+    Flux<WalletCredential> findOrphanedExpired(Instant now);
+
+    /** Emits {@code true} if this call deleted the row, {@code false} if it was already gone. */
+    Mono<Boolean> deleteIfExists(UUID id);
 }

@@ -8,8 +8,7 @@ import java.util.Set;
 public final class CredentialStatusTransition {
 
     private static final Map<CredentialStatus, Set<CredentialStatus>> ALLOWED = Map.of(
-            CredentialStatus.VALID, Set.of(CredentialStatus.REVOKED, CredentialStatus.EXPIRED, CredentialStatus.SUSPENDED),
-            CredentialStatus.SUSPENDED, Set.of(CredentialStatus.VALID),
+            CredentialStatus.VALID, Set.of(CredentialStatus.REVOKED, CredentialStatus.EXPIRED),
             CredentialStatus.REVOKED, Set.of(),
             CredentialStatus.EXPIRED, Set.of()
     );

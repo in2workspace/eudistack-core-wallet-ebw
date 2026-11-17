@@ -45,10 +45,10 @@ class CredentialAuditIntegrationTest extends IntegrationTestBase {
                 .returnResult().getResponseBody();
         var id = (String) stored.get("id");
 
-        // Patch status VALID -> SUSPENDED: produces a STATUS_CHANGED audit row
+        // Patch status VALID -> REVOKED: produces a STATUS_CHANGED audit row
         webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
-                .bodyValue(Map.of("status", "SUSPENDED"))
+                .bodyValue(Map.of("status", "REVOKED"))
                 .exchange()
                 .expectStatus().isOk();
 

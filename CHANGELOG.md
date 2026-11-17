@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added (EUD-315)
+### Added (EUD-315, version 2.3.0)
 
 - **Onboarding with a ticket**: a system authorised by the tenant pre-registers a user it has identified and gets a short onboarding address `<ebw.wallet_url>/t#<ticket>` (the ticket goes in the fragment, so it never reaches access logs nor the `Referer`).
   - `POST /api/v1/onboarding-tickets`, authenticated with a system token of the tenant's Verifier (`SystemTokenWebFilter`, JWKS read from the Verifier through its internal URL `APP_VERIFIER_INTERNAL_URL` and cached 10 minutes). The machine needs the tenant administrator power `organization` · `<tenant>` · `Onboarding` · `Execute` (AD-9, as the Issuer's authorization matrix); W3C and SD-JWT `LEARCredentialMachine` tokens and tenants with environment suffix are accepted as in the Issuer. Answers 401 `invalid_token`, 403 `insufficient_permission` / `onboarding_disabled`, 503 without the Verifier keys.
@@ -16,11 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The passkey registration with that ticket creates (or recognises) the account in the same transaction, with the WebAuthn user handle generated at redemption; it is rejected if the account gained passkeys or appeared after the redemption.
   - Every passkey registered with a ticket sends the holder a notice with a single-use "it was not me" link `<ebw.wallet_url>/not-me#<token>` (7 days, only its hash stored): "your wallet has been created" or, when the account already existed, "a passkey has been added" (provisional texts). The emails mention only the date and do not name the requesting system.
   - `POST /api/v1/auth/onboarding-tickets/disavowals` (public): ends every session of the account, removes the passkey of the ticket and alerts the tenant's security contact with the masked email and the date. Device revocation waits for the device management (EUD-15).
+  - The new-account notice and the security contact alert are also recorded as `ExternalSystemAccess` (`MailProvider`), like the other emails (EUD-244).
   - Hourly cleanup of expired pre-registrations and used or expired disavowal tokens; 10 requests per IP and hour on the redemption and the disavowal.
 - **Restricted onboarding mode**: `ebw.onboarding.mode` (`open` by default, unknown = `restricted`). In restricted mode `verify-email` with an email without account consumes the code and answers 403 `no_account` with `signupUrl`, without creating anything. `/.well-known/wallet-config-metadata` publishes `onboarding_mode` and, in restricted mode, `signup_url`.
 - **Tenant configuration** (`tenant_config`): `ebw.onboarding.enabled` (default `false`), `.ttl` (default `PT5M`, at most `PT10M`), `.registration_ttl` (default `PT30M`, at most `PT1H`, both provisional), `.security_contact`, `.mode` and `.signup_url`; and `ebw.wallet_url`, the address of the tenant's Wallet App (https, without userinfo, query nor fragment; same value as `issuer.wallet_url`), required with onboarding tickets: the onboarding URL is `<ebw.wallet_url>/t#<ticket>`, and without the key the ticket answers 500 and the notice is not sent. Start-up checks log an error for a restricted tenant without onboarding or `signup_url`, and for a tenant with onboarding tickets and without `ebw.wallet_url`.
 - **Deployment notes**: tenant migration `V11__onboarding_ticket.sql`; `APP_VERIFIER_INTERNAL_URL` must point to the Verifier, as for the Issuer; the Wallet App must be deployed with this version (fragment addresses). Registration ceremonies started before the deployment fail once (at most 120 s). After "it was not me", each instance may still accept access tokens of the revoked sessions for up to 10 s.
 
+### Added (EUD-244, version 2.2.0)
+
+- **EUD-244 — Audit events (catalogue 2.2.0)**: `ExternalSystemAccess` (`MailProvider`) for every email it sends (verification code and new-passkey notice), without the recipient or the code, handed through the `AuditTrailPort` to the transactional audit outbox of `auditoria-spring-boot-starter` when `auditoria.publisher.enabled=true`. Both switches (`auditoria.publisher.enabled`, `auditoria.dispatcher.enabled`) are off by default and the EBW behaves as before.
+
+- **EUD-244 — Audit API token as a machine**: with `auditoria.dispatcher.enabled=true` the Wallet EBW asks the Verifier for its own token (`client_credentials` with its machine attestation), instead of holding a bearer. It needs `AUDIT_M2M_TOKEN_URL` (https; plain http only on localhost or with `auditoria.client.allow-insecure-http=true`), `AUDIT_M2M_TENANT`, `AUDIT_M2M_CLIENT_ID`, `AUDIT_M2M_CREDENTIAL`, `AUDIT_M2M_PRIVATE_KEY` and `AUDIT_M2M_ASSERTION_AUDIENCE`, and does not start without them. The call has timeouts and calls that arrive while the token is renewed share one request. The token has the audience of the Verifier (PA-03).
 ### Added (EUD-26)
 
 - **Every operation carries the `tenant` tag**, as in the Issuer and the Verifier: spans, the metrics derived from them and `http.server.requests` (`TenantServerRequestObservationConvention`, which reads the tenant from the exchange because the Reactor context is gone when the HTTP observation stops). Only a tenant active in `public.tenant_registry` becomes the tag, loaded when the application is ready and refreshed every 5 minutes (`ObservedTenants`); any other value is `unknown`, so an invented subdomain creates no metric series. The request itself is not affected.
@@ -84,6 +90,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed - 2026-06-25
 - Updated Netty to 4.1.132.Final to address CVE-2026-33870.
 - Updated Bouncy Castle (bcprov-jdk18on and bcpkix-jdk18on) to version 1.84 to address CVE-2026-0636.
+
+## [2.2.0] - 2026-11-11
+
+### Added
+
+- **EUD-325 — Purge of expired orphan attestations**: once a day (03:30) every active tenant with passkey custody deletes the attestations that are bound to the holder, whose passkey is no longer in the account (`passkey_id` is null), that were obtained with passkey custody (`custody_mode = 'passkey'`), and whose expiration date has passed. Their key material is deleted too, and each one leaves a `DELETED` audit event with `reason = orphan_expired`. Orphans without an expiration date are kept, and nothing is deleted with server custody. No new configuration.
+
+### Changed
+
+- **Status changes of an attestation are limited to `VALID` to `REVOKED` or `EXPIRED`**: any other change answers 422, as `REVOKED` and `EXPIRED` are final.
+- **Deleting an attestation and purging an orphan share one component** (`CredentialRemover`), so both delete the key material in the same transaction and write the same audit event.
+- **The `DELETED` audit event of a deletion is now written in the same transaction as the deletion** (behavior change for the deletion the user asks for). Before, it was written after the commit, so an audit failure left an attestation deleted without its event, and the purge could not retry it. Now both commit or roll back together, which means an audit failure makes the deletion fail. The event is only written by the call that actually deleted the row, so replicas that read the same orphans do not audit it twice.
+
+### Removed
+
+- **The `SUSPENDED` status**: it leaves `CredentialStatus` and the transitions. A `PATCH /api/v1/credentials/{id}/status` or a `status` filter with `SUSPENDED` now answers 400, as for any unknown value. Deployment note: no attestation has that status in DEV (checked in every active tenant schema); it is not checked in STG, so check it in each environment before promoting, because a row that still holds it fails when it is read. Deploy the service before the Wallet App 3.20.0, which no longer sends it.
 
 ## [2.1.0] - 2026-11-04
 
