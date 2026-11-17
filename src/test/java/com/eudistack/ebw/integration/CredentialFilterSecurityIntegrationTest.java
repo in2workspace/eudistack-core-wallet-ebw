@@ -25,14 +25,14 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         storeCredential("jwt_vc_json", "config-a", "https://issuer-a.com");
         var stored2 = storeCredential("jwt_vc_json", "config-b", "https://issuer-b.com");
 
-        // Suspend second credential
+        // Revoke second credential
         webClient.patch().uri("/api/v1/credentials/" + stored2.get("id") + "/status")
                 .header("Authorization", "Bearer " + accessToken)
-                .bodyValue(Map.of("status", "SUSPENDED"))
+                .bodyValue(Map.of("status", "REVOKED"))
                 .exchange()
                 .expectStatus().isOk();
 
-        var result = webClient.get().uri("/api/v1/credentials?status=SUSPENDED")
+        var result = webClient.get().uri("/api/v1/credentials?status=REVOKED")
                 .header("Authorization", "Bearer " + accessToken)
                 .exchange()
                 .expectStatus().isOk()
@@ -77,10 +77,10 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         storeCredential("jwt_vc_json", "config-c1", "https://combined-issuer.com");
         var stored2 = storeCredential("jwt_vc_json", "config-c2", "https://combined-issuer.com");
 
-        // Suspend one
+        // Revoke one
         webClient.patch().uri("/api/v1/credentials/" + stored2.get("id") + "/status")
                 .header("Authorization", "Bearer " + accessToken)
-                .bodyValue(Map.of("status", "SUSPENDED"))
+                .bodyValue(Map.of("status", "REVOKED"))
                 .exchange()
                 .expectStatus().isOk();
 
@@ -171,27 +171,16 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
     // --- Status transition tests ---
 
     @Test
-    void statusTransition_validToSuspendedAndBack() {
+    void statusTransition_validToSuspended_returns400BecauseTheStatusDoesNotExist() {
         var stored = storeCredential("jwt_vc_json", "config-trans-1", "https://issuer.com");
         var id = (String) stored.get("id");
 
-        // VALID -> SUSPENDED
+        // VALID -> SUSPENDED: SUSPENDED is not a status of the product
         webClient.patch().uri("/api/v1/credentials/" + id + "/status")
                 .header("Authorization", "Bearer " + accessToken)
                 .bodyValue(Map.of("status", "SUSPENDED"))
                 .exchange()
-                .expectStatus().isOk()
-                .expectBody()
-                .jsonPath("$.status").isEqualTo("SUSPENDED");
-
-        // SUSPENDED -> VALID (reactivation)
-        webClient.patch().uri("/api/v1/credentials/" + id + "/status")
-                .header("Authorization", "Bearer " + accessToken)
-                .bodyValue(Map.of("status", "VALID"))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody()
-                .jsonPath("$.status").isEqualTo("VALID");
+                .expectStatus().isBadRequest();
     }
 
     @Test
@@ -412,7 +401,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         // PATCH /status — other user's credential
         var patchOtherUser = webClient.patch().uri("/api/v1/credentials/" + credAId + "/status")
                 .header("Authorization", "Bearer " + userBToken)
-                .bodyValue(Map.of("status", "SUSPENDED"))
+                .bodyValue(Map.of("status", "REVOKED"))
                 .exchange()
                 .expectStatus().isNotFound()
                 .expectBody(Map.class)
@@ -421,7 +410,7 @@ class CredentialFilterSecurityIntegrationTest extends IntegrationTestBase {
         // PATCH /status — nonexistent credential
         var patchNonexistent = webClient.patch().uri("/api/v1/credentials/" + nonexistentId + "/status")
                 .header("Authorization", "Bearer " + userBToken)
-                .bodyValue(Map.of("status", "SUSPENDED"))
+                .bodyValue(Map.of("status", "REVOKED"))
                 .exchange()
                 .expectStatus().isNotFound()
                 .expectBody(Map.class)

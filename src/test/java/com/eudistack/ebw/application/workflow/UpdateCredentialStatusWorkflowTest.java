@@ -61,18 +61,18 @@ class UpdateCredentialStatusWorkflowTest {
         when(auditService.record(any(), any(), any(), any(), any())).thenReturn(Mono.empty());
 
         // Act
-        var result = workflow.updateStatus(USER_ID, PASSKEY_ID, CREDENTIAL_ID, "SUSPENDED");
+        var result = workflow.updateStatus(USER_ID, PASSKEY_ID, CREDENTIAL_ID, "REVOKED");
 
         // Assert
         StepVerifier.create(result)
                 .assertNext(saved -> {
-                    assertThat(saved.getStatus()).isEqualTo(CredentialStatus.SUSPENDED);
+                    assertThat(saved.getStatus()).isEqualTo(CredentialStatus.REVOKED);
                     assertThat(saved.getUpdatedAt()).isAfterOrEqualTo(previousUpdatedAt);
                 })
                 .verifyComplete();
-        verify(credentialService).validateStatusTransition(CredentialStatus.VALID, CredentialStatus.SUSPENDED);
+        verify(credentialService).validateStatusTransition(CredentialStatus.VALID, CredentialStatus.REVOKED);
         verify(auditService).record("credential", CREDENTIAL_ID, "STATUS_CHANGED", USER_ID,
-                Map.of("entity_hash", "sha256:hash", "old_status", "VALID", "new_status", "SUSPENDED"));
+                Map.of("entity_hash", "sha256:hash", "old_status", "VALID", "new_status", "REVOKED"));
     }
 
     @Test
@@ -131,7 +131,7 @@ class UpdateCredentialStatusWorkflowTest {
         when(custodyPolicy.visibleToSession(hidden, PASSKEY_ID)).thenReturn(Mono.empty());
 
         // Act + Assert
-        StepVerifier.create(workflow.updateStatus(USER_ID, PASSKEY_ID, CREDENTIAL_ID, "SUSPENDED"))
+        StepVerifier.create(workflow.updateStatus(USER_ID, PASSKEY_ID, CREDENTIAL_ID, "REVOKED"))
                 .expectError(com.eudistack.ebw.domain.model.exception.CredentialNotFoundException.class)
                 .verify();
         verify(credentialRepository, never()).update(any());

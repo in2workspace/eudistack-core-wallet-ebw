@@ -59,7 +59,7 @@ class CredentialPasskeyCustodyIT extends IntegrationTestBase {
                     .exchange().expectStatus().isNotFound();
             webClient.patch().uri("/api/v1/credentials/" + bound + "/status")
                     .headers(h -> h.setBearerAuth(phoneSession.accessToken()))
-                    .bodyValue(Map.of("status", "SUSPENDED"))
+                    .bodyValue(Map.of("status", "REVOKED"))
                     .exchange().expectStatus().isNotFound();
             webClient.delete().uri("/api/v1/credentials/" + bound)
                     .headers(h -> h.setBearerAuth(phoneSession.accessToken()))

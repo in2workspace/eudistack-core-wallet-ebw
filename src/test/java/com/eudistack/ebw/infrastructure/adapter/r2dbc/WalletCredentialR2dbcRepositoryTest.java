@@ -132,17 +132,30 @@ class WalletCredentialR2dbcRepositoryTest {
     }
 
     @Test
-    void deleteById_delegatesToSpringData() {
+    void deleteIfExists_deletedRow_emitsTrue() {
         // Arrange
         var id = UUID.randomUUID();
-        when(springRepository.deleteById(id)).thenReturn(Mono.empty());
+        when(springRepository.deleteRowById(id)).thenReturn(Mono.just(1L));
 
         // Act
-        var result = repository.deleteById(id);
+        var result = repository.deleteIfExists(id);
 
         // Assert
-        StepVerifier.create(result).verifyComplete();
-        verify(springRepository).deleteById(id);
+        StepVerifier.create(result).expectNext(true).verifyComplete();
+        verify(springRepository).deleteRowById(id);
+    }
+
+    @Test
+    void deleteIfExists_rowAlreadyGone_emitsFalse() {
+        // Arrange
+        var id = UUID.randomUUID();
+        when(springRepository.deleteRowById(id)).thenReturn(Mono.just(0L));
+
+        // Act
+        var result = repository.deleteIfExists(id);
+
+        // Assert
+        StepVerifier.create(result).expectNext(false).verifyComplete();
     }
 
     private static WalletCredential credential() {
