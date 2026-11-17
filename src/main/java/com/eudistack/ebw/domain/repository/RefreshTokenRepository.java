@@ -37,6 +37,9 @@ public interface RefreshTokenRepository {
     /** Ends every session of the account except {@code keptSessionId}. Emits the number of revoked tokens. */
     Mono<Long> revokeByUserIdExceptSession(UUID userId, UUID keptSessionId);
 
+    /** Ends every session of the account, on any device ("it was not me", EUD-315). Emits the revoked tokens. */
+    Mono<Long> revokeByUserId(UUID userId);
+
     Mono<Void> revokeByPasskeyId(UUID passkeyId);
 
     Mono<Long> countActiveByPasskeyId(UUID passkeyId);

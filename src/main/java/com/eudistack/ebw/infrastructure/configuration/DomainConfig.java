@@ -10,6 +10,7 @@ import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.AuthTokenService;
 import com.eudistack.ebw.domain.service.CredentialService;
+import com.eudistack.ebw.domain.service.OnboardingSettingsService;
 import com.eudistack.ebw.domain.service.OtpService;
 import com.eudistack.ebw.domain.service.RegistrationTicketService;
 import com.eudistack.ebw.domain.service.TenantConfigService;
@@ -52,6 +53,11 @@ public class DomainConfig {
     public WalletAuthSettingsService walletAuthSettingsService(TenantConfigService tenantConfigService,
                                                                JwtProperties jwtProperties) {
         return new WalletAuthSettingsService(tenantConfigService, jwtProperties.accessTokenTtl());
+    }
+
+    @Bean
+    public OnboardingSettingsService onboardingSettingsService(TenantConfigService tenantConfigService) {
+        return new OnboardingSettingsService(tenantConfigService);
     }
 
     @Bean

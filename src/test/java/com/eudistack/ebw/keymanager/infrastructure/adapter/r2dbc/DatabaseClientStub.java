@@ -6,6 +6,7 @@ import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.r2dbc.core.DatabaseClient.GenericExecuteSpec;
 import org.springframework.r2dbc.core.FetchSpec;
 import org.springframework.r2dbc.core.RowsFetchSpec;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
@@ -33,8 +34,8 @@ public final class DatabaseClientStub {
     public final List<String> executedSql = new ArrayList<>();
     public final Map<String, Object> bindings = new LinkedHashMap<>();
 
-    /** When {@code false}, {@code .one()} completes empty (no row returned). */
-    boolean rowPresent = true;
+    /** When {@code false}, {@code .one()} and {@code .all()} complete empty (no row returned). */
+    public boolean rowPresent = true;
     /** Result of {@code .fetch().rowsUpdated()}; replace with {@code Mono.error(...)} to simulate a failure. */
     public Mono<Long> rowsUpdated = Mono.just(1L);
 
@@ -67,6 +68,8 @@ public final class DatabaseClientStub {
         RowsFetchSpec<Object> rowsFetchSpec = mock(RowsFetchSpec.class);
         when(rowsFetchSpec.one()).thenAnswer(inv ->
                 rowPresent ? Mono.fromCallable(() -> mapper.apply(row)) : Mono.empty());
+        when(rowsFetchSpec.all()).thenAnswer(inv ->
+                rowPresent ? Flux.defer(() -> Flux.just(mapper.apply(row))) : Flux.empty());
         return rowsFetchSpec;
     }
 }

@@ -7,6 +7,7 @@ import com.eudistack.ebw.infrastructure.adapter.r2dbc.spring.SpringWalletUserRep
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -49,6 +50,21 @@ class WalletUserR2dbcRepositoryTest {
     }
 
     @Test
+    void findAllByEmailIgnoreCase_accountsThatDifferInCase_mapsEveryOneToTheDomain() {
+        // Arrange: EUD-315 P16
+        var lower = TestPasskeys.user("holder@example.com");
+        var upper = TestPasskeys.user("HOLDER@example.com");
+        when(springRepository.findAllByEmailIgnoreCase("Holder@Example.com"))
+                .thenReturn(Flux.just(UserMapper.toEntity(lower), UserMapper.toEntity(upper)));
+
+        // Act + Assert
+        StepVerifier.create(repository.findAllByEmailIgnoreCase("Holder@Example.com"))
+                .assertNext(u -> assertThat(u.getId()).isEqualTo(lower.getId()))
+                .assertNext(u -> assertThat(u.getId()).isEqualTo(upper.getId()))
+                .verifyComplete();
+    }
+
+    @Test
     void save_newUser_insertsAnEntityMarkedNew() {
         // Arrange
         var user = TestPasskeys.user("holder@example.com");
@@ -81,5 +97,15 @@ class WalletUserR2dbcRepositoryTest {
         var saved = ArgumentCaptor.forClass(WalletUserEntity.class);
         verify(springRepository).save(saved.capture());
         assertThat(saved.getValue().isNew()).isFalse();
+    }
+
+    @Test
+    void lockEmailIgnoreCase_takesTheLockAndCompletesEmpty() {
+        // Arrange
+        when(springRepository.lockEmailIgnoreCase("Holder@Example.com")).thenReturn(Mono.just(1));
+
+        // Act + Assert
+        StepVerifier.create(repository.lockEmailIgnoreCase("Holder@Example.com")).verifyComplete();
+        verify(springRepository).lockEmailIgnoreCase("Holder@Example.com");
     }
 }

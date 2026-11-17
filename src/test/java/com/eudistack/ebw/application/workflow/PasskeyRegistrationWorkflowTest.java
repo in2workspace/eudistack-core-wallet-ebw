@@ -12,6 +12,8 @@ import com.eudistack.ebw.domain.model.WebAuthnCeremony;
 import com.eudistack.ebw.domain.model.exception.PasskeyPrfUnsupportedException;
 import com.eudistack.ebw.domain.model.exception.RegistrationFailedException;
 import com.eudistack.ebw.domain.model.exception.WebAuthnVerificationException;
+import com.eudistack.ebw.domain.repository.OnboardingDisavowalRepository;
+import com.eudistack.ebw.domain.repository.OnboardingPreregistrationRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.domain.repository.WebAuthnCeremonyRepository;
@@ -66,6 +68,9 @@ class PasskeyRegistrationWorkflowTest {
     @Mock private EmailSender emailSender;
     @Mock private AuditService auditService;
     @Mock private TransactionRunner transactionRunner;
+    @Mock private OnboardingPreregistrationRepository preregistrationRepository;
+    @Mock private OnboardingDisavowalRepository disavowalRepository;
+    @Mock private NotifyOnboardingAccountCreatedWorkflow onboardingNotice;
 
     private PasskeyRegistrationWorkflow workflow;
     private WalletUser user;
@@ -76,12 +81,17 @@ class PasskeyRegistrationWorkflowTest {
 
     @BeforeEach
     void setUp() {
+        var steps = new PasskeyRegistrationSteps(passkeyRepository, ceremonyRepository, settingsService, custodyPolicy,
+                webAuthnVerifier, auditService);
+        var onboardingRegistration = new RegisterOnboardingPasskeyWorkflow(ticketService, userRepository,
+                passkeyRepository, sessionOpener, auditService, transactionRunner, preregistrationRepository,
+                disavowalRepository, onboardingNotice, steps);
         workflow = new PasskeyRegistrationWorkflow(ticketService, userRepository, passkeyRepository, ceremonyRepository,
-                settingsService, custodyPolicy, webAuthnVerifier, randomGenerator, sessionOpener, emailSender,
-                auditService, transactionRunner);
+                randomGenerator, sessionOpener, emailSender, auditService, transactionRunner, steps,
+                onboardingRegistration);
         user = TestPasskeys.user("holder@example.com");
         ticket = RegistrationTicket.issue(user.getId(), "hash");
-        ceremony = WebAuthnCeremony.start(CeremonyType.REGISTRATION, new byte[32], user.getId());
+        ceremony = WebAuthnCeremony.startRegistration(new byte[32], user.getId(), ticket.id());
         verified = new VerifiedPasskeyRegistration("cred-1", new byte[] {1}, null, 0, List.of("internal"), true, true,
                 true, "none");
         session = new IssuedSession("access", 300, "refresh", UUID.randomUUID(), UUID.randomUUID(), Instant.now());
@@ -202,8 +212,20 @@ class PasskeyRegistrationWorkflowTest {
     @Test
     void register_ceremonyOfAnotherAccount_isRejected() {
         // Arrange
-        var foreign = WebAuthnCeremony.start(CeremonyType.REGISTRATION, new byte[32], UUID.randomUUID());
+        var foreign = WebAuthnCeremony.startRegistration(new byte[32], UUID.randomUUID(), ticket.id());
         when(ceremonyRepository.consume(ceremony.id(), CeremonyType.REGISTRATION)).thenReturn(Mono.just(foreign));
+
+        // Act + Assert
+        StepVerifier.create(workflow.register(command(null))).expectError(RegistrationFailedException.class).verify();
+        verify(auditService).record("user", user.getId(), AuthAuditEvents.PASSKEY_REJECTED, user.getId(),
+                Map.of("reason", "ceremony_mismatch"));
+    }
+
+    @Test
+    void register_ceremonyStartedWithAnotherTicketOfTheAccount_isRejected() {
+        // Arrange: decision P9, the ceremony is bound to the ticket that started it
+        var otherTicket = WebAuthnCeremony.startRegistration(new byte[32], user.getId(), UUID.randomUUID());
+        when(ceremonyRepository.consume(ceremony.id(), CeremonyType.REGISTRATION)).thenReturn(Mono.just(otherTicket));
 
         // Act + Assert
         StepVerifier.create(workflow.register(command(null))).expectError(RegistrationFailedException.class).verify();

@@ -17,7 +17,7 @@ class WebAuthnCeremonyTest {
     private static WebAuthnCeremony ceremony(byte fill) {
         var challenge = new byte[WebAuthnCeremony.CHALLENGE_LENGTH];
         Arrays.fill(challenge, fill);
-        return new WebAuthnCeremony(ID, CeremonyType.REGISTRATION, challenge, USER, INSTANT, null, INSTANT);
+        return new WebAuthnCeremony(ID, CeremonyType.REGISTRATION, challenge, USER, null, INSTANT, null, INSTANT);
     }
 
     @Test
@@ -31,8 +31,8 @@ class WebAuthnCeremonyTest {
     @Test
     void equals_differentChallengeOrField_notEqual() {
         var base = ceremony((byte) 1);
-        var consumed = new WebAuthnCeremony(ID, CeremonyType.REGISTRATION, base.challenge(), USER, INSTANT,
-                INSTANT, INSTANT);
+        var consumed = new WebAuthnCeremony(ID, CeremonyType.REGISTRATION, base.challenge(), USER, null,
+                INSTANT, INSTANT, INSTANT);
 
         assertThat(base).isNotEqualTo(ceremony((byte) 2)).isNotEqualTo(consumed).isNotEqualTo("x");
     }

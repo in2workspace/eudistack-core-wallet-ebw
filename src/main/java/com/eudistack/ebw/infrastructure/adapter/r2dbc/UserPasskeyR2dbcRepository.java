@@ -77,6 +77,11 @@ public class UserPasskeyR2dbcRepository implements UserPasskeyRepository {
     }
 
     @Override
+    public Mono<Void> markOnboarding(UUID passkeyId, UUID preregistrationId) {
+        return springRepository.markOnboarding(passkeyId, preregistrationId).then();
+    }
+
+    @Override
     public Mono<Void> touchLastUsed(UUID id) {
         return springRepository.touchLastUsed(id);
     }

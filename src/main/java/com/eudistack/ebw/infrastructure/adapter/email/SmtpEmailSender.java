@@ -1,5 +1,7 @@
 package com.eudistack.ebw.infrastructure.adapter.email;
 
+import com.eudistack.ebw.domain.model.AccountCreatedNotice;
+import com.eudistack.ebw.domain.model.OnboardingAlert;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.model.audit.ExternalSystemTarget;
 import com.eudistack.ebw.domain.repository.TenantRegistryRepository;
@@ -26,6 +28,8 @@ import reactor.core.scheduler.Schedulers;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,6 +41,19 @@ public class SmtpEmailSender implements EmailSender {
     private static final String OTP_SUBJECT_KEY = "email.tx-code.subject";
     private static final String NEW_PASSKEY_TEMPLATE = "new-passkey-email";
     private static final String NEW_PASSKEY_SUBJECT_KEY = "email.new-passkey.subject";
+    private static final String ONBOARDING_ALERT_TEMPLATE = "onboarding-alert-email";
+    private static final String ONBOARDING_ALERT_SUBJECT_KEY = "email.onboarding-alert.subject";
+    private static final String ONBOARDING_ALERT_ADDED_SUBJECT_KEY = "email.onboarding-alert.added.subject";
+    private static final String ACCOUNT_CREATED_TEMPLATE = "account-created-email";
+    private static final String ACCOUNT_CREATED_SUBJECT_KEY = "email.account-created.subject";
+    private static final String ACCOUNT_CREATED_ADDED_SUBJECT_KEY = "email.account-created.added.subject";
+    /**
+     * Time zone of the dates in the emails. PROVISIONAL (EUD-315 decision P10): {@code ebw.timezone}
+     * of the tenant does not exist yet; this is its default in the design (§2.8).
+     */
+    private static final ZoneId EMAIL_ZONE = ZoneId.of("Europe/Madrid");
+    private static final DateTimeFormatter EMAIL_DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final DateTimeFormatter EMAIL_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final String UNKNOWN_MAIL_PROVIDER = "unknown";
     /** The only message bundle is English. */
     private static final Locale LOCALE = Locale.ENGLISH;
@@ -85,8 +102,33 @@ public class SmtpEmailSender implements EmailSender {
         return sendBranded(email, NEW_PASSKEY_TEMPLATE, NEW_PASSKEY_SUBJECT_KEY, Map.of());
     }
 
+    @Override
+    public Mono<Void> sendOnboardingAlert(String securityContact, OnboardingAlert alert, Locale locale) {
+        var subjectKey = alert.accountCreated() ? ONBOARDING_ALERT_SUBJECT_KEY : ONBOARDING_ALERT_ADDED_SUBJECT_KEY;
+        return sendBranded(securityContact, ONBOARDING_ALERT_TEMPLATE, subjectKey, Map.of(
+                "maskedEmail", alert.maskedEmail(),
+                "registeredAt", EMAIL_DATE_TIME.format(alert.registeredAt().atZone(EMAIL_ZONE)),
+                "accountCreated", alert.accountCreated()), locale);
+    }
+
+    @Override
+    public Mono<Void> sendAccountCreatedNotice(String email, AccountCreatedNotice notice, Locale locale) {
+        var subjectKey = notice.accountCreated() ? ACCOUNT_CREATED_SUBJECT_KEY : ACCOUNT_CREATED_ADDED_SUBJECT_KEY;
+        return sendBranded(email, ACCOUNT_CREATED_TEMPLATE, subjectKey, Map.of(
+                "createdAt", EMAIL_DATE_TIME.format(notice.createdAt().atZone(EMAIL_ZONE)),
+                "disavowalUrl", notice.disavowalUrl(),
+                "linkExpiresAt", EMAIL_DATE.format(notice.linkExpiresAt().atZone(EMAIL_ZONE)),
+                "accountCreated", notice.accountCreated()), locale);
+    }
+
     /** Resolves the tenant's sender, display name and branding from the request context, then sends. */
     private Mono<Void> sendBranded(String email, String template, String subjectKey, Map<String, Object> variables) {
+        return sendBranded(email, template, subjectKey, variables, LOCALE);
+    }
+
+    private Mono<Void> sendBranded(String email, String template, String subjectKey, Map<String, Object> variables,
+                                   Locale locale) {
+        var messageLocale = locale == null ? LOCALE : locale;
         return Mono.deferContextual(ctx -> {
             String tenant = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
             Mono<String> displayName = tenant.isBlank()
@@ -96,8 +138,9 @@ public class SmtpEmailSender implements EmailSender {
                             .defaultIfEmpty(tenant);
             return Mono.zip(tenantConfigService.getStringOrDefault("ebw.mail_from", defaultMailFrom), displayName)
                     .flatMap(tuple -> Mono.fromCallable(
-                                    () -> buildMessage(email, template, subjectKey, variables, tuple.getT1(), tuple.getT2(),
-                                            emailBrandingResolver.resolve(tenant)))
+                                    () -> buildMessage(email, template, subjectKey, variables,
+                                            new TenantSender(tuple.getT1(), tuple.getT2(), emailBrandingResolver.resolve(tenant)),
+                                            messageLocale))
                             .subscribeOn(Schedulers.boundedElastic()))
                     .flatMap(mimeMessage -> externalSystemAccessRecorder.recordAccess(mailProvider(), template,
                             Mono.<Void>fromRunnable(() -> mailSender.send(mimeMessage))
@@ -105,22 +148,27 @@ public class SmtpEmailSender implements EmailSender {
         }).then();
     }
 
+    /** Who the email is sent as: the tenant's sender address, display name and branding. */
+    private record TenantSender(String from, String displayName, EmailBranding branding) {}
+
     private MimeMessage buildMessage(String email, String template, String subjectKey, Map<String, Object> variables,
-                                     String from, String tenantDisplayName, EmailBranding branding)
+                                     TenantSender sender, Locale locale)
             throws MessagingException {
-        var context = new Context(LOCALE);
+        var branding = sender.branding();
+        var tenantDisplayName = sender.displayName();
+        var context = new Context(locale);
         variables.forEach(context::setVariable);
         context.setVariable("branding", branding);
         context.setVariable("tenantDisplayName", tenantDisplayName);
 
         var html = templateEngine.process(template, context);
         // The subject may carry an admin-configured value (tenant display name).
-        var subject = messageSource.getMessage(subjectKey, new Object[]{tenantDisplayName}, LOCALE)
+        var subject = messageSource.getMessage(subjectKey, new Object[]{tenantDisplayName}, locale)
                 .replaceAll("[\\r\\n]+", " ");
 
         var mimeMessage = mailSender.createMimeMessage();
         var helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
-        helper.setFrom(from);
+        helper.setFrom(sender.from());
         helper.setTo(email);
         helper.setSubject(subject);
         // Inline parts must follow setText: otherwise the image becomes the first part of

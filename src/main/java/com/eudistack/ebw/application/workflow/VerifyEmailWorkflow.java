@@ -5,11 +5,13 @@ import com.eudistack.ebw.domain.model.RegistrationTicketIssued;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.exception.DuplicateAccountException;
 import com.eudistack.ebw.domain.model.exception.InvalidOtpException;
+import com.eudistack.ebw.domain.model.exception.NoAccountException;
 import com.eudistack.ebw.domain.model.exception.OtpExpiredException;
 import com.eudistack.ebw.domain.model.exception.TooManyAttemptsException;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.domain.service.AuditService;
+import com.eudistack.ebw.domain.service.OnboardingSettingsService;
 import com.eudistack.ebw.domain.service.OtpService;
 import com.eudistack.ebw.domain.service.RegistrationTicketService;
 import com.eudistack.ebw.domain.spi.EmailRateLimiter;
@@ -24,6 +26,10 @@ import java.util.UUID;
  * Verifies the email code (FR-03) and creates the account and its Wallet Unit, or recognizes
  * the existing one (FR-04). Never opens a session (FR-16): it returns a registration ticket
  * that only allows registering a passkey or signing in with one of the account.
+ *
+ * <p>In the restricted onboarding mode (design §2.7, FR-34) an email without account creates
+ * nothing: the code is consumed and the answer is {@link NoAccountException} with the tenant's
+ * onboarding address.
  */
 @Service
 public class VerifyEmailWorkflow {
@@ -35,12 +41,13 @@ public class VerifyEmailWorkflow {
     private final SecureRandomGenerator randomGenerator;
     private final AuditService auditService;
     private final EmailRateLimiter emailRateLimiter;
+    private final OnboardingSettingsService onboardingSettings;
 
     @SuppressWarnings("java:S107")
     public VerifyEmailWorkflow(OtpService otpService, WalletUserRepository userRepository,
                                UserPasskeyRepository passkeyRepository, RegistrationTicketService ticketService,
                                SecureRandomGenerator randomGenerator, AuditService auditService,
-                               EmailRateLimiter emailRateLimiter) {
+                               EmailRateLimiter emailRateLimiter, OnboardingSettingsService onboardingSettings) {
         this.otpService = otpService;
         this.userRepository = userRepository;
         this.passkeyRepository = passkeyRepository;
@@ -48,6 +55,7 @@ public class VerifyEmailWorkflow {
         this.randomGenerator = randomGenerator;
         this.auditService = auditService;
         this.emailRateLimiter = emailRateLimiter;
+        this.onboardingSettings = onboardingSettings;
     }
 
     public Mono<RegistrationTicketIssued> verifyEmail(String email, String code) {
@@ -57,7 +65,7 @@ public class VerifyEmailWorkflow {
                         e -> auditRejection(e).then(Mono.error(e)))
                 .flatMap(verification -> auditService.record(AuthAuditEvents.ENTITY_EMAIL_VERIFICATION,
                                 verification.getId(), AuthAuditEvents.EMAIL_CODE_VERIFIED, null, Map.of())
-                        .then(findOrCreateUser(email)))
+                        .then(findOrCreateUser(email, verification.getId())))
                 .flatMap(user -> ticketService.issue(user.getId())
                         .flatMap(ticket -> passkeyRepository.countByUserId(user.getId())
                                 .defaultIfEmpty(0L)
@@ -66,19 +74,34 @@ public class VerifyEmailWorkflow {
                 .flatMap(result -> emailRateLimiter.resetForEmail(email).thenReturn(result));
     }
 
-    private Mono<WalletUser> findOrCreateUser(String email) {
+    private Mono<WalletUser> findOrCreateUser(String email, UUID verificationId) {
         return userRepository.findByEmail(email)
                 .flatMap(existing -> auditService.record(AuthAuditEvents.ENTITY_USER, existing.getId(),
                                 AuthAuditEvents.ACCOUNT_RECOGNIZED, existing.getId(), Map.of())
                         .thenReturn(existing))
-                .switchIfEmpty(Mono.defer(() -> userRepository
-                        .save(WalletUser.create(email, randomGenerator.generateBytes(WalletUser.USER_HANDLE_LENGTH)))
-                        .flatMap(created -> auditService.record(AuthAuditEvents.ENTITY_USER, created.getId(),
-                                        AuthAuditEvents.ACCOUNT_CREATED, created.getId(), Map.of())
-                                .thenReturn(created))
-                        // Two verifications of the same email at once: the second reuses the account.
-                        .onErrorResume(DuplicateAccountException.class, e -> userRepository.findByEmail(email)
-                                .switchIfEmpty(Mono.error(e)))));
+                .switchIfEmpty(Mono.defer(() -> onboardingSettings.current()
+                        .flatMap(settings -> settings.restricted()
+                                ? rejectWithoutTicket(email, verificationId, settings.signupUrl())
+                                : createUser(email))));
+    }
+
+    /** Restricted mode: the code is already consumed and nothing is created (FR-34, AC-13). */
+    private Mono<WalletUser> rejectWithoutTicket(String email, UUID verificationId, String signupUrl) {
+        return auditService.record(AuthAuditEvents.ENTITY_EMAIL_VERIFICATION, verificationId,
+                        AuthAuditEvents.ONBOARDING_WITHOUT_TICKET_REJECTED, null, Map.of())
+                .then(emailRateLimiter.resetForEmail(email))
+                .then(Mono.error(new NoAccountException(signupUrl)));
+    }
+
+    private Mono<WalletUser> createUser(String email) {
+        return userRepository
+                .save(WalletUser.create(email, randomGenerator.generateBytes(WalletUser.USER_HANDLE_LENGTH)))
+                .flatMap(created -> auditService.record(AuthAuditEvents.ENTITY_USER, created.getId(),
+                                AuthAuditEvents.ACCOUNT_CREATED, created.getId(), Map.of())
+                        .thenReturn(created))
+                // Two verifications of the same email at once: the second reuses the account.
+                .onErrorResume(DuplicateAccountException.class, e -> userRepository.findByEmail(email)
+                        .switchIfEmpty(Mono.error(e)));
     }
 
     private static boolean isCodeRejection(Throwable e) {

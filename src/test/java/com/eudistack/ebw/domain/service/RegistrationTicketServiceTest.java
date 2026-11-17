@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
@@ -50,7 +51,8 @@ class RegistrationTicketServiceTest {
 
     private RegistrationTicket ticket() {
         var now = Instant.now();
-        return new RegistrationTicket(UUID.randomUUID(), UUID.randomUUID(), "hash", now.plusSeconds(300), null, now);
+        return new RegistrationTicket(UUID.randomUUID(), UUID.randomUUID(), null, "hash", now.plusSeconds(300), null,
+                now);
     }
 
     @Test
@@ -88,6 +90,34 @@ class RegistrationTicketServiceTest {
         verify(ticketRepository).insert(stored.capture());
         assertThat(stored.getValue().expiresAt()).isEqualTo(stored.getValue().createdAt().plus(RegistrationTicket.TTL));
         assertThat(RegistrationTicket.TTL.toMinutes()).isEqualTo(5);
+    }
+
+    @Test
+    void issueForPreregistration_storesOnlyTheHashBoundToThePreregistrationAndEmitsTheRawTicket() {
+        // Arrange
+        var preregistrationId = UUID.randomUUID();
+        var bytes = new byte[32];
+        Arrays.fill(bytes, (byte) 3);
+        var raw = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        when(randomGenerator.generateBytes(32)).thenReturn(bytes);
+        when(hashProvider.sha256(raw)).thenReturn("stored-hash");
+        when(ticketRepository.insert(any())).thenAnswer(call -> Mono.just(call.getArgument(0)));
+
+        // Act
+        var issued = service.issueForPreregistration(null, preregistrationId, Duration.ofMinutes(30)).block();
+
+        // Assert
+        var stored = ArgumentCaptor.forClass(RegistrationTicket.class);
+        verify(ticketRepository).insert(stored.capture());
+        assertThat(stored.getValue().userId()).isNull();
+        assertThat(stored.getValue().preregistrationId()).isEqualTo(preregistrationId);
+        assertThat(stored.getValue().tokenHash()).isEqualTo("stored-hash");
+        assertThat(stored.getValue().expiresAt())
+                .isEqualTo(stored.getValue().createdAt().plus(Duration.ofMinutes(30)));
+        assertThat(issued).isNotNull();
+        assertThat(issued.raw()).isEqualTo(raw);
+        assertThat(issued.expiresAt()).isEqualTo(stored.getValue().expiresAt());
+        assertThat(issued.toString()).doesNotContain(raw);
     }
 
     @Test

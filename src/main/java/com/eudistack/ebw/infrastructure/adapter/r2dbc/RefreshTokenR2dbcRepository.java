@@ -92,6 +92,11 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
     }
 
     @Override
+    public Mono<Long> revokeByUserId(UUID userId) {
+        return springRepository.revokeByUserId(userId).defaultIfEmpty(0L);
+    }
+
+    @Override
     public Mono<Void> revokeByPasskeyId(UUID passkeyId) {
         return springRepository.revokeByPasskeyId(passkeyId);
     }

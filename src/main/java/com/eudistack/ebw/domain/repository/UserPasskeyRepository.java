@@ -32,5 +32,8 @@ public interface UserPasskeyRepository {
 
     Mono<Long> countByUserId(UUID userId);
 
+    /** Marks the passkey registered with an onboarding ticket ("it was not me", trace; EUD-315). */
+    Mono<Void> markOnboarding(UUID passkeyId, UUID preregistrationId);
+
     Mono<Void> touchLastUsed(UUID id);
 }
