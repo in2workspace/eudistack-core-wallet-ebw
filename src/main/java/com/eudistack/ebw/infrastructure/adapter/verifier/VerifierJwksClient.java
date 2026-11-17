@@ -92,7 +92,11 @@ public class VerifierJwksClient {
         if (attemptedAt != null && attemptedAt.plus(MIN_RELOAD_INTERVAL).isAfter(clock.instant())) {
             return lastRead();
         }
-        var shared = fetch().doFinally(signal -> inFlight.set(null)).cache();
+        // Cleared before the result reaches the callers (doFinally runs after them, on the HTTP thread, so a
+        // caller right after would still get this read), and only if it is still this read.
+        var self = new AtomicReference<Mono<JWKSet>>();
+        var shared = fetch().doOnTerminate(() -> inFlight.compareAndSet(self.get(), null)).cache();
+        self.set(shared);
         if (!inFlight.compareAndSet(null, shared)) {
             var other = inFlight.get();
             return other != null ? other : lastRead();
