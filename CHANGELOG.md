@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-18
+
 ### Added (EUD-315, version 2.3.0)
 
 - **Onboarding with a ticket**: a system authorised by the tenant pre-registers a user it has identified and gets a short onboarding address `<ebw.wallet_url>/t#<ticket>` (the ticket goes in the fragment, so it never reaches access logs nor the `Referer`).
@@ -31,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Every operation carries the `tenant` tag**, as in the Issuer and the Verifier: spans, the metrics derived from them and `http.server.requests` (`TenantServerRequestObservationConvention`, which reads the tenant from the exchange because the Reactor context is gone when the HTTP observation stops). Only a tenant active in `public.tenant_registry` becomes the tag, loaded when the application is ready and refreshed every 5 minutes (`ObservedTenants`); any other value is `unknown`, so an invented subdomain creates no metric series. The request itself is not affected.
 - **The tenant is in the MDC as `tenantDomain`** (`MdcContextConfig`), so the console pattern prints it and the OTLP log export carries it with the other MDC attributes.
+
+## [Unreleased]
 
 ### Fixed (EUD-326)
 
