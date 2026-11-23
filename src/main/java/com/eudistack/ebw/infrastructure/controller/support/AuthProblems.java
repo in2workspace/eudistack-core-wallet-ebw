@@ -30,6 +30,15 @@ public final class AuthProblems {
     public static final String NO_ACCOUNT = "no_account";
     /** Not in the contract: the Verifier keys cannot be read, so no system token can be checked (EUD-315). */
     public static final String SERVICE_UNAVAILABLE = "service_unavailable";
+    // Wallet Instances (EUD-15 annex/openapi.yaml)
+    /** The session is not bound to an active Wallet Instance (403, AD-3). */
+    public static final String INSTANCE_REQUIRED = "instance_required";
+    /** No instance with that identifier in the account, also when it belongs to another account (404). */
+    public static final String INSTANCE_NOT_FOUND = "instance_not_found";
+    /** The instance is revoked: the Wallet App forgets it and registers a new one (410). */
+    public static final String INSTANCE_REVOKED = "instance_revoked";
+    /** More than 20 instance registrations per account and hour (429). */
+    public static final String TOO_MANY_REQUESTS = "too_many_requests";
     /** Not in the contract: cookie endpoint called without {@code X-Wallet-Request: 1}. */
     public static final String FORBIDDEN = "forbidden";
     /** Not in the contract: server failure, for instance a tenant without {@code ebw.webauthn.rp_id}. */

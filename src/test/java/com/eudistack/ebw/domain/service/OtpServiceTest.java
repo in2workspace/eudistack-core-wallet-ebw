@@ -1,6 +1,7 @@
 package com.eudistack.ebw.domain.service;
 
 import com.eudistack.ebw.domain.model.EmailVerification;
+import java.util.Locale;
 import com.eudistack.ebw.domain.model.exception.InvalidOtpException;
 import com.eudistack.ebw.domain.model.exception.OtpExpiredException;
 import com.eudistack.ebw.domain.model.exception.TooManyAttemptsException;
@@ -49,10 +50,10 @@ class OtpServiceTest {
         when(hashProvider.hash("482916")).thenReturn(Mono.just("bcrypt-hash"));
         when(verificationRepository.invalidateByEmail(email)).thenReturn(Mono.empty());
         when(verificationRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-        when(emailSender.sendOtp(email, "482916")).thenReturn(Mono.empty());
+        when(emailSender.sendOtp(email, "482916", Locale.ENGLISH)).thenReturn(Mono.empty());
 
         // Act
-        var result = otpService.generateAndSend(email);
+        var result = otpService.generateAndSend(email, Locale.ENGLISH);
 
         // Assert
         StepVerifier.create(result)
@@ -60,7 +61,7 @@ class OtpServiceTest {
                 .verifyComplete();
 
         verify(verificationRepository).invalidateByEmail(email);
-        verify(emailSender).sendOtp(email, "482916");
+        verify(emailSender).sendOtp(email, "482916", Locale.ENGLISH);
 
         var captor = ArgumentCaptor.forClass(EmailVerification.class);
         verify(verificationRepository).save(captor.capture());

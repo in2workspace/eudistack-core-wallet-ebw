@@ -81,20 +81,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(problem);
     }
 
-    @ExceptionHandler(PasskeyNotFoundException.class)
-    public ResponseEntity<ProblemDetail> handlePasskeyNotFound(PasskeyNotFoundException ex) {
-        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
-        problem.setType(URI.create("urn:eudistack:error:passkey-not-found"));
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
-    }
-
-    @ExceptionHandler(LastPasskeyException.class)
-    public ResponseEntity<ProblemDetail> handleLastPasskey(LastPasskeyException ex) {
-        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
-        problem.setType(URI.create("urn:eudistack:error:last-passkey"));
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
-    }
-
     @ExceptionHandler(InvalidTransitionException.class)
     public ResponseEntity<ProblemDetail> handleInvalidTransition(InvalidTransitionException ex) {
         var problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());

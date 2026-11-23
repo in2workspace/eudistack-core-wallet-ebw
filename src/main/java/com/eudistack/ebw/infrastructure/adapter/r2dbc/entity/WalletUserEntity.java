@@ -17,6 +17,7 @@ public class WalletUserEntity implements Persistable<UUID> {
     private byte[] webauthnUserHandle;
     private Instant createdAt;
     private Instant updatedAt;
+    private String locale;
 
     @Transient
     private boolean isNew = false;
@@ -46,4 +47,6 @@ public class WalletUserEntity implements Persistable<UUID> {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+    public String getLocale() { return locale; }
+    public void setLocale(String locale) { this.locale = locale; }
 }

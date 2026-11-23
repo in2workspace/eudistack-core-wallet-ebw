@@ -1,6 +1,7 @@
 package com.eudistack.ebw.infrastructure.security;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.domain.model.SessionState;
 import com.eudistack.ebw.domain.service.AuthTokenService;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -13,9 +14,10 @@ import java.time.Duration;
 import java.util.UUID;
 
 /**
- * Whether the session ({@code sid}) of an access token is still alive, with a short per-instance
- * cache to bound the database load. An ended session is seen as ended at most {@link #CACHE_TTL}
- * later on other instances; this instance forgets it immediately ({@link #forget}).
+ * The state of the session ({@code sid}) of an access token: whether it is still alive and the active Wallet
+ * Instance it is bound to (EUD-15 AD-2), with a short per-instance cache to bound the database load. An ended
+ * session, or a revoked instance, is seen as such at most {@link #CACHE_TTL} later on other instances; this
+ * instance forgets it immediately ({@link #forget}).
  */
 @Component
 public class ActiveSessionChecker {
@@ -23,7 +25,7 @@ public class ActiveSessionChecker {
     static final Duration CACHE_TTL = Duration.ofSeconds(10);
 
     private final AuthTokenService authTokenService;
-    private final Cache<String, Boolean> cache;
+    private final Cache<String, SessionState> cache;
 
     @Autowired
     public ActiveSessionChecker(AuthTokenService authTokenService) {
@@ -41,29 +43,43 @@ public class ActiveSessionChecker {
     }
 
     /**
-     * Requires the tenant in the Reactor context (the session lives in the tenant schema). Only
-     * the answers the service gives are cached: a failure propagates and an empty answer is read
-     * as "not active" without being remembered, so a transient problem never pins a session as
-     * ended.
+     * Requires the tenant in the Reactor context (the session lives in the tenant schema). Only the answers the
+     * service gives are cached: a failure propagates and an empty answer is read as an ended session without
+     * being remembered, so a transient problem never pins a session as ended.
      */
-    public Mono<Boolean> isActive(UUID sessionId) {
+    public Mono<SessionState> state(UUID sessionId) {
         return Mono.deferContextual(ctx -> {
-            var key = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "") + ":" + sessionId;
+            var key = key(ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, ""), sessionId);
             var cached = cache.getIfPresent(key);
             if (cached != null) {
                 return Mono.just(cached);
             }
-            return authTokenService.isSessionActive(sessionId)
-                    .doOnNext(active -> cache.put(key, active))
-                    .defaultIfEmpty(false);
+            return authTokenService.sessionState(sessionId)
+                    // A live session without an instance is about to be bound, maybe on another replica: it is
+                    // asked again every time, so the binding is seen at once (EUD-15 design §2.2).
+                    .doOnNext(state -> {
+                        if (!state.active() || state.hasActiveInstance()) {
+                            cache.put(key, state);
+                        }
+                    })
+                    .defaultIfEmpty(SessionState.ENDED);
         });
     }
 
-    /** Drops the cached state of a session this instance has just ended. */
+    /** Whether the session is still alive, whatever its instance. */
+    public Mono<Boolean> isActive(UUID sessionId) {
+        return state(sessionId).map(SessionState::active);
+    }
+
+    /** Drops the cached state of a session this instance has just ended, bound or revoked. */
     public Mono<Void> forget(UUID sessionId) {
         return Mono.deferContextual(ctx -> {
-            cache.invalidate(ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "") + ":" + sessionId);
+            cache.invalidate(key(ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, ""), sessionId));
             return Mono.empty();
         });
+    }
+
+    private static String key(String tenant, UUID sessionId) {
+        return tenant + ":" + sessionId;
     }
 }

@@ -25,6 +25,7 @@ import java.sql.Statement;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
@@ -166,8 +167,10 @@ public abstract class IntegrationTestBase {
             String code = invocation.getArgument(1);
             capturedOtps.put(email, code);
             return Mono.empty();
-        }).when(emailSender).sendOtp(anyString(), anyString());
-        lenient().when(emailSender.sendNewPasskeyNotice(anyString())).thenReturn(Mono.empty());
+        }).when(emailSender).sendOtp(anyString(), anyString(), any());
+        lenient().when(emailSender.sendNewPasskeyNotice(anyString(), any(), any())).thenReturn(Mono.empty());
+        lenient().when(emailSender.sendAccountCompleteNotice(anyString(), any(), any())).thenReturn(Mono.empty());
+        lenient().when(emailSender.sendNewDeviceNotice(anyString(), any(), any())).thenReturn(Mono.empty());
     }
 
     /** Origin of the Wallet App of {@link #TEST_TENANT}; its Relying Party is {@link #TEST_RP_ID}. */
@@ -185,7 +188,29 @@ public abstract class IntegrationTestBase {
      * verified passkey registration with a software authenticator.
      */
     protected String getAccessToken(String email) {
-        return authClient().signUp(email, new SoftwareAuthenticator(TEST_ORIGIN)).accessToken();
+        var accessToken = authClient().signUp(email, new SoftwareAuthenticator(TEST_ORIGIN)).accessToken();
+        // Every authenticated route but the session and device ones needs a registered device (EUD-15 AD-3).
+        registerDevice(accessToken, "Test device");
+        return accessToken;
+    }
+
+    /** The session, once its Wallet App is registered as a device (EUD-15): it can then use every route. */
+    protected WalletAuthClient.Session withDevice(WalletAuthClient.Session session) {
+        registerDevice(session.accessToken(), "Test device");
+        return session;
+    }
+
+    /** Registers the Wallet App of the session as a device and binds the session to it (EUD-15). Emits its id. */
+    protected String registerDevice(String accessToken, String displayName) {
+        var body = webClient.post().uri("/api/v1/wallet-instances")
+                .header(org.springframework.http.HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .bodyValue(Map.of("displayName", displayName, "deviceType", "desktop"))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(Map.class)
+                .returnResult()
+                .getResponseBody();
+        return (String) body.get("id");
     }
 
     /** Runs SQL in the test tenant schema (fixtures and assertions on rows the API does not expose). */

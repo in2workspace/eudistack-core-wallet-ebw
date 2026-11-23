@@ -17,7 +17,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -27,19 +26,14 @@ import java.util.Map;
  * security contact; if that fails the disavowal still stands and {@code ONBOARDING_ALERT_FAILED}
  * is traced. The account stays without that passkey: the holder recovers access with the email.
  *
- * <p>The devices registered with the passkey are revoked by the device management (EUD-15), not
- * implemented yet (decision P5).
+ * <p>In the same transaction, before the passkey is deleted, every Wallet Instance registered with it is revoked
+ * as {@code DISAVOWAL} (EUD-15 FR-19). The alert goes in the tenant's {@code ebw.default_locale} (EUD-8 FR-38).
  */
 @Slf4j
 @Service
 public class DisavowOnboardingWorkflow {
 
     static final Duration ALERT_TIMEOUT = Duration.ofSeconds(5);
-    /**
-     * PROVISIONAL (EUD-315 decision P10): the alert goes in the tenant's default language, and
-     * {@code ebw.default_locale} does not exist yet; every email of the service is English today.
-     */
-    static final Locale ALERT_LOCALE = Locale.ENGLISH;
     static final String ENTITY_DISAVOWAL = "onboarding_disavowal";
 
     private final OnboardingDisavowalRepository disavowalRepository;
@@ -51,6 +45,8 @@ public class DisavowOnboardingWorkflow {
     private final HashProvider hashProvider;
     private final TransactionRunner transactionRunner;
     private final AuditService auditService;
+    private final WalletInstanceRevoker walletInstanceRevoker;
+    private final EmailLocales emailLocales;
 
     @SuppressWarnings("java:S107")
     public DisavowOnboardingWorkflow(OnboardingDisavowalRepository disavowalRepository,
@@ -58,7 +54,10 @@ public class DisavowOnboardingWorkflow {
                                      UserPasskeyRepository passkeyRepository, WalletUserRepository userRepository,
                                      OnboardingSettingsService onboardingSettings, EmailSender emailSender,
                                      HashProvider hashProvider, TransactionRunner transactionRunner,
-                                     AuditService auditService) {
+                                     AuditService auditService, WalletInstanceRevoker walletInstanceRevoker,
+                                     EmailLocales emailLocales) {
+        this.walletInstanceRevoker = walletInstanceRevoker;
+        this.emailLocales = emailLocales;
         this.disavowalRepository = disavowalRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passkeyRepository = passkeyRepository;
@@ -83,7 +82,13 @@ public class DisavowOnboardingWorkflow {
                 : passkeyRepository.findByIdAndUserId(disavowal.passkeyId(), disavowal.userId())
                         .flatMap(passkey -> passkeyRepository.deleteById(passkey.getId()).thenReturn(true))
                         .defaultIfEmpty(false);
-        return refreshTokenRepository.revokeByUserId(disavowal.userId())
+        // The devices registered with that passkey are revoked before it is deleted (EUD-15 FR-19): by the
+        // registered passkey, not by the sessions, which the hourly task deletes after 7 days.
+        var revokeDevices = disavowal.passkeyId() == null
+                ? Mono.<Void>empty()
+                : walletInstanceRevoker.revokeRegisteredWith(disavowal.passkeyId(), disavowal.userId()).then();
+        return revokeDevices
+                .then(refreshTokenRepository.revokeByUserId(disavowal.userId()))
                 .then(removePasskey)
                 .flatMap(removed -> auditService.record(ENTITY_DISAVOWAL, disavowal.id(),
                         AuthAuditEvents.ONBOARDING_DISAVOWED, disavowal.userId(),
@@ -96,10 +101,11 @@ public class DisavowOnboardingWorkflow {
                 .flatMap(settings -> settings.securityContact() == null || settings.securityContact().isBlank()
                         ? alertFailed(disavowal, "no_security_contact")
                         : userRepository.findById(disavowal.userId())
-                                .flatMap(user -> emailSender.sendOnboardingAlert(settings.securityContact(),
-                                        new OnboardingAlert(OnboardingAlert.mask(user.getEmail()),
+                                .zipWith(emailLocales.tenantDefault())
+                                .flatMap(tuple -> emailSender.sendOnboardingAlert(settings.securityContact(),
+                                        new OnboardingAlert(OnboardingAlert.mask(tuple.getT1().getEmail()),
                                                 disavowal.registeredAt(), disavowal.accountCreated()),
-                                        ALERT_LOCALE))
+                                        tuple.getT2()))
                                 .timeout(ALERT_TIMEOUT))
                 .onErrorResume(e -> {
                     // Class only: a mail error may echo the addresses.

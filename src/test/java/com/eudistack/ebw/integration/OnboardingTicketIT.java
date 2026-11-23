@@ -39,6 +39,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 /**
  * End-to-end onboarding ticket flow on a running service with PostgreSQL and a simulated tenant
@@ -581,8 +582,8 @@ class OnboardingTicketIT extends IntegrationTestBase {
         accountWithoutPasskeys(email);
         var registrationTicket = registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT);
 
-        // Act
-        var session = authClient().registerPasskey(registrationTicket, new SoftwareAuthenticator(TEST_ORIGIN));
+        // Act: the email ends the registration of the first device (EUD-15 FR-08)
+        var session = withDevice(authClient().registerPasskey(registrationTicket, new SoftwareAuthenticator(TEST_ORIGIN)));
 
         // Assert: the account is the same, the passkey is its first one, and the row and the email say "not created"
         assertThat(session.accessToken()).isNotBlank();
@@ -596,6 +597,11 @@ class OnboardingTicketIT extends IntegrationTestBase {
         // And "it was not me" removes that passkey and alerts the security contact with the "added" variant
         disavow(tokenOf(notices.get(0))).expectStatus().isNoContent();
         assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isZero();
+        // EUD-15 FR-19, AC-19: the devices registered with that passkey are revoked
+        assertThat(countInTestTenant("wallet_instance WHERE user_id = " + userOf(email)
+                + " AND status = 'REVOKED' AND revoked_by = 'DISAVOWAL'")).isEqualTo(1);
+        assertThat(countInTestTenant("wallet_instance WHERE user_id = " + userOf(email)
+                + " AND status = 'ACTIVE'")).isZero();
         assertThat(alerts).hasSize(1);
         assertThat(alerts.get(0).accountCreated()).isFalse();
     }
@@ -667,19 +673,22 @@ class OnboardingTicketIT extends IntegrationTestBase {
     }
 
     @Test
-    void onboarding_noticeOfTheRegistration_hasNeitherTheDeviceNorTheNameTheClientSent() {
-        // Arrange: the client sends the passkey name "Test device"; the notice carries only date and link
+    void onboarding_noticeOfTheRegistration_goesWithTheRegisteredDeviceAndNotBefore() {
+        // Arrange: EUD-15 FR-08, AC-09 - one email, when the first device is registered, with its name
         var notices = captureNotices();
-        var email = email("nodevice");
+        var email = email("withdevice");
 
         // Act
-        authClient().registerPasskey(registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT),
+        var session = authClient().registerPasskey(registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT),
                 new SoftwareAuthenticator(TEST_ORIGIN));
+        assertThat(notices).isEmpty();
+        registerDevice(session.accessToken(), "iPhone · Safari");
 
-        // Assert
+        // Assert: the new-account email, and no other email of the device registration
         assertThat(notices).hasSize(1);
-        assertThat(notices.get(0).toString()).doesNotContainIgnoringCase("device")
-                .doesNotContain("Test device");
+        assertThat(notices.get(0).deviceName()).isEqualTo("iPhone · Safari");
+        verify(emailSender, never()).sendAccountCompleteNotice(anyString(), any(), any());
+        verify(emailSender, never()).sendNewDeviceNotice(anyString(), any(), any());
     }
 
     @Test
@@ -687,14 +696,14 @@ class OnboardingTicketIT extends IntegrationTestBase {
         // Arrange: EC-01, the account is left without passkeys by the first "it was not me"
         var notices = captureNotices();
         var email = email("again");
-        authClient().registerPasskey(registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT),
-                new SoftwareAuthenticator(TEST_ORIGIN));
+        withDevice(authClient().registerPasskey(registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT),
+                new SoftwareAuthenticator(TEST_ORIGIN)));
         disavow(tokenOf(notices.get(0))).expectStatus().isNoContent();
         assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isZero();
 
         // Act
-        authClient().registerPasskey(registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT),
-                new SoftwareAuthenticator(TEST_ORIGIN));
+        withDevice(authClient().registerPasskey(registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT),
+                new SoftwareAuthenticator(TEST_ORIGIN)));
 
         // Assert: a second notice for the account that already existed, with its own link that works
         assertThat(notices).hasSize(2);
@@ -719,7 +728,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
         var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
 
         // Act
-        var session = authClient().registerPasskey(registrationTicket, authenticator);
+        var session = withDevice(authClient().registerPasskey(registrationTicket, authenticator));
 
         // Assert: account, passkey marked with the pre-registration, pre-registration gone, session open
         assertThat(session.accessToken()).isNotBlank();
@@ -730,7 +739,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
                 + " AND token_hash IS NOT NULL")).isEqualTo(1);
         // The passkey carries the user handle of the account: a later sign-in works (decision P2)
         assertThat(authClient().signIn(authenticator).accessToken()).isNotBlank();
-        // The new-account email went out with the "it was not me" link (provisional, P5)
+        // The new-account email went out with the "it was not me" link when the device was registered (EUD-15)
         assertThat(notices).hasSize(1);
         var link = notices.get(0).disavowalUrl();
         assertThat(link).startsWith(WALLET_URL + "/not-me#");
@@ -880,10 +889,10 @@ class OnboardingTicketIT extends IntegrationTestBase {
         var email = email("noticedown");
         var registrationTicket = registrationTicketOf(ticketFor(email, TEST_TENANT), TEST_TENANT);
 
-        // Act
-        var session = authClient().registerPasskey(registrationTicket, new SoftwareAuthenticator(TEST_ORIGIN));
+        // Act: the email ends the registration of the first device (EUD-15 FR-08)
+        var session = withDevice(authClient().registerPasskey(registrationTicket, new SoftwareAuthenticator(TEST_ORIGIN)));
 
-        // Assert: the onboarding and its session stand
+        // Assert: the onboarding, its device and its session stand
         assertThat(session.accessToken()).isNotBlank();
         assertThat(countInTestTenant("user_passkey WHERE user_id = " + userOf(email))).isEqualTo(1);
         assertThat(countInTestTenant("audit_log WHERE action = 'ONBOARDING_NOTICE_FAILED' AND actor_id = "
@@ -921,7 +930,7 @@ class OnboardingTicketIT extends IntegrationTestBase {
         redeem("A".repeat(22), TEST_TENANT, null).expectStatus().isUnauthorized();
         var registrationTicket = registrationTicketOf(ticket, TEST_TENANT);
         var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
-        authClient().registerPasskey(registrationTicket, authenticator);
+        withDevice(authClient().registerPasskey(registrationTicket, authenticator));
         var link = notices.get(0).disavowalUrl();
         var disavowalToken = link.substring(link.indexOf('#') + 1);
 
@@ -931,7 +940,8 @@ class OnboardingTicketIT extends IntegrationTestBase {
         // Assert: the events of the trail
         var ofThisRun = "audit_log WHERE created_at >= '" + since + "'";
         for (var event : List.of("PREREGISTRATION_CREATED", "ONBOARDING_TICKET_REJECTED", "ONBOARDING_TICKET_REDEEMED",
-                "ACCOUNT_CREATED", "PASSKEY_REGISTERED", "ONBOARDING_NOTICE_SENT", "ONBOARDING_DISAVOWED")) {
+                "ACCOUNT_CREATED", "PASSKEY_REGISTERED", "WALLET_INSTANCE_REGISTERED", "ONBOARDING_NOTICE_SENT",
+                "ONBOARDING_DISAVOWED", "WALLET_INSTANCE_REVOKED")) {
             assertThat(countInTestTenant(ofThisRun + " AND action = '" + event + "'")).as(event).isPositive();
         }
         // and none carries the email, a ticket, the token or the passkey beyond its identifier

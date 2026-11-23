@@ -42,7 +42,7 @@ import static org.mockito.Mockito.when;
  * <p>Covered criteria (EUD-143):
  * <ul>
  *   <li>AC-01 — list returns exactly the passkeys registered under the caller's account</li>
- *   <li>AC-02 — each entry exposes displayName / createdAt / lastUsedAt</li>
+ *   <li>AC-02 — each entry exposes credentialId / createdAt / lastUsedAt</li>
  *   <li>EC-02 — lastUsedAt absent (never used) is returned as {@code null}, not an error</li>
  *   <li>EC-04 — result order is stable: last_used_at DESC NULLS LAST, created_at DESC</li>
  *   <li>ES-01 — no Authorization header / invalid token → 401, no passkey data returned</li>
@@ -133,8 +133,9 @@ class PasskeyControllerIT {
 
     @BeforeEach
     void setUp() throws SQLException {
-        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
-                .thenReturn(reactor.core.publisher.Mono.just(true));
+        org.mockito.Mockito.lenient().when(activeSessionChecker.state(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(new com.eudistack.ebw.domain.model.SessionState(
+                        true, java.util.UUID.randomUUID())));
         webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         cleanTables();
         when(tokenSigner.verify(VALID_TOKEN)).thenAnswer(TestSessions.sessionOfRequestTenant(USER_A.toString(), "user-a@test.com"));
@@ -218,11 +219,11 @@ class PasskeyControllerIT {
     }
 
     // -------------------------------------------------------------------------
-    // AC-02 — each entry exposes displayName / createdAt / lastUsedAt
+    // AC-02 — each entry exposes credentialId / createdAt / lastUsedAt
     // -------------------------------------------------------------------------
 
     @Test
-    void list_returnsDisplayNameCreatedAtAndLastUsedAt() throws SQLException {
+    void list_returnsCredentialIdCreatedAtAndLastUsedAt() throws SQLException {
         seedUser(USER_A, "user-a@test.com");
         Instant createdAt = Instant.parse("2026-01-01T10:00:00Z");
         Instant lastUsedAt = Instant.parse("2026-06-01T10:00:00Z");
@@ -236,7 +237,7 @@ class PasskeyControllerIT {
 
         assertThat(body).hasSize(1);
         PasskeyResponse passkey = body.get(0);
-        assertThat(passkey.displayName()).isEqualTo("iPhone 15");
+        assertThat(passkey.credentialId()).isEqualTo("cred-1");
         assertThat(passkey.createdAt()).isEqualTo(createdAt);
         assertThat(passkey.lastUsedAt()).isEqualTo(lastUsedAt);
     }
@@ -282,8 +283,8 @@ class PasskeyControllerIT {
                 .returnResult()
                 .getResponseBody();
 
-        assertThat(body).extracting(PasskeyResponse::displayName)
-                .containsExactly("Most Recently Used", "Less Recently Used", "Never Used Device");
+        assertThat(body).extracting(PasskeyResponse::credentialId)
+                .containsExactly("cred-most-recent", "cred-less-recent", "cred-never-used");
     }
 
     // -------------------------------------------------------------------------
@@ -317,15 +318,11 @@ class PasskeyControllerIT {
     }
 
     // ===========================================================================
-    // EUD-144 — DELETE /api/v1/auth/passkeys/{id}
+    // EUD-15 AD-4 — the passkeys API does not manage devices: no DELETE route
     // ===========================================================================
 
-    // -------------------------------------------------------------------------
-    // AC-01 — revoking a device other than the last one deletes its passkey
-    // -------------------------------------------------------------------------
-
     @Test
-    void delete_targetOfTwoPasskeys_returns204AndRemovesOnlyTheTarget() throws SQLException {
+    void delete_routeRemoved_neverDeletesThePasskey() throws SQLException {
         seedUser(USER_A, "user-a@test.com");
         UUID target = UUID.randomUUID();
         seedPasskey(target, USER_A, "cred-target", "Old Phone",
@@ -333,115 +330,14 @@ class PasskeyControllerIT {
         seedPasskey(UUID.randomUUID(), USER_A, "cred-remaining", "Laptop",
                 Instant.parse("2026-01-02T10:00:00Z"), null);
 
-        deleteWithAuth(target, VALID_TOKEN)
-                .expectStatus().isNoContent();
+        var status = deleteWithAuth(target, VALID_TOKEN).returnResult(String.class).getStatus();
 
-        List<PasskeyResponse> remaining = listWithAuth(VALID_TOKEN)
-                .expectStatus().isOk()
-                .expectBodyList(PasskeyResponse.class)
-                .returnResult()
-                .getResponseBody();
-        assertThat(remaining).extracting(PasskeyResponse::displayName).containsExactly("Laptop");
-    }
-
-    // -------------------------------------------------------------------------
-    // ES-01 — no Authorization header / invalid token → 401, passkey not deleted
-    // -------------------------------------------------------------------------
-
-    @Test
-    void delete_noAuthorizationHeader_returns401AndDoesNotDelete() throws SQLException {
-        seedUser(USER_A, "user-a@test.com");
-        UUID target = UUID.randomUUID();
-        seedPasskey(target, USER_A, "cred-1", "iPhone 15",
-                Instant.parse("2026-01-01T10:00:00Z"), null);
-        seedPasskey(UUID.randomUUID(), USER_A, "cred-2", "Laptop",
-                Instant.parse("2026-01-02T10:00:00Z"), null);
-
-        deleteWithAuth(target, null)
-                .expectStatus().isUnauthorized();
-
+        assertThat(status.is2xxSuccessful()).isFalse();
         assertThat(listWithAuth(VALID_TOKEN)
                 .expectStatus().isOk()
                 .expectBodyList(PasskeyResponse.class)
                 .returnResult()
-                .getResponseBody()).hasSize(2);
-    }
-
-    @Test
-    void delete_invalidToken_returns401AndDoesNotDelete() throws SQLException {
-        seedUser(USER_A, "user-a@test.com");
-        UUID target = UUID.randomUUID();
-        seedPasskey(target, USER_A, "cred-1", "iPhone 15",
-                Instant.parse("2026-01-01T10:00:00Z"), null);
-        seedPasskey(UUID.randomUUID(), USER_A, "cred-2", "Laptop",
-                Instant.parse("2026-01-02T10:00:00Z"), null);
-
-        deleteWithAuth(target, INVALID_TOKEN)
-                .expectStatus().isUnauthorized();
-
-        assertThat(listWithAuth(VALID_TOKEN)
-                .expectStatus().isOk()
-                .expectBodyList(PasskeyResponse.class)
-                .returnResult()
-                .getResponseBody()).hasSize(2);
-    }
-
-    // -------------------------------------------------------------------------
-    // ES-02 — nonexistent or not-owned passkey id → 404, anti-enumeration
-    // (deeper cross-account/cross-tenant isolation matrix lives in
-    // PasskeyRevocationIsolationIT, AC-05)
-    // -------------------------------------------------------------------------
-
-    @Test
-    void delete_nonExistentPasskeyId_returns404() throws SQLException {
-        seedUser(USER_A, "user-a@test.com");
-        seedPasskey(UUID.randomUUID(), USER_A, "cred-1", "iPhone 15",
-                Instant.parse("2026-01-01T10:00:00Z"), null);
-
-        deleteWithAuth(UUID.randomUUID(), VALID_TOKEN)
-                .expectStatus().isNotFound();
-    }
-
-    @Test
-    void delete_passkeyOwnedByAnotherAccount_returns404WithoutDeletingIt() throws SQLException {
-        seedUser(USER_A, "user-a@test.com");
-        seedUser(USER_B, "user-b@test.com");
-        UUID otherAccountsPasskey = UUID.randomUUID();
-        seedPasskey(otherAccountsPasskey, USER_B, "cred-b-1", "Second Account Phone",
-                Instant.parse("2026-01-01T10:00:00Z"), null);
-        // USER_A must have at least one passkey of their own, unrelated to this scenario.
-        seedPasskey(UUID.randomUUID(), USER_A, "cred-a-1", "First Account Laptop",
-                Instant.parse("2026-01-01T10:00:00Z"), null);
-
-        // USER_A attempts to delete a passkey that belongs to USER_B.
-        deleteWithAuth(otherAccountsPasskey, VALID_TOKEN)
-                .expectStatus().isNotFound();
-
-        assertThat(listWithAuth(VALID_TOKEN_B)
-                .expectStatus().isOk()
-                .expectBodyList(PasskeyResponse.class)
-                .returnResult()
-                .getResponseBody()).hasSize(1);
-    }
-
-    // -------------------------------------------------------------------------
-    // EC-01 / ES-03 — deleting the account's only passkey → 409, not deleted
-    // -------------------------------------------------------------------------
-
-    @Test
-    void delete_onlyPasskeyOfAccount_returns409AndDoesNotDelete() throws SQLException {
-        seedUser(USER_A, "user-a@test.com");
-        UUID onlyPasskey = UUID.randomUUID();
-        seedPasskey(onlyPasskey, USER_A, "cred-1", "iPhone 15",
-                Instant.parse("2026-01-01T10:00:00Z"), null);
-
-        deleteWithAuth(onlyPasskey, VALID_TOKEN)
-                .expectStatus().isEqualTo(409);
-
-        assertThat(listWithAuth(VALID_TOKEN)
-                .expectStatus().isOk()
-                .expectBodyList(PasskeyResponse.class)
-                .returnResult()
-                .getResponseBody()).hasSize(1);
+                .getResponseBody()).extracting(PasskeyResponse::credentialId)
+                .containsExactlyInAnyOrder("cred-target", "cred-remaining");
     }
 }

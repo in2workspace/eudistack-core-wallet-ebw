@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="es">
+<body>
+<!--
+  "Revisar mis dispositivos" of the notices to the holder (EUD-8 and EUD-15 wireframes): opens "Dispositivos" of the
+  Wallet App, which asks to sign in first without a session. Nothing is done from the email. Only when the tenant
+  has ebw.wallet_url (devicesUrl). Outlook desktop ignores padding and inline-block on <a>, so there the cell draws
+  the button (bgcolor + .button-cell padding from the mso block in email-layout head).
+-->
+<table th:fragment="button(url)" role="presentation" cellspacing="0" cellpadding="0" border="0" align="center"
+       style="margin: 24px auto 0 auto;">
+    <tr>
+        <td align="center" bgcolor="#2D58A7" class="button-cell" style="border-radius: 6px; background-color: #2D58A7;">
+            <a th:href="${url}" href="#" target="_blank" rel="noopener noreferrer"
+               style="display: inline-block; font-family: 'Blinker', Arial, Helvetica, sans-serif; font-size: 16px; font-weight: 600; color: #ffffff; padding: 12px 48px; text-decoration: none; border-radius: 6px; background-color: #2D58A7;"
+               th:text="#{email.devices.button}">Revisar mis dispositivos</a>
+        </td>
+    </tr>
+</table>
+</body>
+</html>

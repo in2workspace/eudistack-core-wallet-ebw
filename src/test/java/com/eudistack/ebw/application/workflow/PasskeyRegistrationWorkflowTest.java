@@ -20,7 +20,7 @@ import com.eudistack.ebw.domain.repository.WebAuthnCeremonyRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.RegistrationTicketService;
 import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
-import com.eudistack.ebw.domain.spi.EmailSender;
+import com.eudistack.ebw.domain.service.AuthTokenService;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TransactionRunner;
 import com.eudistack.ebw.domain.spi.WebAuthnVerifier;
@@ -65,13 +65,13 @@ class PasskeyRegistrationWorkflowTest {
     @Mock private WebAuthnVerifier webAuthnVerifier;
     @Mock private SecureRandomGenerator randomGenerator;
     @Mock private SessionOpener sessionOpener;
-    @Mock private EmailSender emailSender;
+    @Mock private AuthTokenService authTokenService;
     @Mock private AuditService auditService;
     @Mock private TransactionRunner transactionRunner;
     @Mock private OnboardingPreregistrationRepository preregistrationRepository;
     @Mock private OnboardingDisavowalRepository disavowalRepository;
-    @Mock private NotifyOnboardingAccountCreatedWorkflow onboardingNotice;
 
+    @Mock private EmailLocales emailLocales;
     private PasskeyRegistrationWorkflow workflow;
     private WalletUser user;
     private RegistrationTicket ticket;
@@ -81,13 +81,14 @@ class PasskeyRegistrationWorkflowTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(emailLocales.rememberRequestLanguage(any())).thenReturn(Mono.empty());
         var steps = new PasskeyRegistrationSteps(passkeyRepository, ceremonyRepository, settingsService, custodyPolicy,
                 webAuthnVerifier, auditService);
         var onboardingRegistration = new RegisterOnboardingPasskeyWorkflow(ticketService, userRepository,
                 passkeyRepository, sessionOpener, auditService, transactionRunner, preregistrationRepository,
-                disavowalRepository, onboardingNotice, steps);
+                disavowalRepository, steps, emailLocales);
         workflow = new PasskeyRegistrationWorkflow(ticketService, userRepository, passkeyRepository, ceremonyRepository,
-                randomGenerator, sessionOpener, emailSender, auditService, transactionRunner, steps,
+                randomGenerator, sessionOpener, authTokenService, emailLocales, auditService, transactionRunner, steps,
                 onboardingRegistration);
         user = TestPasskeys.user("holder@example.com");
         ticket = RegistrationTicket.issue(user.getId(), "hash");
@@ -105,7 +106,7 @@ class PasskeyRegistrationWorkflowTest {
     }
 
     private RegisterPasskeyCommand command(Boolean prfSupported) {
-        return new RegisterPasskeyCommand("raw", ceremony.id(), "{json}", prfSupported, null, "ua", null);
+        return new RegisterPasskeyCommand("raw", ceremony.id(), "{json}", prfSupported, null);
     }
 
     private void verifiesAndStores(long previousPasskeys) {
@@ -125,11 +126,12 @@ class PasskeyRegistrationWorkflowTest {
         // Act + Assert
         StepVerifier.create(workflow.register(command(null))).expectNext(session).verifyComplete();
         verify(transactionRunner).inTransaction(any());
-        verify(emailSender, never()).sendNewPasskeyNotice(anyString());
+        verify(authTokenService, never()).markPasskeyNoticePending(any());
     }
 
     @Test
-    void register_missingDisplayName_usesTheDefaultName() {
+    void register_anyPasskey_storesTheDefaultNameWithoutUserAgent() {
+        // EUD-15 FR-04 (tech-debt S08): the name and the type are the device's, not the passkey's
         // Arrange
         verifiesAndStores(0);
 
@@ -140,31 +142,30 @@ class PasskeyRegistrationWorkflowTest {
         var stored = org.mockito.ArgumentCaptor.forClass(UserPasskey.class);
         verify(passkeyRepository).insert(stored.capture());
         assertThat(stored.getValue().getDisplayName()).isEqualTo("Passkey");
+        assertThat(stored.getValue().getUserAgent()).isNull();
     }
 
     @Test
-    void register_secondPasskey_emailsTheHolderAndAuditsIt() {
-        // Arrange
+    void register_secondPasskey_marksTheSessionInsteadOfEmailing() {
+        // Arrange: EUD-8 AD-11, the email goes when the session binds or registers a device
         verifiesAndStores(1);
-        when(emailSender.sendNewPasskeyNotice("holder@example.com")).thenReturn(Mono.empty());
+        when(authTokenService.markPasskeyNoticePending(session.sessionId())).thenReturn(Mono.empty());
 
         // Act + Assert
         StepVerifier.create(workflow.register(command(null))).expectNext(session).verifyComplete();
-        verify(auditService).record(eq("passkey"), any(), eq(AuthAuditEvents.NEW_PASSKEY_NOTICE_SENT), eq(user.getId()),
-                eq(Map.of()));
+        verify(authTokenService).markPasskeyNoticePending(session.sessionId());
+        verify(auditService, never()).record(any(), any(), eq(AuthAuditEvents.NEW_PASSKEY_NOTICE_SENT), any(), any());
     }
 
     @Test
-    void register_noticeFails_auditsTheFailureAndStillOpensSession() {
-        // Arrange
+    void register_secondPasskeyMarkFails_failsTheWholeRegistration() {
+        // Arrange: the mark is in the registration transaction
         verifiesAndStores(1);
-        when(emailSender.sendNewPasskeyNotice("holder@example.com"))
-                .thenReturn(Mono.error(new IllegalStateException("smtp down")));
+        when(authTokenService.markPasskeyNoticePending(session.sessionId()))
+                .thenReturn(Mono.error(new IllegalStateException("db down")));
 
         // Act + Assert
-        StepVerifier.create(workflow.register(command(null))).expectNext(session).verifyComplete();
-        verify(auditService).record(eq("passkey"), any(), eq(AuthAuditEvents.NEW_PASSKEY_NOTICE_FAILED),
-                eq(user.getId()), eq(Map.of()));
+        StepVerifier.create(workflow.register(command(null))).expectError(IllegalStateException.class).verify();
     }
 
     @Test

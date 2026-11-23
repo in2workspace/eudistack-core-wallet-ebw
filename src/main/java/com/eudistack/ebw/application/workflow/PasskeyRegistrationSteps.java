@@ -1,6 +1,5 @@
 package com.eudistack.ebw.application.workflow;
 
-import com.eudistack.ebw.application.workflow.PasskeyRegistrationWorkflow.RegisterPasskeyCommand;
 import com.eudistack.ebw.domain.model.AuthRejectionReason;
 import com.eudistack.ebw.domain.model.CeremonyType;
 import com.eudistack.ebw.domain.model.RegistrationTicket;
@@ -88,11 +87,12 @@ class PasskeyRegistrationSteps {
                         .defaultIfEmpty(verified));
     }
 
-    Mono<UserPasskey> storePasskey(RegisterPasskeyCommand command, WalletUser user,
-                                   VerifiedPasskeyRegistration verified, boolean prfSupported) {
-        var displayName = command.displayName() == null || command.displayName().isBlank()
-                ? DEFAULT_DISPLAY_NAME : command.displayName().trim();
-        var passkey = UserPasskey.register(user.getId(), verified, prfSupported, displayName, command.userAgent());
+    /**
+     * Stores the verified passkey. It gets no device name nor user agent from the Wallet App: the name and the
+     * type of a device are its Wallet Instance's (EUD-15 FR-04, tech-debt S08).
+     */
+    Mono<UserPasskey> storePasskey(WalletUser user, VerifiedPasskeyRegistration verified, boolean prfSupported) {
+        var passkey = UserPasskey.register(user.getId(), verified, prfSupported, DEFAULT_DISPLAY_NAME, null);
         return passkeyRepository.insert(passkey)
                 .flatMap(saved -> auditService.record(AuthAuditEvents.ENTITY_PASSKEY, saved.getId(),
                                 AuthAuditEvents.PASSKEY_REGISTERED, user.getId(),

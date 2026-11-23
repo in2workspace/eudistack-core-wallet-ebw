@@ -16,15 +16,28 @@ public class JwtAuthenticationToken extends AbstractAuthenticationToken {
     private final String email;
     private final UUID sessionId;
     private final UUID passkeyId;
+    private final UUID walletInstanceId;
 
     public JwtAuthenticationToken(UUID userId, String email, UUID sessionId, UUID passkeyId,
+                                  Collection<? extends GrantedAuthority> authorities) {
+        this(userId, email, sessionId, passkeyId, null, authorities);
+    }
+
+    /** @param walletInstanceId active Wallet Instance the session is bound to, {@code null} if none (EUD-15) */
+    public JwtAuthenticationToken(UUID userId, String email, UUID sessionId, UUID passkeyId, UUID walletInstanceId,
                                   Collection<? extends GrantedAuthority> authorities) {
         super(authorities);
         this.userId = userId;
         this.email = email;
         this.sessionId = sessionId;
         this.passkeyId = passkeyId;
+        this.walletInstanceId = walletInstanceId;
         setAuthenticated(true);
+    }
+
+    /** The same session, bound to {@code walletInstanceId}. */
+    public JwtAuthenticationToken withWalletInstance(UUID walletInstanceId) {
+        return new JwtAuthenticationToken(userId, email, sessionId, passkeyId, walletInstanceId, getAuthorities());
     }
 
     @Override
@@ -51,5 +64,9 @@ public class JwtAuthenticationToken extends AbstractAuthenticationToken {
 
     public UUID getPasskeyId() {
         return passkeyId;
+    }
+
+    public UUID getWalletInstanceId() {
+        return walletInstanceId;
     }
 }

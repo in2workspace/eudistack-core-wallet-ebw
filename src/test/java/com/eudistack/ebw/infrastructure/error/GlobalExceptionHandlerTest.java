@@ -4,10 +4,8 @@ import com.eudistack.ebw.domain.model.exception.CredentialNotFoundException;
 import com.eudistack.ebw.domain.model.exception.InvalidOtpException;
 import com.eudistack.ebw.domain.model.exception.InvalidTokenException;
 import com.eudistack.ebw.domain.model.exception.InvalidTransitionException;
-import com.eudistack.ebw.domain.model.exception.LastPasskeyException;
 import com.eudistack.ebw.domain.model.exception.MalformedCredentialException;
 import com.eudistack.ebw.domain.model.exception.OtpExpiredException;
-import com.eudistack.ebw.domain.model.exception.PasskeyNotFoundException;
 import com.eudistack.ebw.domain.model.exception.PayloadTooLargeException;
 import com.eudistack.ebw.domain.model.exception.RateLimitExceededException;
 import com.eudistack.ebw.domain.model.exception.TokenFamilyCompromisedException;
@@ -103,10 +101,6 @@ class GlobalExceptionHandlerTest {
         return Stream.of(
                 Arguments.of(problemCall(h -> h.handlePayloadTooLarge(new PayloadTooLargeException(1024))),
                         HttpStatus.PAYLOAD_TOO_LARGE, "payload-too-large"),
-                Arguments.of(problemCall(h -> h.handlePasskeyNotFound(new PasskeyNotFoundException())),
-                        HttpStatus.NOT_FOUND, "passkey-not-found"),
-                Arguments.of(problemCall(h -> h.handleLastPasskey(new LastPasskeyException())),
-                        HttpStatus.CONFLICT, "last-passkey"),
                 Arguments.of(problemCall(h -> h.handleInvalidTransition(new InvalidTransitionException("REVOKED", "VALID"))),
                         HttpStatus.UNPROCESSABLE_ENTITY, "invalid-transition"),
                 Arguments.of(problemCall(h -> h.handleCredentialNotFound(new CredentialNotFoundException())),

@@ -58,13 +58,13 @@ public class RegisterOnboardingPasskeyWorkflow {
     private final TransactionRunner transactionRunner;
     private final OnboardingPreregistrationRepository preregistrationRepository;
     private final OnboardingDisavowalRepository disavowalRepository;
-    private final NotifyOnboardingAccountCreatedWorkflow onboardingNotice;
     private final PasskeyRegistrationSteps steps;
+    private final EmailLocales emailLocales;
 
     /** Account of an onboarding registration, and whether this registration created it. */
     private record OnboardingAccount(WalletUser user, boolean created) {}
 
-    /** What an onboarding registration stored, for the email after the commit. */
+    /** What an onboarding registration stored. */
     private record OnboardingStored(IssuedSession session, UserPasskey passkey) {}
 
     /** The onboarding ticket cannot register this passkey (decision P7); answered as {@code invalid_ticket}. */
@@ -83,8 +83,7 @@ public class RegisterOnboardingPasskeyWorkflow {
                                       AuditService auditService, TransactionRunner transactionRunner,
                                       OnboardingPreregistrationRepository preregistrationRepository,
                                       OnboardingDisavowalRepository disavowalRepository,
-                                      NotifyOnboardingAccountCreatedWorkflow onboardingNotice,
-                                      PasskeyRegistrationSteps steps) {
+                                      PasskeyRegistrationSteps steps, EmailLocales emailLocales) {
         this.ticketService = ticketService;
         this.userRepository = userRepository;
         this.passkeyRepository = passkeyRepository;
@@ -93,8 +92,8 @@ public class RegisterOnboardingPasskeyWorkflow {
         this.transactionRunner = transactionRunner;
         this.preregistrationRepository = preregistrationRepository;
         this.disavowalRepository = disavowalRepository;
-        this.onboardingNotice = onboardingNotice;
         this.steps = steps;
+        this.emailLocales = emailLocales;
     }
 
     /** Registers the passkey of a resolved ticket that names a pre-registration. */
@@ -135,9 +134,9 @@ public class RegisterOnboardingPasskeyWorkflow {
                                         preregistration))))
                 .doOnError(RegistrationFailedException.class,
                         e -> AuthRejectionLog.log(log, REJECTION_SUBJECT, e.getReason()))
-                // PROVISIONAL (decision P5): the email goes after the commit, until the device
-                // registration of EUD-15 sends it. Best effort: it never fails the registration.
-                .flatMap(stored -> onboardingNotice.notify(stored.passkey().getId())
+                // The new-account email ends the registration of the first device (EUD-15 FR-08): it is sent by
+                // WalletInstanceNotices, not here. After the commit, the language of the Wallet App (EUD-8 AD-10).
+                .flatMap(stored -> emailLocales.rememberRequestLanguage(stored.passkey().getUserId())
                         .thenReturn(stored.session()))
                 .onErrorResume(OnboardingAccountConflictException.class,
                         e -> preregistrationRepository.deleteById(preregistration.id())
@@ -149,7 +148,7 @@ public class RegisterOnboardingPasskeyWorkflow {
     private Mono<OnboardingStored> storePasskey(RegisterPasskeyCommand command, OnboardingAccount account,
                                                 VerifiedPasskeyRegistration verified, boolean prfSupported,
                                                 OnboardingPreregistration preregistration) {
-        return steps.storePasskey(command, account.user(), verified, prfSupported)
+        return steps.storePasskey(account.user(), verified, prfSupported)
                 .flatMap(passkey -> passkeyRepository.markOnboarding(passkey.getId(), preregistration.id())
                         .then(sessionOpener.open(account.user(), passkey.getId(), command.replacedRefreshToken(),
                                 "registration"))

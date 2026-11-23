@@ -1,40 +1,29 @@
 package com.eudistack.ebw.infrastructure.controller;
 
-import com.eudistack.ebw.application.workflow.*;
+import com.eudistack.ebw.application.workflow.ListPasskeysWorkflow;
 import com.eudistack.ebw.infrastructure.controller.dto.PasskeyResponse;
-import com.eudistack.ebw.infrastructure.controller.dto.UpdatePasskeyRequest;
 import com.eudistack.ebw.infrastructure.security.JwtAuthenticationToken;
-import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
-import java.util.UUID;
 
 /**
- * Device management: the passkeys of the account and their sessions. Registering a passkey is
+ * The passkeys of the account, read by the Wallet App only for the Signal API (EUD-8 FR-17). The API of
+ * passkeys does not manage devices (EUD-15 AD-4): there are no routes to rename or delete a passkey nor to end
+ * its sessions. Devices are the Wallet Instances ({@link WalletInstanceController}); registering a passkey is
  * {@link PasskeyRegistrationController}.
  */
 @RestController
 @RequestMapping("/api/v1/auth/passkeys")
-@Validated
 public class PasskeyController {
 
     private final ListPasskeysWorkflow listPasskeysWorkflow;
-    private final UpdatePasskeyWorkflow updatePasskeyWorkflow;
-    private final DeletePasskeyWorkflow deletePasskeyWorkflow;
-    private final RevokePasskeySessionsWorkflow revokePasskeySessionsWorkflow;
 
-    public PasskeyController(ListPasskeysWorkflow listPasskeysWorkflow,
-                             UpdatePasskeyWorkflow updatePasskeyWorkflow,
-                             DeletePasskeyWorkflow deletePasskeyWorkflow,
-                             RevokePasskeySessionsWorkflow revokePasskeySessionsWorkflow) {
+    public PasskeyController(ListPasskeysWorkflow listPasskeysWorkflow) {
         this.listPasskeysWorkflow = listPasskeysWorkflow;
-        this.updatePasskeyWorkflow = updatePasskeyWorkflow;
-        this.deletePasskeyWorkflow = deletePasskeyWorkflow;
-        this.revokePasskeySessionsWorkflow = revokePasskeySessionsWorkflow;
     }
 
     @GetMapping
@@ -42,25 +31,5 @@ public class PasskeyController {
         return listPasskeysWorkflow.listPasskeys(auth.getUserId())
                 .map(PasskeyResponse::from)
                 .collectList();
-    }
-
-    @PatchMapping("/{id}")
-    public Mono<PasskeyResponse> update(@PathVariable UUID id,
-                                        @Valid @RequestBody UpdatePasskeyRequest request,
-                                        JwtAuthenticationToken auth) {
-        return updatePasskeyWorkflow.updatePasskey(auth.getUserId(), id, request.displayName())
-                .map(PasskeyResponse::from);
-    }
-
-    @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> delete(@PathVariable UUID id, JwtAuthenticationToken auth) {
-        return deletePasskeyWorkflow.deletePasskey(auth.getUserId(), id);
-    }
-
-    @PostMapping("/{id}/revoke-sessions")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> revokeSessions(@PathVariable UUID id, JwtAuthenticationToken auth) {
-        return revokePasskeySessionsWorkflow.revokeSessions(auth.getUserId(), id);
     }
 }

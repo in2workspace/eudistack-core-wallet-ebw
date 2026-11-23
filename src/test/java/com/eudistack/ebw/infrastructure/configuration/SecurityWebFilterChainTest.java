@@ -47,7 +47,8 @@ class SecurityWebFilterChainTest {
 
     private static com.eudistack.ebw.infrastructure.security.ActiveSessionChecker activeSessions() {
         var checker = mock(com.eudistack.ebw.infrastructure.security.ActiveSessionChecker.class);
-        when(checker.isActive(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.just(true));
+        when(checker.state(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Mono.just(new com.eudistack.ebw.domain.model.SessionState(true, UUID.randomUUID())));
         return checker;
     }
 

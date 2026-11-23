@@ -32,4 +32,7 @@ public interface WalletUserRepository {
     Mono<Void> lockEmailIgnoreCase(String email);
 
     Mono<WalletUser> save(WalletUser user);
+
+    /** Stores the language of the holder's emails (EUD-8 AD-10). */
+    Mono<Void> updateLocale(UUID id, String locale);
 }

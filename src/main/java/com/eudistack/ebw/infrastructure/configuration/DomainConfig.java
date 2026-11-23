@@ -10,6 +10,7 @@ import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.AuthTokenService;
 import com.eudistack.ebw.domain.service.CredentialService;
+import com.eudistack.ebw.domain.service.EmailSettingsService;
 import com.eudistack.ebw.domain.service.OnboardingSettingsService;
 import com.eudistack.ebw.domain.service.OtpService;
 import com.eudistack.ebw.domain.service.RegistrationTicketService;
@@ -58,6 +59,11 @@ public class DomainConfig {
     @Bean
     public OnboardingSettingsService onboardingSettingsService(TenantConfigService tenantConfigService) {
         return new OnboardingSettingsService(tenantConfigService);
+    }
+
+    @Bean
+    public EmailSettingsService emailSettingsService(TenantConfigService tenantConfigService) {
+        return new EmailSettingsService(tenantConfigService);
     }
 
     @Bean

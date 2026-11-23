@@ -58,6 +58,8 @@ class DisavowOnboardingWorkflowTest {
     @Mock private HashProvider hashProvider;
     @Mock private TransactionRunner transactionRunner;
     @Mock private AuditService auditService;
+    @Mock private WalletInstanceRevoker walletInstanceRevoker;
+    @Mock private EmailLocales emailLocales;
 
     private DisavowOnboardingWorkflow workflow;
     private WalletUser account;
@@ -67,7 +69,10 @@ class DisavowOnboardingWorkflowTest {
     @BeforeEach
     void setUp() {
         workflow = new DisavowOnboardingWorkflow(disavowalRepository, refreshTokenRepository, passkeyRepository,
-                userRepository, onboardingSettings, emailSender, hashProvider, transactionRunner, auditService);
+                userRepository, onboardingSettings, emailSender, hashProvider, transactionRunner, auditService,
+                walletInstanceRevoker, emailLocales);
+        lenient().when(walletInstanceRevoker.revokeRegisteredWith(any(), any())).thenReturn(reactor.core.publisher.Flux.empty());
+        lenient().when(emailLocales.tenantDefault()).thenReturn(Mono.just(java.util.Locale.of("es")));
         account = WalletUser.create(EMAIL, new byte[WalletUser.USER_HANDLE_LENGTH]);
         passkeyId = UUID.randomUUID();
         disavowal = OnboardingDisavowal.issue(HASH, account.getId(), passkeyId, "portal-machine.cgcom.es",
@@ -98,10 +103,15 @@ class DisavowOnboardingWorkflowTest {
         // Assert: AC-10
         verify(refreshTokenRepository).revokeByUserId(account.getId());
         verify(passkeyRepository).deleteById(passkeyId);
+        // EUD-15 FR-19, AC-19: the devices registered with the passkey, before it is deleted
+        var order = org.mockito.Mockito.inOrder(walletInstanceRevoker, passkeyRepository);
+        order.verify(walletInstanceRevoker).revokeRegisteredWith(passkeyId, account.getId());
+        order.verify(passkeyRepository).deleteById(passkeyId);
         verify(auditService).record("onboarding_disavowal", disavowal.id(), AuthAuditEvents.ONBOARDING_DISAVOWED,
                 account.getId(), Map.of("requested_by", "portal-machine.cgcom.es", "passkey_removed", true));
         var alert = ArgumentCaptor.forClass(OnboardingAlert.class);
-        verify(emailSender).sendOnboardingAlert(eq(CONTACT), alert.capture(), any());
+        // EUD-8 FR-38: always in the tenant's default language
+        verify(emailSender).sendOnboardingAlert(eq(CONTACT), alert.capture(), eq(java.util.Locale.of("es")));
         assertThat(alert.getValue().maskedEmail()).isEqualTo("a***@cgcom.es");
         assertThat(alert.getValue().registeredAt()).isEqualTo(disavowal.registeredAt());
         assertThat(alert.getValue().accountCreated()).isTrue();

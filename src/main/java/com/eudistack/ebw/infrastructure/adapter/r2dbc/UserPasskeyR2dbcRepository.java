@@ -50,13 +50,6 @@ public class UserPasskeyR2dbcRepository implements UserPasskeyRepository {
     }
 
     @Override
-    public Mono<UserPasskey> updateDisplayName(UserPasskey passkey) {
-        return springRepository.updateDisplayName(passkey.getId(), passkey.getDisplayName())
-                .then(springRepository.findById(passkey.getId()))
-                .map(PasskeyMapper::toDomain);
-    }
-
-    @Override
     public Mono<Boolean> recordAuthentication(UUID id, VerifiedPasskeyAssertion assertion) {
         Mono<Long> updated = assertion.signCount() > 0
                 ? springRepository.recordCountedAuthentication(id, assertion.signCount(), assertion.backupState(),

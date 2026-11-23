@@ -49,6 +49,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
     @Mock private HashProvider hashProvider;
     @Mock private SecureRandomGenerator randomGenerator;
     @Mock private AuditService auditService;
+    @Mock private EmailLocales emailLocales;
 
     private NotifyOnboardingAccountCreatedWorkflow workflow;
     private WalletUser account;
@@ -59,7 +60,8 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
     @BeforeEach
     void setUp() {
         workflow = new NotifyOnboardingAccountCreatedWorkflow(disavowalRepository, userRepository, onboardingSettings,
-                emailSender, hashProvider, randomGenerator, auditService);
+                emailSender, hashProvider, randomGenerator, auditService, emailLocales);
+        lenient().when(emailLocales.ofHolder(any())).thenReturn(Mono.just(java.util.Locale.of("ca")));
         account = WalletUser.create("ana@cgcom.es", new byte[WalletUser.USER_HANDLE_LENGTH]);
         passkeyId = UUID.randomUUID();
         var bytes = new byte[32];
@@ -86,7 +88,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
     @Test
     void notify_pendingRow_givesItTheTokenAndEmailsTheLink() {
         // Act
-        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
+        StepVerifier.create(workflow.notify(passkeyId, "iPhone · Safari")).expectNext(true).verifyComplete();
 
         // Assert: decision P6, only the hash is stored and the link carries the raw token
         var expiresAt = ArgumentCaptor.forClass(Instant.class);
@@ -99,6 +101,9 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
                 .isEqualTo("https://cgcom.eudistack.net/wallet/not-me#" + expectedToken);
         assertThat(notice.getValue().createdAt()).isEqualTo(Instant.parse("2026-10-30T09:42:00Z"));
         assertThat(notice.getValue().accountCreated()).isTrue();
+        // EUD-15 FR-08, AC-09: with the name of the device, in the language of the account
+        assertThat(notice.getValue().deviceName()).isEqualTo("iPhone · Safari");
+        verify(emailSender).sendAccountCreatedNotice(anyString(), any(), eq(java.util.Locale.of("ca")));
         verify(auditService).record("onboarding_disavowal", withToken.id(), AuthAuditEvents.ONBOARDING_NOTICE_SENT,
                 account.getId(), Map.of());
     }
@@ -112,7 +117,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
                 .thenReturn(Mono.just(withToken(recognized, false)));
 
         // Act
-        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
+        StepVerifier.create(workflow.notify(passkeyId, "iPhone · Safari")).expectNext(true).verifyComplete();
 
         // Assert
         var notice = ArgumentCaptor.forClass(AccountCreatedNotice.class);
@@ -125,8 +130,8 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
         // Arrange: the email already went out, or the passkey was not registered with a ticket
         when(disavowalRepository.assignToken(eq(passkeyId), eq("hash"), any())).thenReturn(Mono.empty());
 
-        // Act + Assert
-        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
+        // Act + Assert: false, so the device registration sends its own email
+        StepVerifier.create(workflow.notify(passkeyId, "iPhone · Safari")).expectNext(false).verifyComplete();
         verify(emailSender, never()).sendAccountCreatedNotice(anyString(), any(), any());
     }
 
@@ -137,7 +142,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
                 new TenantConfigMissingException("cgcom", OnboardingSettingsService.WALLET_URL)));
 
         // Act + Assert
-        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
+        StepVerifier.create(workflow.notify(passkeyId, "iPhone · Safari")).expectNext(true).verifyComplete();
         verify(emailSender, never()).sendAccountCreatedNotice(anyString(), any(), any());
         verify(auditService).record("onboarding_disavowal", withToken.id(), AuthAuditEvents.ONBOARDING_NOTICE_FAILED,
                 account.getId(), Map.of());
@@ -150,7 +155,7 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
                 .thenReturn(Mono.error(new IllegalStateException("smtp down")));
 
         // Act + Assert
-        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
+        StepVerifier.create(workflow.notify(passkeyId, "iPhone · Safari")).expectNext(true).verifyComplete();
         verify(auditService).record("onboarding_disavowal", withToken.id(), AuthAuditEvents.ONBOARDING_NOTICE_FAILED,
                 account.getId(), Map.of());
     }
@@ -162,6 +167,6 @@ class NotifyOnboardingAccountCreatedWorkflowTest {
                 .thenReturn(Mono.error(new IllegalStateException("db down")));
 
         // Act + Assert
-        StepVerifier.create(workflow.notify(passkeyId)).verifyComplete();
+        StepVerifier.create(workflow.notify(passkeyId, "iPhone · Safari")).expectNext(false).verifyComplete();
     }
 }

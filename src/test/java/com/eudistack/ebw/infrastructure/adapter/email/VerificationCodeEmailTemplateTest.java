@@ -32,13 +32,13 @@ class VerificationCodeEmailTemplateTest {
 
         assertThat(html)
                 .doesNotContain("??")
-                .contains("<title>Your Sandbox verification code — Wallet</title>")
+                .contains("<title>Your code to sign in to Sandbox</title>")
                 .contains("Hello,")
-                .contains("Your verification code")
+                .contains("Your code is:")
                 .contains("background-color: #EBF0F7; border: 1px solid #8EACE1")
                 .contains(">482193</span>")
-                .contains("Enter this code in the Wallet. It expires in 10 minutes.")
-                .contains("If you did not request this code, you can safely ignore this email.")
+                .contains("It expires in 10 minutes.")
+                .contains("If you did not ask for it, ignore this email: nobody can sign in without the code.")
                 .contains("family=Blinker")
                 .doesNotContain("<img")
                 .doesNotContain("background-image");
@@ -72,6 +72,7 @@ class VerificationCodeEmailTemplateTest {
         messageSource.setBasename("messages");
         messageSource.setDefaultEncoding("UTF-8");
         messageSource.setFallbackToSystemLocale(false);
+        messageSource.setAlwaysUseMessageFormat(true);
 
         ClassLoaderTemplateResolver resolver = new ClassLoaderTemplateResolver();
         resolver.setPrefix("templates/");

@@ -10,5 +10,12 @@ public final class ReactorContextKeys {
     /** Passkey of the session (JWT {@code pkid}). Set by {@code PasskeyPrfKeyManagerController}. */
     public static final String PASSKEY_ID = "passkeyId";
 
+    /**
+     * Supported language ({@code es}, {@code ca}, {@code en}) the request's {@code Accept-Language} prefers, the
+     * Wallet App's active language (EUD-8 AD-10). Absent when the header names none. Set by
+     * {@code RequestLanguageWebFilter}.
+     */
+    public static final String REQUEST_LANGUAGE = "requestLanguage";
+
     private ReactorContextKeys() {}
 }

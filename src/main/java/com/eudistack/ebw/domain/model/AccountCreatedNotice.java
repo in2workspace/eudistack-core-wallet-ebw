@@ -12,14 +12,15 @@ import java.time.Instant;
  * @param linkExpiresAt  when the link stops working
  * @param accountCreated {@code true} if the ticket created the account, {@code false} if it already
  *                       existed: the email says so (EUD-315 decision P17, provisional texts)
+ * @param deviceName     name of the device whose registration sends the email (EUD-15 FR-08, AC-09)
  */
 public record AccountCreatedNotice(Instant createdAt, String disavowalUrl, Instant linkExpiresAt,
-                                   boolean accountCreated) {
+                                   boolean accountCreated, String deviceName) {
 
     /** Never prints the link: it carries the single-use token. */
     @Override
     public String toString() {
         return "AccountCreatedNotice[createdAt=" + createdAt + ", disavowalUrl=[redacted], linkExpiresAt="
-                + linkExpiresAt + ", accountCreated=" + accountCreated + "]";
+                + linkExpiresAt + ", accountCreated=" + accountCreated + ", deviceName=" + deviceName + "]";
     }
 }

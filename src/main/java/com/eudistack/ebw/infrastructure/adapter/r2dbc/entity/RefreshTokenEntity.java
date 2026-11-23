@@ -21,6 +21,8 @@ public class RefreshTokenEntity implements Persistable<UUID> {
     private Instant expiresAt;
     private boolean revoked;
     private Instant createdAt;
+    private UUID walletInstanceId;
+    private boolean passkeyNoticePending;
 
     @Transient
     private boolean isNew = false;
@@ -52,4 +54,8 @@ public class RefreshTokenEntity implements Persistable<UUID> {
     public void setRevoked(boolean revoked) { this.revoked = revoked; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+    public UUID getWalletInstanceId() { return walletInstanceId; }
+    public void setWalletInstanceId(UUID walletInstanceId) { this.walletInstanceId = walletInstanceId; }
+    public boolean isPasskeyNoticePending() { return passkeyNoticePending; }
+    public void setPasskeyNoticePending(boolean passkeyNoticePending) { this.passkeyNoticePending = passkeyNoticePending; }
 }

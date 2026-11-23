@@ -24,16 +24,21 @@ public class RegisterWorkflow {
     private final OtpService otpService;
     private final EmailRateLimiter emailRateLimiter;
     private final AuditService auditService;
+    private final EmailLocales emailLocales;
 
-    public RegisterWorkflow(OtpService otpService, EmailRateLimiter emailRateLimiter, AuditService auditService) {
+    public RegisterWorkflow(OtpService otpService, EmailRateLimiter emailRateLimiter, AuditService auditService,
+                            EmailLocales emailLocales) {
         this.otpService = otpService;
         this.emailRateLimiter = emailRateLimiter;
         this.auditService = auditService;
+        this.emailLocales = emailLocales;
     }
 
+    /** The code goes in the language of the request, since the email may have no account (EUD-8 AD-10). */
     public Mono<Void> registerUser(String email) {
         return emailRateLimiter.checkRegisterRate(email)
-                .then(Mono.defer(() -> otpService.generateAndSend(email)))
+                .then(Mono.defer(emailLocales::ofRequest))
+                .flatMap(locale -> otpService.generateAndSend(email, locale))
                 .flatMap(verificationId -> auditService.record(AuthAuditEvents.ENTITY_EMAIL_VERIFICATION,
                         verificationId, AuthAuditEvents.EMAIL_CODE_REQUESTED, null, Map.of()))
                 .onErrorResume(e -> !(e instanceof RateLimitExceededException), e -> {

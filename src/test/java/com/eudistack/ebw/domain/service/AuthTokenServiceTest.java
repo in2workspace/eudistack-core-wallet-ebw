@@ -58,6 +58,7 @@ class AuthTokenServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(refreshTokenRepository.inheritSessionState(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(reactor.core.publisher.Mono.empty());
         service = new AuthTokenService(tokenSigner, hashProvider, randomGenerator, refreshTokenRepository,
                 userPasskeyRepository, new AuthTokenSettings(Duration.ofMinutes(5), "https://ebw"));
         user = TestPasskeys.user("holder@example.com");

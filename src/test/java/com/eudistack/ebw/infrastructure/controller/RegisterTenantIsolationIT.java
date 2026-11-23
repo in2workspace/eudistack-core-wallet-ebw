@@ -29,6 +29,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
@@ -141,8 +142,8 @@ class RegisterTenantIsolationIT {
             String code = invocation.getArgument(1);
             capturedOtps.put(email, code);
             return Mono.empty();
-        }).when(emailSender).sendOtp(anyString(), anyString());
-        when(emailSender.sendNewPasskeyNotice(anyString())).thenReturn(Mono.empty());
+        }).when(emailSender).sendOtp(anyString(), anyString(), any());
+        when(emailSender.sendNewPasskeyNotice(anyString(), any(), any())).thenReturn(Mono.empty());
     }
 
     // -------------------------------------------------------------------------

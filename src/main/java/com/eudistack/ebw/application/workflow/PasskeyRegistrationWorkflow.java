@@ -14,8 +14,8 @@ import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import com.eudistack.ebw.domain.repository.WalletUserRepository;
 import com.eudistack.ebw.domain.repository.WebAuthnCeremonyRepository;
 import com.eudistack.ebw.domain.service.AuditService;
+import com.eudistack.ebw.domain.service.AuthTokenService;
 import com.eudistack.ebw.domain.service.RegistrationTicketService;
-import com.eudistack.ebw.domain.spi.EmailSender;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TransactionRunner;
 import org.slf4j.Logger;
@@ -23,7 +23,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -38,8 +37,11 @@ import static com.eudistack.ebw.application.workflow.PasskeyRegistrationSteps.RE
  * <p>The ceremony is consumed before verifying anything. With passkey custody in the tenant, a
  * passkey without PRF is rejected and nothing is stored. Consuming the ticket, storing the passkey
  * and opening the session are one transaction: a failure leaves nothing stored. Rejections are
- * audited outside it. If the account already had a passkey, the holder is emailed after the
- * commit; a failed or slow email never fails the registration.
+ * audited outside it. If the account already had a passkey, the new session is marked as owing the
+ * new-passkey email in the same transaction (EUD-8 AD-11): the email goes inside the new-device email
+ * when the session registers a Wallet Instance, alone when it binds to an existing one, or from the
+ * hourly task when the session ends without either (EUD-15). The passkey carries no device name nor
+ * user agent: those belong to the Wallet Instance (EUD-15 FR-04).
  *
  * <p>A registration ticket of an onboarding pre-registration (EUD-315, design §2.6) is registered by
  * {@link RegisterOnboardingPasskeyWorkflow}. Its options carry the email and the WebAuthn user handle of
@@ -47,8 +49,6 @@ import static com.eudistack.ebw.application.workflow.PasskeyRegistrationSteps.RE
  */
 @Service
 public class PasskeyRegistrationWorkflow {
-
-    static final Duration NOTICE_TIMEOUT = Duration.ofSeconds(5);
 
     private static final Logger log = LoggerFactory.getLogger(PasskeyRegistrationWorkflow.class);
 
@@ -58,7 +58,8 @@ public class PasskeyRegistrationWorkflow {
     private final WebAuthnCeremonyRepository ceremonyRepository;
     private final SecureRandomGenerator randomGenerator;
     private final SessionOpener sessionOpener;
-    private final EmailSender emailSender;
+    private final AuthTokenService authTokenService;
+    private final EmailLocales emailLocales;
     private final AuditService auditService;
     private final TransactionRunner transactionRunner;
     private final PasskeyRegistrationSteps steps;
@@ -66,10 +67,7 @@ public class PasskeyRegistrationWorkflow {
 
     /** Input of {@link #register}. {@code replacedRefreshToken} is the refresh cookie of the request, if any. */
     public record RegisterPasskeyCommand(String rawTicket, UUID ceremonyId, String credentialJson,
-                                         Boolean prfSupported, String displayName, String userAgent,
-                                         String replacedRefreshToken) {}
-
-    private record Stored(IssuedSession session, UserPasskey passkey, boolean hadPasskeys) {}
+                                         Boolean prfSupported, String replacedRefreshToken) {}
 
     /** Who the passkey is for: the account, or the one an onboarding pre-registration will create. */
     private record Target(UUID userId, byte[] userHandle, String email) {
@@ -99,7 +97,8 @@ public class PasskeyRegistrationWorkflow {
                                        UserPasskeyRepository passkeyRepository,
                                        WebAuthnCeremonyRepository ceremonyRepository,
                                        SecureRandomGenerator randomGenerator, SessionOpener sessionOpener,
-                                       EmailSender emailSender, AuditService auditService,
+                                       AuthTokenService authTokenService, EmailLocales emailLocales,
+                                       AuditService auditService,
                                        TransactionRunner transactionRunner, PasskeyRegistrationSteps steps,
                                        RegisterOnboardingPasskeyWorkflow onboardingRegistration) {
         this.ticketService = ticketService;
@@ -108,7 +107,8 @@ public class PasskeyRegistrationWorkflow {
         this.ceremonyRepository = ceremonyRepository;
         this.randomGenerator = randomGenerator;
         this.sessionOpener = sessionOpener;
-        this.emailSender = emailSender;
+        this.authTokenService = authTokenService;
+        this.emailLocales = emailLocales;
         this.auditService = auditService;
         this.transactionRunner = transactionRunner;
         this.steps = steps;
@@ -180,15 +180,17 @@ public class PasskeyRegistrationWorkflow {
                 .flatMap(verified -> transactionRunner.inTransaction(
                         ticketService.consume(ticket)
                                 .then(passkeyRepository.countByUserId(user.getId()).defaultIfEmpty(0L))
-                                .flatMap(previousPasskeys -> steps.storePasskey(command, user, verified, prfSupported)
+                                .flatMap(previousPasskeys -> steps.storePasskey(user, verified, prfSupported)
                                         .flatMap(passkey -> sessionOpener.open(user, passkey.getId(),
-                                                        command.replacedRefreshToken(), "registration")
-                                                .map(session -> new Stored(session, passkey, previousPasskeys > 0))))))
+                                                command.replacedRefreshToken(), "registration"))
+                                        .flatMap(session -> previousPasskeys > 0
+                                                ? authTokenService.markPasskeyNoticePending(session.sessionId())
+                                                        .thenReturn(session)
+                                                : Mono.just(session)))))
                 .doOnError(RegistrationFailedException.class,
                         e -> AuthRejectionLog.log(log, REJECTION_SUBJECT, e.getReason()))
-                .flatMap(stored -> stored.hadPasskeys()
-                        ? notifyNewPasskey(user, stored.passkey()).thenReturn(stored.session())
-                        : Mono.just(stored.session()));
+                // After the commit: the language of the Wallet App for the holder's emails (EUD-8 AD-10).
+                .flatMap(session -> emailLocales.rememberRequestLanguage(user.getId()).thenReturn(session));
     }
 
     /** A ticket without account and without pre-registration never creates one (EC-07). */
@@ -205,18 +207,4 @@ public class PasskeyRegistrationWorkflow {
                 user.getId(), Map.of("reason", reason.code()));
     }
 
-    /** FR-10: best-effort and bounded. A failed or slow email is audited and never fails the registration. */
-    private Mono<Void> notifyNewPasskey(WalletUser user, UserPasskey passkey) {
-        return emailSender.sendNewPasskeyNotice(user.getEmail())
-                .timeout(NOTICE_TIMEOUT)
-                .then(auditService.record(AuthAuditEvents.ENTITY_PASSKEY, passkey.getId(),
-                        AuthAuditEvents.NEW_PASSKEY_NOTICE_SENT, user.getId(), Map.of()))
-                .onErrorResume(e -> {
-                    log.warn("Could not send the new passkey notice for passkey {}: {}", passkey.getId(),
-                            e.getClass().getName());
-                    return auditService.record(AuthAuditEvents.ENTITY_PASSKEY, passkey.getId(),
-                                    AuthAuditEvents.NEW_PASSKEY_NOTICE_FAILED, user.getId(), Map.of())
-                            .onErrorResume(auditError -> Mono.empty());
-                });
-    }
 }

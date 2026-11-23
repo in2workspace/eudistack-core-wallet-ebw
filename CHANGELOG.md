@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (EUD-334, version 2.4.0)
+
+- **Wallet Instances (device management, feature EUD-15)**: every Wallet App an account uses is a device, registered in its own step after the session is opened.
+  - Table `wallet_instance` (name, type `MOBILE`/`TABLET`/`DESKTOP`, `ACTIVE`/`REVOKED`, registration, last use and revocation dates, `revoked_by` `HOLDER`/`INACTIVITY`/`DISAVOWAL`, passkey of the registering session; no keys) and `refresh_token.wallet_instance_id`, inherited by every rotation of the session.
+  - API `/api/v1/wallet-instances` (EUD-15 `annex/openapi.yaml`): `POST` registers the device and binds the session (201; 20 registrations per account and hour, 429 `too_many_requests`), `PUT /current` binds the session to the device the Wallet App remembers (404 `instance_not_found`, also for another account's device; 410 `instance_revoked`), `GET` lists the active devices with the current one first, `PATCH /{id}` renames (trimmed, 1 to 50 characters) and `DELETE /{id}` revokes (204, also the current device and an already revoked one). RFC 9457 problems with the contract code in `type`.
+  - **Device required by default**: every authenticated route except `/api/v1/auth/**` and `/api/v1/wallet-instances/**` (`InstanceExemptRoutes`) answers 403 `instance_required` without a session bound to an active device. The bound device is part of the cached session check (10 s), so a revoked device stops being accepted at most 10 s later on other instances and at once on the one that revoked it.
+  - Revoking a device ends every session bound to it; passkeys and attestations are not touched. The hourly task revokes the devices unused for 90 days (`INACTIVITY`, batches of 500, no email). "It was not me" revokes, in its transaction, the devices registered with the passkey of the onboarding (`DISAVOWAL`).
+  - Audit events `WALLET_INSTANCE_REGISTERED`, `_NOTICE_SENT`, `_NOTICE_FAILED`, `_BOUND`, `_BIND_REJECTED`, `_RENAMED` and `_REVOKED` (with `revoked_by` and `current`), with the device id and never the email.
+- **One email per device registration**: the complete sign-up (`account-complete-email`, first device of a new account), the new device (`new-device-email`, with the link to "Dispositivos" and, if the session added a passkey, the line that says so) or, for an onboarding ticket, the new-account email with "it was not me", now sent when the first device is registered and with its name (it was sent right after the passkey registration until now). Best effort: 5 s at most, traced on failure.
+- **Deferred new-passkey email (EUD-8 AD-11)**: a passkey added to an account that already had one marks the session (`refresh_token.passkey_notice_pending`); the email goes inside the new-device email, alone when the session binds to an existing device, or from the hourly task when the session ends without a device. It was sent at once until now.
+- **Emails in the language of the Wallet App (EUD-8 FR-38, AD-10)**: `messages_es`, `messages_ca` and `messages_en` with the content of the wireframes for every email. The Wallet App language comes in `Accept-Language` and is stored in `wallet_user.locale` when a session is opened and a device registered or bound; the holder's emails use it, the code uses the language of its request, and the alert to the security contact the tenant's. New `tenant_config` keys `ebw.default_locale` (`es` by default) and `ebw.timezone` (`Europe/Madrid` by default) for the language without a known one and the time zone of the dates.
+
+### Removed (EUD-334)
+
+- **Passkey management routes (EUD-15 AD-4)**: `PATCH /api/v1/auth/passkeys/{id}`, `DELETE /api/v1/auth/passkeys/{id}` and `POST /api/v1/auth/passkeys/{id}/revoke-sessions`. `GET /api/v1/auth/passkeys` stays for the Signal API, without the device name, the user agent nor the count of sessions.
+- **Device name of the passkey (EUD-8 prd 1.4.0)**: `POST /api/v1/auth/passkeys/registration` ignores `displayName` and stores no user agent; the name and the type belong to the device.
+
+### Deployment notes (EUD-334)
+
+- Tenant migration `V12__wallet_instance.sql` (the design calls it V11, taken by EUD-315). Deploy after EUD-315 and with Wallet App 3.22.0: the sessions opened before have no device and the new Wallet App binds or registers it after start-up; an older Wallet App gets `instance_required` on every attestation route.
+- Seed `ebw.default_locale` and `ebw.timezone` per tenant (platform-dev `seed-tenants*.sql`); `ebw.wallet_url` is needed for the "Dispositivos" button of the emails (without it they go without the button).
+
 ### Added (EUD-315, version 2.3.0)
 
 - **Onboarding with a ticket**: a system authorised by the tenant pre-registers a user it has identified and gets a short onboarding address `<ebw.wallet_url>/t#<ticket>` (the ticket goes in the fragment, so it never reaches access logs nor the `Referer`).

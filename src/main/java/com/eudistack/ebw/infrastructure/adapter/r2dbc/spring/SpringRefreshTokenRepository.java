@@ -34,13 +34,6 @@ public interface SpringRefreshTokenRepository extends ReactiveCrudRepository<Ref
     Mono<Long> revokeByUserId(UUID userId);
 
     @Modifying
-    @Query("UPDATE refresh_token SET revoked = true WHERE passkey_id = :passkeyId AND revoked = false")
-    Mono<Void> revokeByPasskeyId(UUID passkeyId);
-
-    @Query("SELECT COUNT(*) FROM refresh_token WHERE passkey_id = :passkeyId AND revoked = false AND expires_at > NOW()")
-    Mono<Long> countActiveByPasskeyId(UUID passkeyId);
-
-    @Modifying
     @Query("""
             DELETE FROM refresh_token WHERE session_id IN (
                 SELECT session_id FROM refresh_token

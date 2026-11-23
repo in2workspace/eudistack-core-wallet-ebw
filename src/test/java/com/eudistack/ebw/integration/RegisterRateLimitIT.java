@@ -7,6 +7,7 @@ import org.springframework.test.context.TestPropertySource;
 
 import java.util.Map;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
@@ -57,7 +58,7 @@ class RegisterRateLimitIT extends IntegrationTestBase {
                 .expectBody()
                 .jsonPath("$.type").isEqualTo("rate_limited");
 
-        verify(emailSender, times(2)).sendOtp(eq(email), anyString());
+        verify(emailSender, times(2)).sendOtp(eq(email), anyString(), any());
     }
 
     @Test
@@ -76,7 +77,7 @@ class RegisterRateLimitIT extends IntegrationTestBase {
                     .expectStatus().isOk();
         }
 
-        verify(emailSender, times(4)).sendOtp(eq(email), anyString());
+        verify(emailSender, times(4)).sendOtp(eq(email), anyString(), any());
     }
 
     @Test

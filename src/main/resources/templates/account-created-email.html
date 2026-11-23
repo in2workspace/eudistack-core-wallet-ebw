@@ -1,23 +1,22 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="en">
-<head th:replace="~{fragments/email-layout :: head(title=#{email.account-created.header})}">
-    <title>Your wallet has been created</title>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="es">
+<head th:replace="~{fragments/email-layout :: head(title=${accountCreated} ? #{email.account-created.subject(${tenantDisplayName})} : #{email.account-created.added.subject(${tenantDisplayName})})}">
+    <title>Se ha creado tu wallet</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Blinker', Arial, Helvetica, sans-serif;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #ffffff;">
     <tr>
         <td align="center" style="padding: 24px 10px;">
             <table role="presentation" width="640" cellspacing="0" cellpadding="0" border="0" style="width: 100%; max-width: 640px; background-color: #ffffff; border-radius: 8px; overflow: hidden;">
-                <tr th:replace="~{fragments/email-layout :: header(${branding}, #{email.account-created.greeting}, 'font-size: 18px; line-height: 1.5; margin-bottom: 16px;')}"></tr>
+                <tr th:replace="~{fragments/email-layout :: header(${branding}, #{email.greeting}, 'font-size: 18px; line-height: 1.5; margin-bottom: 16px;')}"></tr>
 
-                <!-- CONTENT (EUD-8 wireframes, "Cuenta nueva"; FR-29). Type scale, spacing and button as in the
-                     issuer's emails (revoked-expired-credential-email, credential-offer-email). -->
+                <!-- CONTENT (EUD-8 wireframes, "Cuenta nueva"; FR-29; EUD-15 FR-08, AC-09: sent when the first device is
+                     registered, with its name). Without the system that requested the ticket (EUD-315 P12, design 1.4.0). -->
                 <tr>
                     <td align="center" style="padding: 12px 40px 32px 40px; font-family: 'Blinker', Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.5; color: #000000; text-align: center;">
-                        <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 700; line-height: 1.3;" th:text="${accountCreated} ? #{email.account-created.header} : #{email.account-created.added.header}">Your wallet has been created</p>
-                        <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400;" th:text="${accountCreated} ? #{email.account-created.body(${createdAt}, ${tenantDisplayName})} : #{email.account-created.added.body(${createdAt}, ${tenantDisplayName})}">On 30/10/2026 10:42 your CGCOM wallet was created.</p>
-                        <p style="margin: 0 0 24px 0; font-size: 14px; font-weight: 400;" th:text="#{email.account-created.hint}">If it was you, you do not need to do anything.</p>
-                        <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400;" th:text="#{email.account-created.question}">Was it not you?</p>
+                        <p class="break-long" style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400; overflow-wrap: anywhere;" th:text="${accountCreated} ? #{email.account-created.body(${date}, ${time}, ${deviceName})} : #{email.account-created.added.body(${date}, ${time}, ${deviceName})}">El 30/10/2026 a las 10:42 se creó tu wallet, en el dispositivo «iPhone · Safari».</p>
+                        <p style="margin: 0 0 24px 0; font-size: 14px; font-weight: 400;" th:text="#{email.account-created.hint}">Si has sido tú, no tienes que hacer nada.</p>
+                        <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400;" th:text="#{email.account-created.question}">¿No has sido tú?</p>
 
                         <!-- BUTTON: Outlook desktop ignores padding and inline-block on <a>, so there the cell draws
                              the button (bgcolor + .button-cell padding from the mso block in email-layout head). -->
@@ -26,18 +25,18 @@
                                 <td align="center" bgcolor="#2D58A7" class="button-cell" style="border-radius: 6px; background-color: #2D58A7;">
                                     <a th:href="${disavowalUrl}" href="#" target="_blank"
                                        style="display: inline-block; font-family: 'Blinker', Arial, Helvetica, sans-serif; font-size: 16px; font-weight: 600; color: #ffffff; padding: 12px 72px; text-decoration: none; border-radius: 6px; background-color: #2D58A7;"
-                                       th:text="#{email.account-created.button}">It was not me</a>
+                                       th:text="#{email.account-created.button}">No he sido yo</a>
                                 </td>
                             </tr>
                         </table>
 
-                        <p style="margin: 16px 0 0 0; font-size: 13px; font-weight: 400;" th:text="#{email.account-created.expiry(${linkExpiresAt})}">The link expires on 06/11/2026.</p>
+                        <p style="margin: 16px 0 0 0; font-size: 13px; font-weight: 400;" th:text="#{email.account-created.expiry(${linkExpiresAt})}">El enlace caduca el 06/11/2026.</p>
                     </td>
                 </tr>
 
                 <tr th:replace="~{fragments/email-layout :: footer(${branding}, ~{::footerText})}">
                     <td>
-                        <span th:fragment="footerText" style="font-size: 12px; font-weight: 400;" th:text="#{email.account-created.footer}">The link can be used only once. It ends the sessions of the wallet and removes the passkey that was created.</span>
+                        <span th:fragment="footerText" style="font-size: 12px; font-weight: 400;" th:text="#{email.account-created.footer}">El enlace solo se puede usar una vez y pide confirmar antes de hacer nada.</span>
                     </td>
                 </tr>
             </table>

@@ -30,6 +30,10 @@ public class SessionOpener {
         this.auditService = auditService;
     }
 
+    /**
+     * Runs inside the caller's transaction. The caller stores the language of the Wallet App after the commit
+     * ({@link EmailLocales#rememberRequestLanguage}, EUD-8 AD-10): a failed statement would abort the transaction.
+     */
     public Mono<IssuedSession> open(WalletUser user, UUID passkeyId, String replacedRefreshToken, String method) {
         return endReplacedSession(replacedRefreshToken)
                 .then(Mono.zip(settingsService.session(), currentTenant()))

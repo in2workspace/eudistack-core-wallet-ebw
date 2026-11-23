@@ -41,14 +41,54 @@ class WebAuthnHousekeepingJobTest {
     @Mock private RegistrationTicketRepository ticketRepository;
     @Mock private RefreshTokenRepository refreshTokenRepository;
     @Mock private ExpireOnboardingWorkflow expireOnboardingWorkflow;
+    @Mock private com.eudistack.ebw.application.workflow.SendPendingPasskeyNoticesWorkflow sendPendingPasskeyNotices;
+    @Mock private com.eudistack.ebw.application.workflow.RevokeInactiveWalletInstancesWorkflow revokeInactiveInstances;
 
     private WebAuthnHousekeepingJob job;
 
     @BeforeEach
     void setUp() {
         job = new WebAuthnHousekeepingJob(tenantDirectory, expireSessionsWorkflow, ceremonyRepository, ticketRepository,
-                refreshTokenRepository, expireOnboardingWorkflow);
+                refreshTokenRepository, expireOnboardingWorkflow, sendPendingPasskeyNotices, revokeInactiveInstances);
         lenient().when(expireOnboardingWorkflow.expire()).thenReturn(Mono.just(0L));
+        lenient().when(sendPendingPasskeyNotices.sendPending()).thenReturn(Mono.just(0L));
+        lenient().when(revokeInactiveInstances.revokeInactive()).thenReturn(Mono.just(0L));
+    }
+
+    @Test
+    void cleanup_deviceStepsFail_stillExpiresTheOnboardingData() {
+        // Arrange: EUD-15 — a failure of the device steps never blocks the other housekeeping
+        when(tenantDirectory.activeTenants()).thenReturn(Flux.just("sandbox"));
+        when(expireSessionsWorkflow.expireLapsedSessions()).thenReturn(Mono.just(0L));
+        when(ceremonyRepository.deleteCreatedBefore(any())).thenReturn(Mono.just(0L));
+        when(ticketRepository.deleteCreatedBefore(any())).thenReturn(Mono.just(0L));
+        when(refreshTokenRepository.deleteSessionsEndedBefore(any())).thenReturn(Mono.just(0L));
+        when(sendPendingPasskeyNotices.sendPending()).thenReturn(Mono.error(new IllegalStateException("db")));
+        when(revokeInactiveInstances.revokeInactive()).thenReturn(Mono.error(new IllegalStateException("db")));
+        when(expireOnboardingWorkflow.expire()).thenReturn(Mono.just(3L));
+
+        // Act + Assert
+        StepVerifier.create(job.cleanup()).expectNext(3L).verifyComplete();
+    }
+
+    @Test
+    void cleanup_activeTenant_runsTheDeviceStepsInItsSchema() {
+        // Arrange: EUD-15 FR-18 and EUD-8 AD-11, every hour per tenant
+        var tenantsSeen = new CopyOnWriteArrayList<String>();
+        when(tenantDirectory.activeTenants()).thenReturn(Flux.just("cgcom"));
+        when(expireSessionsWorkflow.expireLapsedSessions()).thenReturn(Mono.just(0L));
+        when(ceremonyRepository.deleteCreatedBefore(any())).thenReturn(Mono.just(0L));
+        when(ticketRepository.deleteCreatedBefore(any())).thenReturn(Mono.just(0L));
+        when(refreshTokenRepository.deleteSessionsEndedBefore(any())).thenReturn(Mono.just(0L));
+        when(revokeInactiveInstances.revokeInactive()).thenReturn(Mono.deferContextual(ctx -> {
+            tenantsSeen.add(ctx.get(ReactorContextKeys.TENANT_DOMAIN));
+            return Mono.just(1L);
+        }));
+
+        // Act + Assert
+        StepVerifier.create(job.cleanup()).expectNext(0L).verifyComplete();
+        assertThat(tenantsSeen).containsExactly("cgcom");
+        org.mockito.Mockito.verify(sendPendingPasskeyNotices).sendPending();
     }
 
     @Test
