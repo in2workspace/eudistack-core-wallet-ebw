@@ -56,7 +56,10 @@ public class WalletInstanceRevoker {
 
     /** Revokes, as {@code DISAVOWAL}, the active instances registered with the passkey. Emits the sessions ended. */
     public Flux<UUID> revokeRegisteredWith(UUID passkeyId, UUID userId) {
+        // Read whole before the effects run: they use the same connection of the caller's transaction.
         return instanceRepository.revokeActiveByRegisteredPasskey(passkeyId, RevokedBy.DISAVOWAL)
+                .collectList()
+                .flatMapMany(Flux::fromIterable)
                 .concatMap(instanceId -> afterMarkedRevoked(instanceId, userId, RevokedBy.DISAVOWAL, userId))
                 .flatMapIterable(sessions -> sessions);
     }

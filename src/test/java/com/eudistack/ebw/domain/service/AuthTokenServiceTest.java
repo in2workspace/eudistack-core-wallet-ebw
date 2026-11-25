@@ -127,6 +127,21 @@ class AuthTokenServiceTest {
     }
 
     @Test
+    void rotateRefreshToken_reSyncOfTheSessionStateFails_stillDeliversTheNewSession() {
+        // Arrange: the old token is already revoked, so failing would make the client's retry look like a reuse
+        var existing = token(Instant.now().minus(Duration.ofHours(1)), Instant.now().plusSeconds(600), false);
+        when(refreshTokenRepository.revokeIfActive(existing.getId())).thenReturn(Mono.just(true));
+        when(refreshTokenRepository.inheritSessionState(any(), any()))
+                .thenReturn(Mono.error(new IllegalStateException("connection reset")));
+        when(userPasskeyRepository.touchLastUsed(passkeyId)).thenReturn(Mono.empty());
+
+        // Act + Assert
+        StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
+                .assertNext(session -> assertThat(session.sessionId()).isEqualTo(existing.getSessionId()))
+                .verifyComplete();
+    }
+
+    @Test
     void rotateRefreshToken_nearMaxDuration_capsTheNewTokenAtTheSessionEnd() {
         // Arrange
         var started = Instant.now().minus(Duration.ofHours(8)).plusSeconds(60);

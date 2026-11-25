@@ -92,7 +92,9 @@ public class WalletInstanceNotices {
         var user = registration.user();
         var instance = registration.instance();
         return emailLocales.ofHolder(user).flatMap(locale -> {
-            if (registration.firstOfNewAccount()) {
+            // The complete sign-up email says nothing of a passkey: if the session added one to an account that
+            // already had another, the new-device email goes instead, so that notice is never lost (EUD-8 FR-10).
+            if (registration.firstOfNewAccount() && !registration.passkeyAdded()) {
                 return emailSender.sendAccountCompleteNotice(user.getEmail(),
                         new AccountCompleteNotice(instance.createdAt(), instance.displayName()), locale);
             }

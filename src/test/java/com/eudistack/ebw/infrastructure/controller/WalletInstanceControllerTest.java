@@ -8,6 +8,7 @@ import com.eudistack.ebw.application.workflow.RenameWalletInstanceWorkflow;
 import com.eudistack.ebw.application.workflow.RevokeWalletInstanceWorkflow;
 import com.eudistack.ebw.application.workflow.WalletSession;
 import com.eudistack.ebw.domain.model.WalletInstance;
+import com.eudistack.ebw.domain.model.exception.InvalidSessionException;
 import com.eudistack.ebw.domain.model.exception.InvalidWalletInstanceException;
 import com.eudistack.ebw.domain.model.exception.RateLimitExceededException;
 import com.eudistack.ebw.domain.model.exception.WalletInstanceNotFoundException;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ServerWebInputException;
+import org.springframework.web.server.UnsupportedMediaTypeStatusException;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -146,6 +148,21 @@ class WalletInstanceControllerTest {
         assertThat(unexpected.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(unexpected.getBody().getType()).hasToString("server_error");
         assertThat(unexpected.getBody().getDetail()).isNull();
+    }
+
+    @Test
+    void problems_accountGoneDuringTheSession_is401InvalidSession() {
+        var response = handler.handleInvalidSession(new InvalidSessionException());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(response.getBody().getType()).hasToString("invalid_session");
+    }
+
+    @Test
+    void problems_frameworkErrorWithItsOwnStatus_keepsIt() {
+        var response = handler.handleResponseStatus(new UnsupportedMediaTypeStatusException("text/plain"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
     }
 
     @Test

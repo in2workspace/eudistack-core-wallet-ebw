@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deferred new-passkey email (EUD-8 AD-11)**: a passkey added to an account that already had one marks the session (`refresh_token.passkey_notice_pending`); the email goes inside the new-device email, alone when the session binds to an existing device, or from the hourly task when the session ends without a device. It was sent at once until now.
 - **Emails in the language of the Wallet App (EUD-8 FR-38, AD-10)**: `messages_es`, `messages_ca` and `messages_en` with the content of the wireframes for every email. The Wallet App language comes in `Accept-Language` and is stored in `wallet_user.locale` when a session is opened and a device registered or bound; the holder's emails use it, the code uses the language of its request, and the alert to the security contact the tenant's. New `tenant_config` keys `ebw.default_locale` (`es` by default) and `ebw.timezone` (`Europe/Madrid` by default) for the language without a known one and the time zone of the dates.
 
+### Fixed (EUD-334, code review)
+
+- The first device of a new account whose session added a passkey to it gets the new-device email with the passkey line, instead of the complete sign-up email that left the new-passkey notice lost.
+- A failure re-syncing the session state on a renewal no longer fails it once the old token is revoked (the client's retry looked like a reused token and ended the session).
+- The inactivity revocation and "it was not me" read the revoked devices whole before ending their sessions on the same transaction connection.
+- The Wallet Instances API answers 401 `invalid_session` when the account is gone and keeps the status of framework errors (415, 405...) instead of 500.
+- The "Dispositivos" footer of the new-device and new-passkey emails only appears with its button (tenants with `ebw.wallet_url`).
+
 ### Removed (EUD-334)
 
 - **Passkey management routes (EUD-15 AD-4)**: `PATCH /api/v1/auth/passkeys/{id}`, `DELETE /api/v1/auth/passkeys/{id}` and `POST /api/v1/auth/passkeys/{id}/revoke-sessions`. `GET /api/v1/auth/passkeys` stays for the Signal API, without the device name, the user agent nor the count of sessions.

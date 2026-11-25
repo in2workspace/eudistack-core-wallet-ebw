@@ -1,5 +1,6 @@
 package com.eudistack.ebw.infrastructure.controller;
 
+import com.eudistack.ebw.domain.model.exception.InvalidSessionException;
 import com.eudistack.ebw.domain.model.exception.InvalidWalletInstanceException;
 import com.eudistack.ebw.domain.model.exception.RateLimitExceededException;
 import com.eudistack.ebw.domain.model.exception.WalletInstanceNotFoundException;
@@ -16,6 +17,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebInputException;
 
 /**
@@ -50,6 +52,20 @@ public class WalletInstanceProblemExceptionHandler {
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
                 .body(AuthProblems.of(HttpStatus.TOO_MANY_REQUESTS, AuthProblems.TOO_MANY_REQUESTS));
+    }
+
+    /** The account of the session is gone (it was deleted while the session was open). */
+    @ExceptionHandler(InvalidSessionException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidSession(InvalidSessionException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, AuthProblems.INVALID_SESSION);
+    }
+
+    /** Framework errors with their own status (415, 405, 406...) keep it instead of becoming a 500. */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ProblemDetail> handleResponseStatus(ResponseStatusException ex) {
+        return ResponseEntity.status(ex.getStatusCode())
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(ex.getBody());
     }
 
     @ExceptionHandler(Exception.class)

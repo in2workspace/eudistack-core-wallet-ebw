@@ -110,7 +110,15 @@ public class AuthTokenService {
                         return refreshTokenRepository.deleteById(inherited.getId())
                                 .then(rejectRevoked(existing));
                     }
+                    // Re-sync for a binding that landed on the old token between the insert and the revocation.
+                    // Best effort: the new token already carries the inherited state, and failing here, with the
+                    // old token revoked, would make the client's retry look like a reused token.
                     return refreshTokenRepository.inheritSessionState(inherited.getId(), existing.getId())
+                            .onErrorResume(e -> {
+                                log.warn("Could not re-sync the session state on renewal: {}",
+                                        e.getClass().getSimpleName());
+                                return Mono.empty();
+                            })
                             .then(touchPasskey(existing.getPasskeyId()))
                             .thenReturn(next.session());
                 });

@@ -88,6 +88,17 @@ class WalletInstanceNoticesTest {
     }
 
     @Test
+    void deviceRegistered_firstDeviceOfANewAccountThatAddedAPasskey_sendsTheNewDeviceEmailSoThePasskeyIsNotLost() {
+        // EUD-8 FR-10: the complete sign-up email has no passkey line, and the pending mark is already taken
+        StepVerifier.create(notices.deviceRegistered(registration(true, true))).verifyComplete();
+
+        var notice = ArgumentCaptor.forClass(NewDeviceNotice.class);
+        verify(emailSender).sendNewDeviceNotice(eq("ana@example.com"), notice.capture(), eq(CA));
+        assertThat(notice.getValue().passkeyAdded()).isTrue();
+        verify(emailSender, never()).sendAccountCompleteNotice(anyString(), any(), any());
+    }
+
+    @Test
     void deviceRegistered_otherDevice_sendsTheNewDeviceEmailWithTheLinkToDevices() {
         // AC-10
         StepVerifier.create(notices.deviceRegistered(registration(false, false))).verifyComplete();

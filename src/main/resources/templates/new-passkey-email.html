@@ -21,7 +21,7 @@
 
                 <tr th:replace="~{fragments/email-layout :: footer(${branding}, ~{::footerText})}">
                     <td>
-                        <span th:fragment="footerText" style="font-size: 12px; font-weight: 400;" th:text="#{email.devices.footer}">El enlace abre tu wallet y te pide entrar: desde este email no se cambia nada.</span>
+                        <span th:fragment="footerText" th:if="${devicesUrl != null}" style="font-size: 12px; font-weight: 400;" th:text="#{email.devices.footer}">El enlace abre tu wallet y te pide entrar: desde este email no se cambia nada.</span>
                     </td>
                 </tr>
             </table>

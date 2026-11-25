@@ -5,6 +5,7 @@ import com.eudistack.ebw.domain.model.WalletInstance.RevokedBy;
 import com.eudistack.ebw.domain.repository.WalletInstanceRepository;
 import com.eudistack.ebw.domain.spi.TransactionRunner;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
@@ -41,7 +42,10 @@ public class RevokeInactiveWalletInstancesWorkflow {
     }
 
     private Mono<Long> revokeBatches(Instant cutoff, long revokedSoFar) {
+        // The batch is read whole before the effects run: they use the same connection of the transaction.
         return transactionRunner.inTransaction(instanceRepository.revokeInactiveBatch(cutoff, BATCH_SIZE)
+                        .collectList()
+                        .flatMapMany(Flux::fromIterable)
                         .concatMap(instance -> afterRevoked(instance).thenReturn(instance))
                         .count())
                 .flatMap(revoked -> revoked < BATCH_SIZE
