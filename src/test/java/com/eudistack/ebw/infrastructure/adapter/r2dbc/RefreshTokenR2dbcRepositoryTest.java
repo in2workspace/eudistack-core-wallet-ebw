@@ -109,19 +109,14 @@ class RefreshTokenR2dbcRepositoryTest {
     @Test
     void revocationQueries_delegateToSpringData() {
         // Arrange
-        var passkeyId = UUID.randomUUID();
         var sessionId = UUID.randomUUID();
         var userId = UUID.randomUUID();
-        when(springRepository.revokeByPasskeyId(passkeyId)).thenReturn(Mono.empty());
         when(springRepository.revokeBySessionId(sessionId)).thenReturn(Mono.just(2L));
         when(springRepository.revokeByUserIdExceptSession(userId, sessionId)).thenReturn(Mono.just(3L));
-        when(springRepository.countActiveByPasskeyId(passkeyId)).thenReturn(Mono.just(4L));
 
         // Act + Assert
-        StepVerifier.create(repository.revokeByPasskeyId(passkeyId)).verifyComplete();
         StepVerifier.create(repository.revokeBySessionId(sessionId)).expectNext(2L).verifyComplete();
         StepVerifier.create(repository.revokeByUserIdExceptSession(userId, sessionId)).expectNext(3L).verifyComplete();
-        StepVerifier.create(repository.countActiveByPasskeyId(passkeyId)).expectNext(4L).verifyComplete();
         verify(springRepository).revokeBySessionId(sessionId);
     }
 

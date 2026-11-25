@@ -58,6 +58,7 @@ class AuthTokenServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(refreshTokenRepository.inheritSessionState(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(reactor.core.publisher.Mono.empty());
         service = new AuthTokenService(tokenSigner, hashProvider, randomGenerator, refreshTokenRepository,
                 userPasskeyRepository, new AuthTokenSettings(Duration.ofMinutes(5), "https://ebw"));
         user = TestPasskeys.user("holder@example.com");
@@ -123,6 +124,21 @@ class AuthTokenServiceTest {
         verify(refreshTokenRepository).insert(stored.capture());
         assertThat(stored.getValue().getSessionId()).isEqualTo(existing.getSessionId());
         assertThat(stored.getValue().getSessionStartedAt()).isEqualTo(started);
+    }
+
+    @Test
+    void rotateRefreshToken_reSyncOfTheSessionStateFails_stillDeliversTheNewSession() {
+        // Arrange: the old token is already revoked, so failing would make the client's retry look like a reuse
+        var existing = token(Instant.now().minus(Duration.ofHours(1)), Instant.now().plusSeconds(600), false);
+        when(refreshTokenRepository.revokeIfActive(existing.getId())).thenReturn(Mono.just(true));
+        when(refreshTokenRepository.inheritSessionState(any(), any()))
+                .thenReturn(Mono.error(new IllegalStateException("connection reset")));
+        when(userPasskeyRepository.touchLastUsed(passkeyId)).thenReturn(Mono.empty());
+
+        // Act + Assert
+        StepVerifier.create(service.rotateRefreshToken(existing, user, SETTINGS, TENANT))
+                .assertNext(session -> assertThat(session.sessionId()).isEqualTo(existing.getSessionId()))
+                .verifyComplete();
     }
 
     @Test

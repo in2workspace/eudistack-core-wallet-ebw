@@ -10,7 +10,7 @@ public final class RefreshTokenMapper {
     public static RefreshToken toDomain(RefreshTokenEntity entity) {
         return new RefreshToken(entity.getId(), entity.getUserId(), entity.getPasskeyId(), entity.getSessionId(),
                 entity.getSessionStartedAt(), entity.getTokenHash(), entity.getExpiresAt(), entity.isRevoked(),
-                entity.getCreatedAt());
+                entity.getCreatedAt(), entity.getWalletInstanceId(), entity.isPasskeyNoticePending());
     }
 
     public static RefreshTokenEntity toEntity(RefreshToken domain) {
@@ -24,6 +24,8 @@ public final class RefreshTokenMapper {
         entity.setExpiresAt(domain.getExpiresAt());
         entity.setRevoked(domain.isRevoked());
         entity.setCreatedAt(domain.getCreatedAt());
+        entity.setWalletInstanceId(domain.getWalletInstanceId());
+        entity.setPasskeyNoticePending(domain.isPasskeyNoticePending());
         return entity;
     }
 }

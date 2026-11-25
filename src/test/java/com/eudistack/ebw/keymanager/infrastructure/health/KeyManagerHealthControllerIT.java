@@ -35,8 +35,9 @@ class KeyManagerHealthControllerIT {
 
     @org.junit.jupiter.api.BeforeEach
     void stubActiveSessions() {
-        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
-                .thenReturn(reactor.core.publisher.Mono.just(true));
+        org.mockito.Mockito.lenient().when(activeSessionChecker.state(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(new com.eudistack.ebw.domain.model.SessionState(
+                        true, java.util.UUID.randomUUID())));
     }
 
     /** Sessions of the mocked tokens only exist in the mock: the session check is covered by PasskeySessionIT. */

@@ -21,7 +21,7 @@ import com.eudistack.ebw.domain.repository.WebAuthnCeremonyRepository;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.RegistrationTicketService;
 import com.eudistack.ebw.domain.service.WalletAuthSettingsService;
-import com.eudistack.ebw.domain.spi.EmailSender;
+import com.eudistack.ebw.domain.service.AuthTokenService;
 import com.eudistack.ebw.domain.spi.SecureRandomGenerator;
 import com.eudistack.ebw.domain.spi.TransactionRunner;
 import com.eudistack.ebw.domain.spi.WebAuthnVerifier;
@@ -72,13 +72,13 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     @Mock private WebAuthnVerifier webAuthnVerifier;
     @Mock private SecureRandomGenerator randomGenerator;
     @Mock private SessionOpener sessionOpener;
-    @Mock private EmailSender emailSender;
+    @Mock private AuthTokenService authTokenService;
     @Mock private AuditService auditService;
     @Mock private TransactionRunner transactionRunner;
     @Mock private OnboardingPreregistrationRepository preregistrationRepository;
     @Mock private OnboardingDisavowalRepository disavowalRepository;
-    @Mock private NotifyOnboardingAccountCreatedWorkflow onboardingNotice;
 
+    @Mock private EmailLocales emailLocales;
     private PasskeyRegistrationWorkflow workflow;
     private byte[] handle;
     private OnboardingPreregistration preregistration;
@@ -89,13 +89,14 @@ class PasskeyRegistrationWithOnboardingTicketTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(emailLocales.rememberRequestLanguage(any())).thenReturn(Mono.empty());
         var steps = new PasskeyRegistrationSteps(passkeyRepository, ceremonyRepository, settingsService, custodyPolicy,
                 webAuthnVerifier, auditService);
         var onboardingRegistration = new RegisterOnboardingPasskeyWorkflow(ticketService, userRepository,
                 passkeyRepository, sessionOpener, auditService, transactionRunner, preregistrationRepository,
-                disavowalRepository, onboardingNotice, steps);
+                disavowalRepository, steps, emailLocales);
         workflow = new PasskeyRegistrationWorkflow(ticketService, userRepository, passkeyRepository, ceremonyRepository,
-                randomGenerator, sessionOpener, emailSender, auditService, transactionRunner, steps,
+                randomGenerator, sessionOpener, authTokenService, emailLocales, auditService, transactionRunner, steps,
                 onboardingRegistration);
         handle = new byte[WalletUser.USER_HANDLE_LENGTH];
         Arrays.fill(handle, (byte) 7);
@@ -123,7 +124,6 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         lenient().when(passkeyRepository.markOnboarding(any(), any())).thenReturn(Mono.empty());
         lenient().when(sessionOpener.open(any(), any(), eq(null), eq("registration"))).thenReturn(Mono.just(session));
         lenient().when(disavowalRepository.insert(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
-        lenient().when(onboardingNotice.notify(any())).thenReturn(Mono.empty());
         lenient().when(userRepository.lockEmailIgnoreCase(any())).thenReturn(Mono.empty());
     }
 
@@ -133,7 +133,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
     }
 
     private static RegisterPasskeyCommand command(UUID ceremonyId, Boolean prfSupported) {
-        return new RegisterPasskeyCommand("raw", ceremonyId, "{json}", prfSupported, null, "ua", null);
+        return new RegisterPasskeyCommand("raw", ceremonyId, "{json}", prfSupported, null);
     }
 
     // ------------------------------------------------------------------ options
@@ -196,12 +196,12 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         assertThat(row.getValue().requestedBy()).isEqualTo("portal-machine.example.org");
         assertThat(row.getValue().passkeyId()).isNotNull();
         assertThat(row.getValue().accountCreated()).isTrue();
-        // Provisional (P5): the new-account email goes right after the registration
-        verify(onboardingNotice).notify(row.getValue().passkeyId());
+        // EUD-15 FR-08: the new-account email goes when the first device is registered, not here
+        verify(authTokenService, never()).markPasskeyNoticePending(any());
     }
 
     @Test
-    void register_accountWithoutPasskeys_recognizesItAndKeepsTheDisavowalRowAndEmailsTheNotice() {
+    void register_accountWithoutPasskeys_recognizesItAndKeepsTheDisavowalRow() {
         // Arrange: EC-01, the ticket names the account (an email sign-up abandoned before the passkey)
         var account = WalletUser.create(EMAIL, new byte[WalletUser.USER_HANDLE_LENGTH]);
         ticket = RegistrationTicket.issueForPreregistration(account.getId(), preregistration.id(), "rt-hash", RegistrationTicket.TTL);
@@ -220,8 +220,7 @@ class PasskeyRegistrationWithOnboardingTicketTest {
         verify(disavowalRepository).insert(row.capture());
         assertThat(row.getValue().accountCreated()).isFalse();
         assertThat(row.getValue().userId()).isEqualTo(account.getId());
-        // P17: the account that already existed is warned too
-        verify(onboardingNotice).notify(row.getValue().passkeyId());
+        // P17: the account that already existed is warned too, when its first device is registered (EUD-15)
         verify(preregistrationRepository).deleteById(preregistration.id());
     }
 

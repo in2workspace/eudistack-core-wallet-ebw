@@ -34,14 +34,16 @@ class OnboardingAuditIT extends IntegrationTestBase {
     }
 
     @Test
-    void secondPasskey_auditsAccountRecognizedAndNewPasskeyNotice() {
+    void secondPasskey_auditsAccountRecognizedAndOneDeviceNoticeThatCarriesThePasskey() {
+        // EUD-8 AD-11: the new-passkey email goes inside the new-device email of the device registration
         var email = "audit-second-" + System.nanoTime() + "@example.com";
         var auth = authClient();
-        auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        withDevice(auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN)));
 
-        auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        withDevice(auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN)));
 
-        assertThat(actions(userId(email))).contains("ACCOUNT_RECOGNIZED", "NEW_PASSKEY_NOTICE_SENT");
+        assertThat(actions(userId(email))).contains("ACCOUNT_RECOGNIZED", "WALLET_INSTANCE_REGISTERED",
+                "WALLET_INSTANCE_NOTICE_SENT").doesNotContain("NEW_PASSKEY_NOTICE_SENT");
     }
 
     @Test

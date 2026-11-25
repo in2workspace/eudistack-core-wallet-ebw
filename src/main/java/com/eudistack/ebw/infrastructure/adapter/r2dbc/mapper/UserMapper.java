@@ -9,11 +9,13 @@ public final class UserMapper {
 
     public static WalletUser toDomain(WalletUserEntity entity) {
         return new WalletUser(entity.getId(), entity.getEmail(), entity.getWebauthnUserHandle(),
-                entity.getCreatedAt(), entity.getUpdatedAt());
+                entity.getCreatedAt(), entity.getUpdatedAt(), entity.getLocale());
     }
 
     public static WalletUserEntity toEntity(WalletUser domain) {
-        return new WalletUserEntity(domain.getId(), domain.getEmail(), domain.getWebauthnUserHandle(),
+        var entity = new WalletUserEntity(domain.getId(), domain.getEmail(), domain.getWebauthnUserHandle(),
                 domain.getCreatedAt(), domain.getUpdatedAt());
+        entity.setLocale(domain.getLocale());
+        return entity;
     }
 }

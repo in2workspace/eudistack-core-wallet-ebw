@@ -2,6 +2,8 @@ package com.eudistack.ebw.infrastructure.configuration;
 
 import com.eudistack.ebw.application.workflow.ExpireOnboardingWorkflow;
 import com.eudistack.ebw.application.workflow.ExpireSessionsWorkflow;
+import com.eudistack.ebw.application.workflow.RevokeInactiveWalletInstancesWorkflow;
+import com.eudistack.ebw.application.workflow.SendPendingPasskeyNoticesWorkflow;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.RegistrationTicketRepository;
@@ -43,13 +45,20 @@ public class WebAuthnHousekeepingJob {
     private final RegistrationTicketRepository ticketRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final ExpireOnboardingWorkflow expireOnboardingWorkflow;
+    private final SendPendingPasskeyNoticesWorkflow sendPendingPasskeyNotices;
+    private final RevokeInactiveWalletInstancesWorkflow revokeInactiveWalletInstances;
 
+    @SuppressWarnings("java:S107")
     public WebAuthnHousekeepingJob(ActiveTenantDirectory tenantDirectory,
                                    ExpireSessionsWorkflow expireSessionsWorkflow,
                                    WebAuthnCeremonyRepository ceremonyRepository,
                                    RegistrationTicketRepository ticketRepository,
                                    RefreshTokenRepository refreshTokenRepository,
-                                   ExpireOnboardingWorkflow expireOnboardingWorkflow) {
+                                   ExpireOnboardingWorkflow expireOnboardingWorkflow,
+                                   SendPendingPasskeyNoticesWorkflow sendPendingPasskeyNotices,
+                                   RevokeInactiveWalletInstancesWorkflow revokeInactiveWalletInstances) {
+        this.sendPendingPasskeyNotices = sendPendingPasskeyNotices;
+        this.revokeInactiveWalletInstances = revokeInactiveWalletInstances;
         this.tenantDirectory = tenantDirectory;
         this.expireSessionsWorkflow = expireSessionsWorkflow;
         this.ceremonyRepository = ceremonyRepository;
@@ -70,6 +79,7 @@ public class WebAuthnHousekeepingJob {
         var sessionCutoff = now.minus(ENDED_SESSION_RETENTION);
         return tenantDirectory.activeTenants()
                 .concatMap(tenant -> sessionHousekeeping(tenant, cutoff, sessionCutoff)
+                        .flatMap(deleted -> deviceHousekeeping(tenant).thenReturn(deleted))
                         .flatMap(deleted -> onboardingHousekeeping(tenant).map(onboarding -> deleted + onboarding))
                         .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, tenant)))
                 .reduce(0L, Long::sum)
@@ -96,6 +106,27 @@ public class WebAuthnHousekeepingJob {
         return ceremonyRepository.deleteCreatedBefore(cutoff)
                 .zipWith(ticketRepository.deleteCreatedBefore(cutoff), Long::sum)
                 .zipWith(refreshTokenRepository.deleteSessionsEndedBefore(sessionCutoff), Long::sum);
+    }
+
+    /**
+     * Devices and deferred emails (EUD-15, EUD-8 AD-11), after the lapsed sessions are closed: the new-passkey
+     * email of the sessions that ended without a device, then the instances unused for 90 days. Each step on its
+     * own: a failure is logged and the next pass retries.
+     */
+    private Mono<Void> deviceHousekeeping(String tenant) {
+        var notices = sendPendingPasskeyNotices.sendPending()
+                .doOnNext(sent -> log.debug("Sent {} deferred new passkey notices in tenant '{}'", sent, tenant))
+                .onErrorResume(e -> {
+                    log.warn("Deferred new passkey notices failed for tenant '{}': {}", tenant, e.getMessage());
+                    return Mono.just(0L);
+                });
+        var inactive = revokeInactiveWalletInstances.revokeInactive()
+                .doOnNext(revoked -> log.debug("Revoked {} inactive wallet instances in tenant '{}'", revoked, tenant))
+                .onErrorResume(e -> {
+                    log.warn("Inactive wallet instance revocation failed for tenant '{}': {}", tenant, e.getMessage());
+                    return Mono.just(0L);
+                });
+        return notices.then(inactive).then();
     }
 
     /**

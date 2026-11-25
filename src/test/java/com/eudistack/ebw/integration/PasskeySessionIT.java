@@ -41,7 +41,7 @@ class PasskeySessionIT extends IntegrationTestBase {
         var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
         var registered = auth.signUp(email("ses-signin"), authenticator);
 
-        var session = auth.signIn(authenticator);
+        var session = withDevice(auth.signIn(authenticator));
 
         assertThat(session.passkeyId()).isEqualTo(registered.passkeyId());
         assertThat(query("SELECT sign_count, last_used_at FROM user_passkey WHERE id = '" + session.passkeyId() + "'"))
@@ -437,7 +437,7 @@ class PasskeySessionIT extends IntegrationTestBase {
 
     @Test
     void accessToken_afterSignOut_isRejectedOnProtectedRoutes() {
-        var session = auth.signUp(email("ses-check-logout"), new SoftwareAuthenticator(TEST_ORIGIN));
+        var session = withDevice(auth.signUp(email("ses-check-logout"), new SoftwareAuthenticator(TEST_ORIGIN)));
         credentials(session.accessToken()).expectStatus().isOk();
 
         auth.endSessionSpec("current", session.accessToken(), true).expectStatus().isNoContent();
@@ -450,7 +450,7 @@ class PasskeySessionIT extends IntegrationTestBase {
 
     @Test
     void accessToken_afterSignOut_isRejectedOnTheActivityHistory() {
-        var session = auth.signUp(email("ses-check-activity"), new SoftwareAuthenticator(TEST_ORIGIN));
+        var session = withDevice(auth.signUp(email("ses-check-activity"), new SoftwareAuthenticator(TEST_ORIGIN)));
         activity(session.accessToken()).expectStatus().isOk();
 
         auth.endSessionSpec("current", session.accessToken(), true).expectStatus().isNoContent();
@@ -476,8 +476,8 @@ class PasskeySessionIT extends IntegrationTestBase {
     @Test
     void accessToken_ofASessionEndedByCloseOthers_isRejected() {
         var authenticator = new SoftwareAuthenticator(TEST_ORIGIN);
-        var other = auth.signUp(email("ses-check-others"), authenticator);
-        var current = auth.signIn(authenticator);
+        var other = withDevice(auth.signUp(email("ses-check-others"), authenticator));
+        var current = withDevice(auth.signIn(authenticator));
 
         auth.endSessionSpec("others", current.accessToken(), true).expectStatus().isNoContent();
 
@@ -497,7 +497,8 @@ class PasskeySessionIT extends IntegrationTestBase {
 
     @Test
     void accessToken_afterRenewal_keepsWorking() {
-        var session = auth.signUp(email("ses-check-renewal"), new SoftwareAuthenticator(TEST_ORIGIN));
+        // EUD-15: the device of the session is inherited by every rotation of the family
+        var session = withDevice(auth.signUp(email("ses-check-renewal"), new SoftwareAuthenticator(TEST_ORIGIN)));
 
         var renewed = auth.refresh(session.refreshToken());
 

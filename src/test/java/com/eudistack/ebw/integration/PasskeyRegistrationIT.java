@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -172,15 +174,15 @@ class PasskeyRegistrationIT extends IntegrationTestBase {
     }
 
     @Test
-    void registerPasskey_secondPasskeyOfTheAccount_emailsTheHolder() {
+    void registerPasskey_secondPasskeyOfTheAccount_defersTheEmailToTheDeviceStep() {
         var auth = authClient();
         var email = email("reg-notice");
         auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
-        verify(emailSender, never()).sendNewPasskeyNotice(email);
 
         auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
 
-        verify(emailSender).sendNewPasskeyNotice(email);
+        // EUD-8 AD-11: the session is marked; the email goes when it binds or registers a device.
+        verify(emailSender, never()).sendNewPasskeyNotice(eq(email), any(), any());
     }
 
     @Test

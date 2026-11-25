@@ -1,6 +1,7 @@
 package com.eudistack.ebw.infrastructure.adapter.r2dbc.spring;
 
 import com.eudistack.ebw.infrastructure.adapter.r2dbc.entity.WalletUserEntity;
+import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import reactor.core.publisher.Flux;
@@ -14,6 +15,10 @@ public interface SpringWalletUserRepository extends ReactiveCrudRepository<Walle
 
     @Query("SELECT * FROM wallet_user WHERE lower(email) = lower(:email)")
     Flux<WalletUserEntity> findAllByEmailIgnoreCase(String email);
+
+    @Modifying
+    @Query("UPDATE wallet_user SET locale = :locale WHERE id = :id AND locale IS DISTINCT FROM :locale")
+    Mono<Long> updateLocale(UUID id, String locale);
 
     @Query("SELECT * FROM wallet_user WHERE id = :id FOR UPDATE")
     Mono<WalletUserEntity> lockById(UUID id);

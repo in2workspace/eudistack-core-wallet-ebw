@@ -37,6 +37,11 @@ public class WalletUserR2dbcRepository implements WalletUserRepository {
     }
 
     @Override
+    public Mono<Void> updateLocale(UUID id, String locale) {
+        return springRepository.updateLocale(id, locale).then();
+    }
+
+    @Override
     public Mono<WalletUser> findByEmail(String email) {
         return springRepository.findByEmail(email).map(UserMapper::toDomain);
     }

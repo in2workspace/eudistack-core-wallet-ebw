@@ -131,8 +131,9 @@ class PasskeyIsolationIT {
 
     @BeforeEach
     void setUp() throws SQLException {
-        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
-                .thenReturn(reactor.core.publisher.Mono.just(true));
+        org.mockito.Mockito.lenient().when(activeSessionChecker.state(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(new com.eudistack.ebw.domain.model.SessionState(
+                        true, java.util.UUID.randomUUID())));
         webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         cleanTables(SCHEMA_1);
         cleanTables(SCHEMA_2);
@@ -200,9 +201,9 @@ class PasskeyIsolationIT {
                 .getResponseBody();
 
         assertThat(body).hasSize(1);
-        assertThat(body.get(0).displayName()).isEqualTo("A's iPhone");
-        assertThat(body).extracting(PasskeyResponse::displayName)
-                .doesNotContain("B's Pixel", "B's MacBook");
+        assertThat(body.get(0).credentialId()).isEqualTo("cred-a-1");
+        assertThat(body).extracting(PasskeyResponse::credentialId)
+                .doesNotContain("cred-b-1", "cred-b-2");
     }
 
     // -------------------------------------------------------------------------
@@ -223,7 +224,7 @@ class PasskeyIsolationIT {
                 .getResponseBody();
 
         assertThat(tenant1Body).hasSize(1);
-        assertThat(tenant1Body.get(0).displayName()).isEqualTo("Tenant 1 Device");
+        assertThat(tenant1Body.get(0).credentialId()).isEqualTo("cred-tenant1");
 
         List<PasskeyResponse> tenant2Body = listWithAuth(HOST_2, TOKEN_USER_A, null)
                 .expectStatus().isOk()
@@ -232,7 +233,7 @@ class PasskeyIsolationIT {
                 .getResponseBody();
 
         assertThat(tenant2Body).hasSize(1);
-        assertThat(tenant2Body.get(0).displayName()).isEqualTo("Tenant 2 Device");
+        assertThat(tenant2Body.get(0).credentialId()).isEqualTo("cred-tenant2");
     }
 
     // -------------------------------------------------------------------------
@@ -253,7 +254,7 @@ class PasskeyIsolationIT {
                 .getResponseBody();
 
         assertThat(body).hasSize(1);
-        assertThat(body.get(0).displayName()).isEqualTo("A's iPhone");
+        assertThat(body.get(0).credentialId()).isEqualTo("cred-a-1");
     }
 
     // -------------------------------------------------------------------------

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}" lang="es">
+<head th:replace="~{fragments/email-layout :: head(title=#{email.account-complete.subject(${tenantDisplayName})})}">
+    <title>Tu wallet está listo</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Blinker', Arial, Helvetica, sans-serif;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #ffffff;">
+    <tr>
+        <td align="center" style="padding: 24px 10px;">
+            <table role="presentation" width="640" cellspacing="0" cellpadding="0" border="0" style="width: 100%; max-width: 640px; background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+                <tr th:replace="~{fragments/email-layout :: header(${branding}, #{email.greeting}, 'font-size: 18px; line-height: 1.5; margin-bottom: 8px;')}"></tr>
+
+                <!-- CONTENT (EUD-15 wireframes, "Alta completa"; FR-08). No links: whoever created it verified the email. -->
+                <tr>
+                    <td align="center" style="padding: 12px 40px 32px 40px; font-family: 'Blinker', Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.5; color: #000000; text-align: center;">
+                        <p class="break-long" style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400; overflow-wrap: anywhere;" th:text="#{email.account-complete.body(${date}, ${time}, ${deviceName})}">Has creado tu wallet el 30/10/2026 a las 10:42 en el dispositivo «iPhone · Safari».</p>
+                        <p style="margin: 0; font-size: 14px; font-weight: 400;" th:text="#{email.account-complete.hint}">Puedes ver tus dispositivos en Ajustes, Dispositivos.</p>
+                    </td>
+                </tr>
+
+                <tr th:replace="~{fragments/email-layout :: footer(${branding}, ~{::footerText})}">
+                    <td>
+                        <span th:fragment="footerText" style="font-size: 12px; font-weight: 400;" th:text="#{email.account-complete.footer}">Recibes este email porque has creado tu wallet con esta dirección.</span>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+</body>
+</html>

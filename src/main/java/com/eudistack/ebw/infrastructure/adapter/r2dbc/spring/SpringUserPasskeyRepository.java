@@ -20,10 +20,6 @@ public interface SpringUserPasskeyRepository extends ReactiveCrudRepository<User
 
     Mono<Long> countByUserId(UUID userId);
 
-    @Modifying
-    @Query("UPDATE user_passkey SET display_name = :displayName WHERE id = :id")
-    Mono<Long> updateDisplayName(UUID id, String displayName);
-
     /** Counter-based passkey: only applies if the stored counter is lower (no concurrent reuse). */
     @Modifying
     @Query("""

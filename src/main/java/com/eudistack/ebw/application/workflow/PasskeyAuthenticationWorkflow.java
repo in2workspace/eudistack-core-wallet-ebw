@@ -58,6 +58,7 @@ public class PasskeyAuthenticationWorkflow {
     private final SessionOpener sessionOpener;
     private final AuditService auditService;
     private final TransactionRunner transactionRunner;
+    private final EmailLocales emailLocales;
 
     /** Input of {@link #openSession}. {@code rawTicket} and {@code replacedRefreshToken} are optional. */
     public record OpenSessionCommand(String rawTicket, UUID ceremonyId, String credentialJson,
@@ -69,7 +70,8 @@ public class PasskeyAuthenticationWorkflow {
                                          WebAuthnCeremonyRepository ceremonyRepository,
                                          WalletAuthSettingsService settingsService, WebAuthnVerifier webAuthnVerifier,
                                          SecureRandomGenerator randomGenerator, SessionOpener sessionOpener,
-                                         AuditService auditService, TransactionRunner transactionRunner) {
+                                         AuditService auditService, TransactionRunner transactionRunner,
+                                         EmailLocales emailLocales) {
         this.ticketService = ticketService;
         this.userRepository = userRepository;
         this.passkeyRepository = passkeyRepository;
@@ -80,6 +82,7 @@ public class PasskeyAuthenticationWorkflow {
         this.sessionOpener = sessionOpener;
         this.auditService = auditService;
         this.transactionRunner = transactionRunner;
+        this.emailLocales = emailLocales;
     }
 
     public Mono<AuthenticationOptions> startAuthentication(String rawTicket) {
@@ -110,7 +113,11 @@ public class PasskeyAuthenticationWorkflow {
                                                                 consumeTicket(ticket).then(sessionOpener.open(user,
                                                                         passkey.getId(), command.replacedRefreshToken(),
                                                                         ticket.isPresent() ? "passkey_with_ticket"
-                                                                                : "passkey"))))))))))
+                                                                                : "passkey")))))
+                                                        // After the commit (EUD-8 AD-10).
+                                                        .flatMap(session -> emailLocales
+                                                                .rememberRequestLanguage(user.getId())
+                                                                .thenReturn(session)))))))
                 .onErrorResume(e -> e instanceof AuthenticationFailedException
                                 || e instanceof UnknownCredentialException,
                         e -> auditRejection(command.ceremonyId(), passkeyRef.get(), e).then(Mono.error(e)));

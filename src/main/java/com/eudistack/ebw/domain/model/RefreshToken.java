@@ -8,6 +8,10 @@ import java.util.UUID;
  * Refresh token of a session. All the tokens of a rotation family share {@code sessionId}
  * and {@code sessionStartedAt}: the family is the session. Every session is opened with a
  * verified passkey, so {@code passkeyId} is always set.
+ *
+ * <p>The state of the session travels with every token of the family and is copied on each rotation
+ * ({@link #inheritSessionState}): the Wallet Instance it is bound to (EUD-15 design §2.1) and whether a
+ * passkey added in it is still to be notified (EUD-8 AD-11).
  */
 public class RefreshToken {
 
@@ -20,10 +24,20 @@ public class RefreshToken {
     private final Instant expiresAt;
     private final boolean revoked;
     private final Instant createdAt;
+    private final UUID walletInstanceId;
+    private final boolean passkeyNoticePending;
 
     @SuppressWarnings("java:S107")
     public RefreshToken(UUID id, UUID userId, UUID passkeyId, UUID sessionId, Instant sessionStartedAt,
                         String tokenHash, Instant expiresAt, boolean revoked, Instant createdAt) {
+        this(id, userId, passkeyId, sessionId, sessionStartedAt, tokenHash, expiresAt, revoked, createdAt, null,
+                false);
+    }
+
+    @SuppressWarnings("java:S107")
+    public RefreshToken(UUID id, UUID userId, UUID passkeyId, UUID sessionId, Instant sessionStartedAt,
+                        String tokenHash, Instant expiresAt, boolean revoked, Instant createdAt,
+                        UUID walletInstanceId, boolean passkeyNoticePending) {
         this.id = id;
         this.userId = userId;
         this.passkeyId = passkeyId;
@@ -33,12 +47,20 @@ public class RefreshToken {
         this.expiresAt = expiresAt;
         this.revoked = revoked;
         this.createdAt = createdAt;
+        this.walletInstanceId = walletInstanceId;
+        this.passkeyNoticePending = passkeyNoticePending;
     }
 
     public static RefreshToken create(UUID userId, UUID passkeyId, UUID sessionId, Instant sessionStartedAt,
                                       String tokenHash, Instant expiresAt) {
         return new RefreshToken(UUID.randomUUID(), userId, passkeyId, sessionId, sessionStartedAt, tokenHash,
                 expiresAt, false, Instant.now());
+    }
+
+    /** This token with the session state of {@code previous}, the token of the same family it replaces. */
+    public RefreshToken inheritSessionState(RefreshToken previous) {
+        return new RefreshToken(id, userId, passkeyId, sessionId, sessionStartedAt, tokenHash, expiresAt, revoked,
+                createdAt, previous.walletInstanceId, previous.passkeyNoticePending);
     }
 
     /** Inactivity limit: the token expires an idle period after it was issued. */
@@ -60,4 +82,6 @@ public class RefreshToken {
     public Instant getExpiresAt() { return expiresAt; }
     public boolean isRevoked() { return revoked; }
     public Instant getCreatedAt() { return createdAt; }
+    public UUID getWalletInstanceId() { return walletInstanceId; }
+    public boolean isPasskeyNoticePending() { return passkeyNoticePending; }
 }

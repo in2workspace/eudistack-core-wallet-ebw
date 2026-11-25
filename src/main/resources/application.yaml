@@ -7,6 +7,14 @@ spring:
       # Email branding per tenant (image flags, social links). Each environment can replace the whole file:
       # EMAIL_BRANDING_PATH=file:/path/email-branding.yaml (the bundled one is then not loaded).
       - ${EMAIL_BRANDING_PATH:classpath:email-branding.yaml}
+  # Emails in es, ca and en (messages_<lang>.properties, EUD-8 AD-10). Every email chooses its language: the
+  # language of the container must never be used instead.
+  messages:
+    basename: messages
+    encoding: UTF-8
+    fallback-to-system-locale: false
+    # Every text goes through MessageFormat, with or without arguments, so an apostrophe is always written ''.
+    always-use-message-format: true
   webflux:
     base-path: /business-wallet
   r2dbc:

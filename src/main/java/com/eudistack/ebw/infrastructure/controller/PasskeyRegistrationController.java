@@ -28,8 +28,6 @@ import reactor.core.publisher.Mono;
 @Validated
 public class PasskeyRegistrationController {
 
-    private static final int MAX_USER_AGENT_LENGTH = 512;
-
     private final PasskeyRegistrationWorkflow registrationWorkflow;
     private final RefreshCookies refreshCookies;
     private final ObjectMapper objectMapper;
@@ -53,8 +51,7 @@ public class PasskeyRegistrationController {
         WalletRequestHeader.require(request);
         return Mono.fromCallable(() -> objectMapper.writeValueAsString(body.credential()))
                 .map(credentialJson -> new RegisterPasskeyCommand(BearerTickets.read(request), body.ceremonyId(),
-                        credentialJson, body.prfSupported(), body.displayName(), userAgent(request),
-                        refreshCookies.read(request)))
+                        credentialJson, body.prfSupported(), refreshCookies.read(request)))
                 .flatMap(registrationWorkflow::register)
                 .map(session -> ResponseEntity.status(HttpStatus.CREATED)
                         .header(HttpHeaders.SET_COOKIE,
@@ -62,11 +59,4 @@ public class PasskeyRegistrationController {
                         .body(SessionResponse.from(session)));
     }
 
-    private static String userAgent(ServerHttpRequest request) {
-        var userAgent = request.getHeaders().getFirst(HttpHeaders.USER_AGENT);
-        if (userAgent == null) {
-            return null;
-        }
-        return userAgent.length() > MAX_USER_AGENT_LENGTH ? userAgent.substring(0, MAX_USER_AGENT_LENGTH) : userAgent;
-    }
 }

@@ -21,13 +21,21 @@ public class WalletUser {
     private final byte[] webauthnUserHandle;
     private final Instant createdAt;
     private Instant updatedAt;
+    /** Language of the holder's emails ({@code es}, {@code ca}, {@code en}), {@code null} if unknown (EUD-8 AD-10). */
+    private final String locale;
 
     public WalletUser(UUID id, String email, byte[] webauthnUserHandle, Instant createdAt, Instant updatedAt) {
+        this(id, email, webauthnUserHandle, createdAt, updatedAt, null);
+    }
+
+    public WalletUser(UUID id, String email, byte[] webauthnUserHandle, Instant createdAt, Instant updatedAt,
+                      String locale) {
         this.id = id;
         this.email = email;
         this.webauthnUserHandle = webauthnUserHandle;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        this.locale = locale;
     }
 
     public static WalletUser create(String email, byte[] webauthnUserHandle) {
@@ -52,6 +60,7 @@ public class WalletUser {
     }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public String getLocale() { return locale; }
 
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 }

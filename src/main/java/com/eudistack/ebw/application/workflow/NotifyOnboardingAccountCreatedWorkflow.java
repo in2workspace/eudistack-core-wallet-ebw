@@ -16,7 +16,6 @@ import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -27,9 +26,10 @@ import java.util.UUID;
  * and the conditional update makes the email go out once. Best effort: a failure is traced as
  * {@code ONBOARDING_NOTICE_FAILED} and never undoes the onboarding; the email is not retried.
  *
- * <p>The design sends it when the first device of the account is registered, by the device
- * management (EUD-15), which does not exist yet. PROVISIONAL (EUD-315 decision P5): the passkey
- * registration calls it right after its commit. EUD-15 moves the call to its device registration.
+ * <p>It is the email that ends the registration of the first device of the account (EUD-15 FR-08, design
+ * §2.1): {@link WalletInstanceNotices} sends it after the device is registered, with its name, in the language
+ * of the account. A holder who leaves on "Registrar este dispositivo" gets it when they register it on their
+ * next entry, while the row lives (7 days).
  */
 @Slf4j
 @Service
@@ -39,8 +39,6 @@ public class NotifyOnboardingAccountCreatedWorkflow {
     static final Duration NOTICE_TIMEOUT = Duration.ofSeconds(5);
     /** In the fragment, which never leaves the browser: not in access logs nor in Referer (P18). */
     static final String DISAVOWAL_PATH = "/not-me#";
-    /** PROVISIONAL (EUD-315 decision P10): the language of the account does not exist yet. */
-    static final Locale NOTICE_LOCALE = Locale.ENGLISH;
 
     private final OnboardingDisavowalRepository disavowalRepository;
     private final WalletUserRepository userRepository;
@@ -49,6 +47,7 @@ public class NotifyOnboardingAccountCreatedWorkflow {
     private final HashProvider hashProvider;
     private final SecureRandomGenerator randomGenerator;
     private final AuditService auditService;
+    private final EmailLocales emailLocales;
 
     @SuppressWarnings("java:S107")
     public NotifyOnboardingAccountCreatedWorkflow(OnboardingDisavowalRepository disavowalRepository,
@@ -56,7 +55,7 @@ public class NotifyOnboardingAccountCreatedWorkflow {
                                                   OnboardingSettingsService onboardingSettings,
                                                   EmailSender emailSender,
                                                   HashProvider hashProvider, SecureRandomGenerator randomGenerator,
-                                                  AuditService auditService) {
+                                                  AuditService auditService, EmailLocales emailLocales) {
         this.disavowalRepository = disavowalRepository;
         this.userRepository = userRepository;
         this.onboardingSettings = onboardingSettings;
@@ -64,14 +63,22 @@ public class NotifyOnboardingAccountCreatedWorkflow {
         this.hashProvider = hashProvider;
         this.randomGenerator = randomGenerator;
         this.auditService = auditService;
+        this.emailLocales = emailLocales;
     }
 
-    /** @param passkeyId passkey registered with the onboarding ticket */
-    public Mono<Void> notify(UUID passkeyId) {
+    /**
+     * Sends the email if the passkey still owes it.
+     *
+     * @param passkeyId  passkey registered with the onboarding ticket (the passkey of the session)
+     * @param deviceName name of the device whose registration sends it (EUD-15 FR-08, AC-09)
+     * @return {@code true} when the passkey owed it (sent, or failed and traced), {@code false} when it did not:
+     *         not registered with a ticket, or already sent. Never errors.
+     */
+    public Mono<Boolean> notify(UUID passkeyId, String deviceName) {
         var token = Base64.getUrlEncoder().withoutPadding().encodeToString(randomGenerator.generateBytes(TOKEN_BYTES));
         var expiresAt = Instant.now().plus(OnboardingDisavowal.TTL);
         return disavowalRepository.assignToken(passkeyId, hashProvider.sha256(token), expiresAt)
-                .flatMap(disavowal -> send(disavowal, token)
+                .flatMap(disavowal -> send(disavowal, token, deviceName)
                         .then(auditService.record(DisavowOnboardingWorkflow.ENTITY_DISAVOWAL, disavowal.id(),
                                 AuthAuditEvents.ONBOARDING_NOTICE_SENT, disavowal.userId(), Map.of()))
                         .onErrorResume(e -> {
@@ -80,21 +87,24 @@ public class NotifyOnboardingAccountCreatedWorkflow {
                             return auditService.record(DisavowOnboardingWorkflow.ENTITY_DISAVOWAL, disavowal.id(),
                                             AuthAuditEvents.ONBOARDING_NOTICE_FAILED, disavowal.userId(), Map.of())
                                     .onErrorResume(auditError -> Mono.empty());
-                        }))
+                        })
+                        .thenReturn(true))
+                .defaultIfEmpty(false)
                 .onErrorResume(e -> {
                     log.warn("New-account email not prepared: {}", e.getClass().getSimpleName());
-                    return Mono.empty();
+                    return Mono.just(false);
                 });
     }
 
-    private Mono<Void> send(OnboardingDisavowal disavowal, String token) {
+    private Mono<Void> send(OnboardingDisavowal disavowal, String token, String deviceName) {
         // The link points at the tenant's Wallet App (ebw.wallet_url, task 44); without it, the email fails.
         return Mono.zip(userRepository.findById(disavowal.userId()), onboardingSettings.walletUrl())
-                .flatMap(tuple -> emailSender.sendAccountCreatedNotice(tuple.getT1().getEmail(),
-                        new AccountCreatedNotice(disavowal.registeredAt(),
-                                tuple.getT2() + DISAVOWAL_PATH + token,
-                                disavowal.expiresAt(), disavowal.accountCreated()),
-                        NOTICE_LOCALE))
+                .flatMap(tuple -> emailLocales.ofHolder(tuple.getT1())
+                        .flatMap(locale -> emailSender.sendAccountCreatedNotice(tuple.getT1().getEmail(),
+                                new AccountCreatedNotice(disavowal.registeredAt(),
+                                        tuple.getT2() + DISAVOWAL_PATH + token,
+                                        disavowal.expiresAt(), disavowal.accountCreated(), deviceName),
+                                locale)))
                 .timeout(NOTICE_TIMEOUT);
     }
 }

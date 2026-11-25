@@ -1,6 +1,7 @@
 package com.eudistack.ebw.infrastructure.security;
 
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
+import com.eudistack.ebw.domain.model.SessionState;
 import com.eudistack.ebw.domain.service.AuthTokenService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,8 @@ import static org.mockito.Mockito.when;
 /** Unit tests for {@link ActiveSessionChecker}. */
 @ExtendWith(MockitoExtension.class)
 class ActiveSessionCheckerTest {
+
+    private static final SessionState ALIVE = new SessionState(true, UUID.randomUUID());
 
     private static final String TENANT = "sandbox";
 
@@ -48,31 +51,31 @@ class ActiveSessionCheckerTest {
     @Test
     void isActive_firstCall_asksTheServiceAndEmitsItsAnswer() {
         // Arrange
-        when(authTokenService.isSessionActive(sessionId)).thenReturn(Mono.just(true));
+        when(authTokenService.sessionState(sessionId)).thenReturn(Mono.just(ALIVE));
 
         // Act & Assert
         StepVerifier.create(isActive(TENANT, sessionId)).expectNext(true).verifyComplete();
-        verify(authTokenService, times(1)).isSessionActive(sessionId);
+        verify(authTokenService, times(1)).sessionState(sessionId);
     }
 
     @Test
     void isActive_defaultConstructor_usesTheSystemClockAndCachesTheAnswer() {
         // Arrange
         var withSystemClock = new ActiveSessionChecker(authTokenService);
-        when(authTokenService.isSessionActive(sessionId)).thenReturn(Mono.just(true));
+        when(authTokenService.sessionState(sessionId)).thenReturn(Mono.just(ALIVE));
         var call = withSystemClock.isActive(sessionId)
                 .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TENANT));
 
         // Act & Assert
         StepVerifier.create(call).expectNext(true).verifyComplete();
         StepVerifier.create(call).expectNext(true).verifyComplete();
-        verify(authTokenService, times(1)).isSessionActive(sessionId);
+        verify(authTokenService, times(1)).sessionState(sessionId);
     }
 
     @Test
     void isActive_withinTheTtl_servesTheCachedAnswerWithoutAskingAgain() {
         // Arrange
-        when(authTokenService.isSessionActive(sessionId)).thenReturn(Mono.just(true));
+        when(authTokenService.sessionState(sessionId)).thenReturn(Mono.just(ALIVE));
         isActive(TENANT, sessionId).block();
 
         // Act
@@ -80,13 +83,13 @@ class ActiveSessionCheckerTest {
 
         // Assert
         StepVerifier.create(isActive(TENANT, sessionId)).expectNext(true).verifyComplete();
-        verify(authTokenService, times(1)).isSessionActive(sessionId);
+        verify(authTokenService, times(1)).sessionState(sessionId);
     }
 
     @Test
     void isActive_afterTheTtl_asksTheServiceAgain() {
         // Arrange: the session ends after the first answer
-        when(authTokenService.isSessionActive(sessionId)).thenReturn(Mono.just(true), Mono.just(false));
+        when(authTokenService.sessionState(sessionId)).thenReturn(Mono.just(ALIVE), Mono.just(SessionState.ENDED));
         isActive(TENANT, sessionId).block();
 
         // Act
@@ -94,58 +97,58 @@ class ActiveSessionCheckerTest {
 
         // Assert
         StepVerifier.create(isActive(TENANT, sessionId)).expectNext(false).verifyComplete();
-        verify(authTokenService, times(2)).isSessionActive(sessionId);
+        verify(authTokenService, times(2)).sessionState(sessionId);
     }
 
     @Test
     void isActive_endedSession_isCachedForTheTtlToo() {
         // Arrange
-        when(authTokenService.isSessionActive(sessionId)).thenReturn(Mono.just(false));
+        when(authTokenService.sessionState(sessionId)).thenReturn(Mono.just(SessionState.ENDED));
         isActive(TENANT, sessionId).block();
 
         // Act & Assert
         StepVerifier.create(isActive(TENANT, sessionId)).expectNext(false).verifyComplete();
-        verify(authTokenService, times(1)).isSessionActive(sessionId);
+        verify(authTokenService, times(1)).sessionState(sessionId);
     }
 
     @Test
     void isActive_serviceFails_propagatesTheErrorAndCachesNothing() {
         // Arrange: a transient failure first, then a definitive answer
-        when(authTokenService.isSessionActive(sessionId))
-                .thenReturn(Mono.error(new IllegalStateException("database down")), Mono.just(true));
+        when(authTokenService.sessionState(sessionId))
+                .thenReturn(Mono.error(new IllegalStateException("database down")), Mono.just(ALIVE));
 
         // Act & Assert
         StepVerifier.create(isActive(TENANT, sessionId)).expectError(IllegalStateException.class).verify();
         StepVerifier.create(isActive(TENANT, sessionId)).expectNext(true).verifyComplete();
-        verify(authTokenService, times(2)).isSessionActive(sessionId);
+        verify(authTokenService, times(2)).sessionState(sessionId);
     }
 
     @Test
     void isActive_serviceEmitsNothing_isNotActiveButIsNotRemembered() {
         // Arrange
-        when(authTokenService.isSessionActive(sessionId)).thenReturn(Mono.empty(), Mono.just(true));
+        when(authTokenService.sessionState(sessionId)).thenReturn(Mono.empty(), Mono.just(ALIVE));
 
         // Act & Assert
         StepVerifier.create(isActive(TENANT, sessionId)).expectNext(false).verifyComplete();
         StepVerifier.create(isActive(TENANT, sessionId)).expectNext(true).verifyComplete();
-        verify(authTokenService, times(2)).isSessionActive(sessionId);
+        verify(authTokenService, times(2)).sessionState(sessionId);
     }
 
     @Test
     void isActive_sameSessionIdInAnotherTenant_doesNotShareTheCachedAnswer() {
         // Arrange
-        when(authTokenService.isSessionActive(sessionId)).thenReturn(Mono.just(true), Mono.just(false));
+        when(authTokenService.sessionState(sessionId)).thenReturn(Mono.just(ALIVE), Mono.just(SessionState.ENDED));
         isActive(TENANT, sessionId).block();
 
         // Act & Assert
         StepVerifier.create(isActive("cgcom", sessionId)).expectNext(false).verifyComplete();
-        verify(authTokenService, times(2)).isSessionActive(sessionId);
+        verify(authTokenService, times(2)).sessionState(sessionId);
     }
 
     @Test
     void forget_cachedSession_dropsItSoTheNextCallAsksTheServiceAgain() {
         // Arrange: this instance has just ended the session
-        when(authTokenService.isSessionActive(sessionId)).thenReturn(Mono.just(true), Mono.just(false));
+        when(authTokenService.sessionState(sessionId)).thenReturn(Mono.just(ALIVE), Mono.just(SessionState.ENDED));
         isActive(TENANT, sessionId).block();
 
         // Act
@@ -153,7 +156,7 @@ class ActiveSessionCheckerTest {
 
         // Assert
         StepVerifier.create(isActive(TENANT, sessionId)).expectNext(false).verifyComplete();
-        verify(authTokenService, times(2)).isSessionActive(sessionId);
+        verify(authTokenService, times(2)).sessionState(sessionId);
     }
 
     @Test
@@ -161,6 +164,6 @@ class ActiveSessionCheckerTest {
         // Act & Assert
         StepVerifier.create(checker.forget(sessionId)
                 .contextWrite(ctx -> ctx.put(ReactorContextKeys.TENANT_DOMAIN, TENANT))).verifyComplete();
-        verify(authTokenService, never()).isSessionActive(sessionId);
+        verify(authTokenService, never()).sessionState(sessionId);
     }
 }

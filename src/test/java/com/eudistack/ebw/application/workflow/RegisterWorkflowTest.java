@@ -1,6 +1,7 @@
 package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.domain.model.exception.RateLimitExceededException;
+import java.util.Locale;
 import com.eudistack.ebw.domain.service.AuditService;
 import com.eudistack.ebw.domain.service.OtpService;
 import com.eudistack.ebw.domain.spi.EmailRateLimiter;
@@ -29,12 +30,14 @@ class RegisterWorkflowTest {
     @Mock private OtpService otpService;
     @Mock private EmailRateLimiter emailRateLimiter;
     @Mock private AuditService auditService;
+    @Mock private EmailLocales emailLocales;
 
     private RegisterWorkflow workflow;
 
     @BeforeEach
     void setUp() {
-        workflow = new RegisterWorkflow(otpService, emailRateLimiter, auditService);
+        workflow = new RegisterWorkflow(otpService, emailRateLimiter, auditService, emailLocales);
+        org.mockito.Mockito.lenient().when(emailLocales.ofRequest()).thenReturn(Mono.just(Locale.of("ca")));
     }
 
     @Test
@@ -42,7 +45,7 @@ class RegisterWorkflowTest {
         // Arrange
         var verificationId = UUID.randomUUID();
         when(emailRateLimiter.checkRegisterRate(EMAIL)).thenReturn(Mono.empty());
-        when(otpService.generateAndSend(EMAIL)).thenReturn(Mono.just(verificationId));
+        when(otpService.generateAndSend(EMAIL, Locale.of("ca"))).thenReturn(Mono.just(verificationId));
         when(auditService.record(any(), any(), any(), any(), any())).thenReturn(Mono.empty());
 
         // Act
@@ -71,7 +74,7 @@ class RegisterWorkflowTest {
     void registerUser_sendFails_completesSilently() {
         // Arrange
         when(emailRateLimiter.checkRegisterRate(EMAIL)).thenReturn(Mono.empty());
-        when(otpService.generateAndSend(EMAIL)).thenReturn(Mono.error(new IllegalStateException("smtp down")));
+        when(otpService.generateAndSend(EMAIL, Locale.of("ca"))).thenReturn(Mono.error(new IllegalStateException("smtp down")));
 
         // Act
         var result = workflow.registerUser(EMAIL);

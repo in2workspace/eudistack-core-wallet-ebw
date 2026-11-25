@@ -5,6 +5,7 @@ import com.eudistack.ebw.domain.model.ExpiredSession;
 import com.eudistack.ebw.domain.model.IssuedSession;
 import com.eudistack.ebw.domain.model.RefreshToken;
 import com.eudistack.ebw.domain.model.SessionSettings;
+import com.eudistack.ebw.domain.model.SessionState;
 import com.eudistack.ebw.domain.model.WalletUser;
 import com.eudistack.ebw.domain.model.exception.InvalidSessionException;
 import com.eudistack.ebw.domain.model.exception.SessionExpiredException;
@@ -99,15 +100,27 @@ public class AuthTokenService {
         // active token (the access-token session check never sees a gap during a renewal).
         var next = newToken(user, existing.getPasskeyId(), existing.getSessionId(), existing.getSessionStartedAt(),
                 now, settings, tenant);
-        return refreshTokenRepository.insert(next.token())
+        // The Wallet Instance of the session and the pending new-passkey email travel with the family.
+        var inherited = next.token().inheritSessionState(existing);
+        return refreshTokenRepository.insert(inherited)
                 .then(refreshTokenRepository.revokeIfActive(existing.getId()))
                 .flatMap(revoked -> {
                     if (!Boolean.TRUE.equals(revoked)) {
                         // Another request rotated it first: the same token was presented twice.
-                        return refreshTokenRepository.deleteById(next.token().getId())
+                        return refreshTokenRepository.deleteById(inherited.getId())
                                 .then(rejectRevoked(existing));
                     }
-                    return touchPasskey(existing.getPasskeyId()).thenReturn(next.session());
+                    // Re-sync for a binding that landed on the old token between the insert and the revocation.
+                    // Best effort: the new token already carries the inherited state, and failing here, with the
+                    // old token revoked, would make the client's retry look like a reused token.
+                    return refreshTokenRepository.inheritSessionState(inherited.getId(), existing.getId())
+                            .onErrorResume(e -> {
+                                log.warn("Could not re-sync the session state on renewal: {}",
+                                        e.getClass().getSimpleName());
+                                return Mono.empty();
+                            })
+                            .then(touchPasskey(existing.getPasskeyId()))
+                            .thenReturn(next.session());
                 });
     }
 
@@ -187,6 +200,16 @@ public class AuthTokenService {
         return refreshTokenRepository.hasActiveToken(sessionId);
     }
 
+    /** Whether the session is alive and the active Wallet Instance it is bound to (EUD-15 AD-2). */
+    public Mono<SessionState> sessionState(UUID sessionId) {
+        return refreshTokenRepository.findSessionState(sessionId);
+    }
+
+    /** The session owes the new-passkey email: a passkey was added to an account that had one (EUD-8 AD-11). */
+    public Mono<Void> markPasskeyNoticePending(UUID sessionId) {
+        return refreshTokenRepository.markPasskeyNoticePending(sessionId);
+    }
+
     /**
      * Revokes the session of an expired token. The expiry is reported only by the caller that
      * revoked it: if the housekeeping pass closed the session first, it already recorded it.
@@ -218,8 +241,8 @@ public class AuthTokenService {
     }
 
     /**
-     * Records device activity for the devices list: a session renewal means the device behind
-     * this passkey is in use. Best-effort: never fails the renewal.
+     * Records the last use of the passkey: a session renewal means it is in use. The devices list
+     * shows the last use of the Wallet Instances instead (EUD-15). Best-effort: never fails the renewal.
      */
     private Mono<Void> touchPasskey(UUID passkeyId) {
         return Mono.defer(() -> userPasskeyRepository.touchLastUsed(passkeyId))

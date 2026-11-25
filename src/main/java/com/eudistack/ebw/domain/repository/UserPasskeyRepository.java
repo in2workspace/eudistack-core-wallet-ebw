@@ -18,8 +18,6 @@ public interface UserPasskeyRepository {
 
     Mono<UserPasskey> insert(UserPasskey passkey);
 
-    Mono<UserPasskey> updateDisplayName(UserPasskey passkey);
-
     /**
      * Stores the authenticator state after a verified authentication and sets the last use.
      * When the new signature counter is greater than 0 the update only applies if the stored

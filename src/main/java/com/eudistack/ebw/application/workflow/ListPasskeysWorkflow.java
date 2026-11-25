@@ -1,31 +1,23 @@
 package com.eudistack.ebw.application.workflow;
 
 import com.eudistack.ebw.domain.model.UserPasskey;
-import com.eudistack.ebw.domain.repository.RefreshTokenRepository;
 import com.eudistack.ebw.domain.repository.UserPasskeyRepository;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.util.UUID;
 
+/** The passkeys of the account, for the Signal API of the Wallet App (EUD-15 AD-4). */
 @Service
 public class ListPasskeysWorkflow {
 
     private final UserPasskeyRepository passkeyRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
 
-    public ListPasskeysWorkflow(UserPasskeyRepository passkeyRepository,
-                                RefreshTokenRepository refreshTokenRepository) {
+    public ListPasskeysWorkflow(UserPasskeyRepository passkeyRepository) {
         this.passkeyRepository = passkeyRepository;
-        this.refreshTokenRepository = refreshTokenRepository;
     }
 
-    public Flux<PasskeyWithSessions> listPasskeys(UUID userId) {
-        return passkeyRepository.findByUserId(userId)
-                .concatMap(passkey -> refreshTokenRepository.countActiveByPasskeyId(passkey.getId())
-                        .defaultIfEmpty(0L)
-                        .map(count -> new PasskeyWithSessions(passkey, count)));
+    public Flux<UserPasskey> listPasskeys(UUID userId) {
+        return passkeyRepository.findByUserId(userId);
     }
-
-    public record PasskeyWithSessions(UserPasskey passkey, long activeSessions) {}
 }

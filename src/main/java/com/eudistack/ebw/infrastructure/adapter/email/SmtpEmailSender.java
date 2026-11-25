@@ -1,7 +1,12 @@
 package com.eudistack.ebw.infrastructure.adapter.email;
 
+import com.eudistack.ebw.domain.model.AccountCompleteNotice;
 import com.eudistack.ebw.domain.model.AccountCreatedNotice;
+import com.eudistack.ebw.domain.model.EmailLanguage;
+import com.eudistack.ebw.domain.model.NewDeviceNotice;
+import com.eudistack.ebw.domain.model.NewPasskeyNotice;
 import com.eudistack.ebw.domain.model.OnboardingAlert;
+import com.eudistack.ebw.domain.service.EmailSettingsService;
 import com.eudistack.ebw.domain.model.ReactorContextKeys;
 import com.eudistack.ebw.domain.model.audit.ExternalSystemTarget;
 import com.eudistack.ebw.domain.repository.TenantRegistryRepository;
@@ -30,9 +35,11 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 @Component
 public class SmtpEmailSender implements EmailSender {
@@ -47,16 +54,20 @@ public class SmtpEmailSender implements EmailSender {
     private static final String ACCOUNT_CREATED_TEMPLATE = "account-created-email";
     private static final String ACCOUNT_CREATED_SUBJECT_KEY = "email.account-created.subject";
     private static final String ACCOUNT_CREATED_ADDED_SUBJECT_KEY = "email.account-created.added.subject";
-    /**
-     * Time zone of the dates in the emails. PROVISIONAL (EUD-315 decision P10): {@code ebw.timezone}
-     * of the tenant does not exist yet; this is its default in the design (§2.8).
-     */
-    private static final ZoneId EMAIL_ZONE = ZoneId.of("Europe/Madrid");
-    private static final DateTimeFormatter EMAIL_DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final String ACCOUNT_COMPLETE_TEMPLATE = "account-complete-email";
+    private static final String ACCOUNT_COMPLETE_SUBJECT_KEY = "email.account-complete.subject";
+    private static final String NEW_DEVICE_TEMPLATE = "new-device-email";
+    private static final String NEW_DEVICE_SUBJECT_KEY = "email.new-device.subject";
+    /** Dates and times as the wireframes show them, in the tenant's {@code ebw.timezone} (EUD-8 design §2.8). */
     private static final DateTimeFormatter EMAIL_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter EMAIL_TIME = DateTimeFormatter.ofPattern("HH:mm");
     private static final String UNKNOWN_MAIL_PROVIDER = "unknown";
-    /** The only message bundle is English. */
-    private static final Locale LOCALE = Locale.ENGLISH;
+    /** Language of an email whose caller gives none; every caller chooses one (EUD-8 AD-10). */
+    private static final Locale FALLBACK_LOCALE = Locale.of(EmailLanguage.DEFAULT);
+    private static final String DATE = "date";
+    private static final String TIME = "time";
+    private static final String DEVICE_NAME = "deviceName";
+    private static final String DEVICES_URL = "devicesUrl";
     private static final String ICONS_PATH = "email/icons/";
     private static final Map<String, byte[]> ICONS = new ConcurrentHashMap<>();
 
@@ -64,16 +75,19 @@ public class SmtpEmailSender implements EmailSender {
     private final SpringTemplateEngine templateEngine;
     private final MessageSource messageSource;
     private final TenantConfigService tenantConfigService;
+    private final EmailSettingsService emailSettingsService;
     private final TenantRegistryRepository tenantRegistryRepository;
     private final EmailBrandingResolver emailBrandingResolver;
     private final ExternalSystemAccessRecorder externalSystemAccessRecorder;
     private final long expirationMinutes;
     private final String defaultMailFrom;
 
+    @SuppressWarnings("java:S107")
     public SmtpEmailSender(JavaMailSender mailSender,
                            SpringTemplateEngine templateEngine,
                            MessageSource messageSource,
                            TenantConfigService tenantConfigService,
+                           EmailSettingsService emailSettingsService,
                            TenantRegistryRepository tenantRegistryRepository,
                            EmailBrandingResolver emailBrandingResolver,
                            ExternalSystemAccessRecorder externalSystemAccessRecorder,
@@ -83,6 +97,7 @@ public class SmtpEmailSender implements EmailSender {
         this.templateEngine = templateEngine;
         this.messageSource = messageSource;
         this.tenantConfigService = tenantConfigService;
+        this.emailSettingsService = emailSettingsService;
         this.tenantRegistryRepository = tenantRegistryRepository;
         this.emailBrandingResolver = emailBrandingResolver;
         this.externalSystemAccessRecorder = externalSystemAccessRecorder;
@@ -91,44 +106,81 @@ public class SmtpEmailSender implements EmailSender {
     }
 
     @Override
-    public Mono<Void> sendOtp(String email, String code) {
-        return sendBranded(email, OTP_TEMPLATE, OTP_SUBJECT_KEY, Map.of(
+    public Mono<Void> sendOtp(String email, String code, Locale locale) {
+        return sendBranded(email, OTP_TEMPLATE, OTP_SUBJECT_KEY, zone -> Map.of(
                 "txCode", code,
-                "expirationMinutes", expirationMinutes));
+                "expirationMinutes", expirationMinutes), locale);
     }
 
     @Override
-    public Mono<Void> sendNewPasskeyNotice(String email) {
-        return sendBranded(email, NEW_PASSKEY_TEMPLATE, NEW_PASSKEY_SUBJECT_KEY, Map.of());
+    public Mono<Void> sendNewPasskeyNotice(String email, NewPasskeyNotice notice, Locale locale) {
+        return sendBranded(email, NEW_PASSKEY_TEMPLATE, NEW_PASSKEY_SUBJECT_KEY, zone -> withOptional(Map.of(
+                DATE, EMAIL_DATE.format(notice.addedAt().atZone(zone)),
+                TIME, EMAIL_TIME.format(notice.addedAt().atZone(zone))), DEVICES_URL, notice.devicesUrl()), locale);
     }
 
     @Override
     public Mono<Void> sendOnboardingAlert(String securityContact, OnboardingAlert alert, Locale locale) {
         var subjectKey = alert.accountCreated() ? ONBOARDING_ALERT_SUBJECT_KEY : ONBOARDING_ALERT_ADDED_SUBJECT_KEY;
-        return sendBranded(securityContact, ONBOARDING_ALERT_TEMPLATE, subjectKey, Map.of(
+        return sendBranded(securityContact, ONBOARDING_ALERT_TEMPLATE, subjectKey, zone -> Map.of(
                 "maskedEmail", alert.maskedEmail(),
-                "registeredAt", EMAIL_DATE_TIME.format(alert.registeredAt().atZone(EMAIL_ZONE)),
+                "registeredAt", EMAIL_DATE.format(alert.registeredAt().atZone(zone)) + " "
+                        + EMAIL_TIME.format(alert.registeredAt().atZone(zone)),
                 "accountCreated", alert.accountCreated()), locale);
     }
 
     @Override
     public Mono<Void> sendAccountCreatedNotice(String email, AccountCreatedNotice notice, Locale locale) {
         var subjectKey = notice.accountCreated() ? ACCOUNT_CREATED_SUBJECT_KEY : ACCOUNT_CREATED_ADDED_SUBJECT_KEY;
-        return sendBranded(email, ACCOUNT_CREATED_TEMPLATE, subjectKey, Map.of(
-                "createdAt", EMAIL_DATE_TIME.format(notice.createdAt().atZone(EMAIL_ZONE)),
+        return sendBranded(email, ACCOUNT_CREATED_TEMPLATE, subjectKey, zone -> withOptional(Map.of(
+                DATE, EMAIL_DATE.format(notice.createdAt().atZone(zone)),
+                TIME, EMAIL_TIME.format(notice.createdAt().atZone(zone)),
                 "disavowalUrl", notice.disavowalUrl(),
-                "linkExpiresAt", EMAIL_DATE.format(notice.linkExpiresAt().atZone(EMAIL_ZONE)),
-                "accountCreated", notice.accountCreated()), locale);
+                "linkExpiresAt", EMAIL_DATE.format(notice.linkExpiresAt().atZone(zone)),
+                "accountCreated", notice.accountCreated()), DEVICE_NAME, notice.deviceName()), locale);
     }
 
-    /** Resolves the tenant's sender, display name and branding from the request context, then sends. */
-    private Mono<Void> sendBranded(String email, String template, String subjectKey, Map<String, Object> variables) {
-        return sendBranded(email, template, subjectKey, variables, LOCALE);
+    @Override
+    public Mono<Void> sendAccountCompleteNotice(String email, AccountCompleteNotice notice, Locale locale) {
+        return sendBranded(email, ACCOUNT_COMPLETE_TEMPLATE, ACCOUNT_COMPLETE_SUBJECT_KEY, zone -> Map.of(
+                DATE, EMAIL_DATE.format(notice.createdAt().atZone(zone)),
+                TIME, EMAIL_TIME.format(notice.createdAt().atZone(zone)),
+                DEVICE_NAME, notice.deviceName()), locale);
+    }
+
+    @Override
+    public Mono<Void> sendNewDeviceNotice(String email, NewDeviceNotice notice, Locale locale) {
+        return sendBranded(email, NEW_DEVICE_TEMPLATE, NEW_DEVICE_SUBJECT_KEY, zone -> withOptional(Map.of(
+                DATE, EMAIL_DATE.format(notice.registeredAt().atZone(zone)),
+                TIME, EMAIL_TIME.format(notice.registeredAt().atZone(zone)),
+                DEVICE_NAME, notice.deviceName(),
+                "passkeyAdded", notice.passkeyAdded()), DEVICES_URL, notice.devicesUrl()), locale);
+    }
+
+    /** {@code Map.of} rejects nulls: an optional variable is only added when it has a value. */
+    private static Map<String, Object> withOptional(Map<String, Object> variables, String key, Object value) {
+        if (value == null) {
+            return variables;
+        }
+        var all = new HashMap<>(variables);
+        all.put(key, value);
+        return all;
+    }
+
+    /**
+     * Resolves the tenant's sender, display name, branding and time zone from the request context, then sends.
+     * The variables are built with the tenant's zone, so every date is in {@code ebw.timezone}.
+     */
+    private Mono<Void> sendBranded(String email, String template, String subjectKey,
+                                   Function<ZoneId, Map<String, Object>> variablesInZone, Locale locale) {
+        var messageLocale = locale == null ? FALLBACK_LOCALE : locale;
+        return emailSettingsService.current()
+                .map(settings -> variablesInZone.apply(settings.zone()))
+                .flatMap(variables -> sendBranded(email, template, subjectKey, variables, messageLocale));
     }
 
     private Mono<Void> sendBranded(String email, String template, String subjectKey, Map<String, Object> variables,
-                                   Locale locale) {
-        var messageLocale = locale == null ? LOCALE : locale;
+                                   Locale messageLocale) {
         return Mono.deferContextual(ctx -> {
             String tenant = ctx.getOrDefault(ReactorContextKeys.TENANT_DOMAIN, "");
             Mono<String> displayName = tenant.isBlank()

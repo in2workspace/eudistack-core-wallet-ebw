@@ -145,8 +145,9 @@ class KeyManagerControllerIT {
 
     @BeforeEach
     void setUp() throws SQLException {
-        org.mockito.Mockito.lenient().when(activeSessionChecker.isActive(org.mockito.ArgumentMatchers.any()))
-                .thenReturn(reactor.core.publisher.Mono.just(true));
+        org.mockito.Mockito.lenient().when(activeSessionChecker.state(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(reactor.core.publisher.Mono.just(new com.eudistack.ebw.domain.model.SessionState(
+                        true, java.util.UUID.randomUUID())));
         webClient = webClient.mutate().filter(TestSessions.recordRequestTenant()).build();
         seedWalletProfile(SERVER_DB_TENANT, "server", "db");
         seedWalletProfile(BROWSER_TENANT, "browser", null);

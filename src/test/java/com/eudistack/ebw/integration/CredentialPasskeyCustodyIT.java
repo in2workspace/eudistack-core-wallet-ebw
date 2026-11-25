@@ -44,14 +44,14 @@ class CredentialPasskeyCustodyIT extends IntegrationTestBase {
         var email = "custody-" + System.nanoTime() + "@example.com";
         var laptop = new SoftwareAuthenticator(TEST_ORIGIN);
         var phone = new SoftwareAuthenticator(TEST_ORIGIN);
-        var laptopSession = auth.signUp(email, laptop);
-        var phoneSession = auth.signUp(email, phone);
+        var laptopSession = withDevice(auth.signUp(email, laptop));
+        var phoneSession = withDevice(auth.signUp(email, phone));
         var bound = store(laptopSession.accessToken(), sdJwt(true), "hk-" + UUID.randomUUID());
         var unbound = store(laptopSession.accessToken(), sdJwt(false), null);
 
         PasskeyRegistrationIT.withPasskeyCustody(() -> {
             // AC-04: the same (synced) passkey sees it again in a new session
-            assertThat(listIds(auth.signIn(laptop).accessToken())).contains(bound, unbound);
+            assertThat(listIds(withDevice(auth.signIn(laptop)).accessToken())).contains(bound, unbound);
             // AC-05 / AC-10: another passkey sees only the unbound one
             assertThat(listIds(phoneSession.accessToken())).contains(unbound).doesNotContain(bound);
             webClient.get().uri("/api/v1/credentials/" + bound)
@@ -75,16 +75,16 @@ class CredentialPasskeyCustodyIT extends IntegrationTestBase {
         var email = "custody-deleted-" + System.nanoTime() + "@example.com";
         var lost = new SoftwareAuthenticator(TEST_ORIGIN);
         var current = new SoftwareAuthenticator(TEST_ORIGIN);
-        var lostSession = auth.signUp(email, lost);
-        var currentSession = auth.signUp(email, current);
+        var lostSession = withDevice(auth.signUp(email, lost));
+        var currentSession = withDevice(auth.signUp(email, current));
         var bound = store(lostSession.accessToken(), sdJwt(true), "hk-" + UUID.randomUUID());
 
-        webClient.delete().uri("/api/v1/auth/passkeys/" + lostSession.passkeyId())
-                .headers(h -> h.setBearerAuth(currentSession.accessToken()))
-                .exchange().expectStatus().isNoContent();
+        // No route deletes a passkey any more (EUD-15 AD-4); "it was not me" (EUD-315) still does.
+        assertThat(currentSession.accessToken()).isNotBlank();
+        sql("DELETE FROM user_passkey WHERE id = '" + lostSession.passkeyId() + "'");
 
         PasskeyRegistrationIT.withPasskeyCustody(() ->
-                assertThat(listIds(auth.signIn(current).accessToken())).doesNotContain(bound));
+                assertThat(listIds(withDevice(auth.signIn(current)).accessToken())).doesNotContain(bound));
         assertThat(query("SELECT passkey_id, bound FROM wallet_credential WHERE id = '" + bound + "'"))
                 .singleElement().satisfies(row -> {
                     assertThat(row.get("passkey_id")).isNull();
@@ -96,8 +96,8 @@ class CredentialPasskeyCustodyIT extends IntegrationTestBase {
     void passkeySalts_onlyThePasskeyOfTheAttestationGetsItsSaltAndPublicKey() {
         // AC-08
         var email = "custody-salt-" + System.nanoTime() + "@example.com";
-        var first = auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
-        var second = auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        var first = withDevice(auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN)));
+        var second = withDevice(auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN)));
         var credentialId = "holder-" + UUID.randomUUID();
         var attestation = boundSdJwt();
 
@@ -123,7 +123,7 @@ class CredentialPasskeyCustodyIT extends IntegrationTestBase {
     void passkeyCustodyStore_cnfIsNotTheHolderKey_returns422AndStoresNothing() {
         // AC-05
         var email = "custody-mismatch-" + System.nanoTime() + "@example.com";
-        var session = auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        var session = withDevice(auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN)));
         var credentialId = "holder-" + UUID.randomUUID();
         var attestation = boundSdJwt();
         var otherKey = generateKey().toPublicJWK().toJSONObject();
@@ -143,7 +143,7 @@ class CredentialPasskeyCustodyIT extends IntegrationTestBase {
     void passkeyCustodyDelete_removesTheSaltOfTheAttestation() {
         // AC-06
         var email = "custody-delete-" + System.nanoTime() + "@example.com";
-        var session = auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN));
+        var session = withDevice(auth.signUp(email, new SoftwareAuthenticator(TEST_ORIGIN)));
         var credentialId = "holder-" + UUID.randomUUID();
         var attestation = boundSdJwt();
 

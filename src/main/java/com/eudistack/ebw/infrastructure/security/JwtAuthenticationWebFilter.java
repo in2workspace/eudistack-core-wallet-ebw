@@ -41,6 +41,12 @@ import java.util.stream.Collectors;
  * {@code SecurityConfig} does for an unauthenticated call to them. On the {@link PublicRoutes}
  * the session is not checked: they do not need a session, so a stale token never turns them
  * into a 401.
+ *
+ * <p>A live session must also be bound to an active Wallet Instance (EUD-15 AD-3): every other
+ * authenticated route answers 403 {@code instance_required} without one, except the
+ * {@link InstanceExemptRoutes} (the session and the device routes, the way to get one). The bound
+ * instance is part of the same cached check, so a revoked instance stops being accepted at most
+ * 10 seconds later, and travels in the {@link JwtAuthenticationToken}.
  */
 @Component
 public class JwtAuthenticationWebFilter implements WebFilter {
@@ -79,24 +85,50 @@ public class JwtAuthenticationWebFilter implements WebFilter {
                 .defaultIfEmpty(Optional.empty())
                 .onErrorResume(InvalidTokenException.class, e -> Mono.just(Optional.empty()))
                 .flatMap(authentication -> authentication
-                        .map(auth -> requireActiveSession(exchange, auth)
-                                .flatMap(active -> Boolean.TRUE.equals(active)
-                                        ? chain.filter(exchange)
-                                                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth))
-                                        : invalidSession(exchange)))
+                        .map(auth -> authenticate(exchange, chain, auth))
                         .orElseGet(() -> chain.filter(exchange)));
     }
 
-    private Mono<Boolean> requireActiveSession(ServerWebExchange exchange, JwtAuthenticationToken auth) {
+    /**
+     * Public routes ignore the session. Any other route needs a live session ({@code invalid_session} otherwise)
+     * and, unless it is one of the {@link InstanceExemptRoutes}, a session bound to an active Wallet Instance
+     * ({@code instance_required} otherwise, EUD-15 AD-3).
+     */
+    private Mono<Void> authenticate(ServerWebExchange exchange, WebFilterChain chain, JwtAuthenticationToken auth) {
         return PublicRoutes.MATCHER.matches(exchange)
-                .flatMap(publicRoute -> publicRoute.isMatch()
-                        ? Mono.just(true)
-                        : activeSessionChecker.isActive(auth.getSessionId()));
+                .flatMap(publicRoute -> {
+                    if (publicRoute.isMatch()) {
+                        return proceed(exchange, chain, auth);
+                    }
+                    return activeSessionChecker.state(auth.getSessionId())
+                            .flatMap(state -> {
+                                if (!state.active()) {
+                                    return invalidSession(exchange);
+                                }
+                                var bound = auth.withWalletInstance(state.walletInstanceId());
+                                if (state.hasActiveInstance()) {
+                                    return proceed(exchange, chain, bound);
+                                }
+                                return InstanceExemptRoutes.MATCHER.matches(exchange)
+                                        .flatMap(exempt -> exempt.isMatch()
+                                                ? proceed(exchange, chain, bound)
+                                                : instanceRequired(exchange));
+                            });
+                });
+    }
+
+    private static Mono<Void> proceed(ServerWebExchange exchange, WebFilterChain chain, JwtAuthenticationToken auth) {
+        return chain.filter(exchange).contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth));
     }
 
     private Mono<Void> invalidSession(ServerWebExchange exchange) {
         log.debug("Access token rejected: its session is no longer active");
         return InvalidSessionResponse.write(exchange, objectMapper, refreshCookies);
+    }
+
+    private Mono<Void> instanceRequired(ServerWebExchange exchange) {
+        log.debug("Request rejected: the session is not bound to an active wallet instance");
+        return InstanceRequiredResponse.write(exchange, objectMapper);
     }
 
     private JwtAuthenticationToken toAuthentication(Map<String, Object> claims, String requestTenant) {

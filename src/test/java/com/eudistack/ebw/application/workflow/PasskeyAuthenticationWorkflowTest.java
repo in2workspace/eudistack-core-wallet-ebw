@@ -65,6 +65,7 @@ class PasskeyAuthenticationWorkflowTest {
     @Mock private AuditService auditService;
     @Mock private TransactionRunner transactionRunner;
 
+    @org.mockito.Mock private EmailLocales emailLocales;
     private PasskeyAuthenticationWorkflow workflow;
     private WalletUser user;
     private UserPasskey passkey;
@@ -75,7 +76,9 @@ class PasskeyAuthenticationWorkflowTest {
     void setUp() {
         workflow = new PasskeyAuthenticationWorkflow(ticketService, userRepository, passkeyRepository,
                 ceremonyRepository, settingsService, webAuthnVerifier, randomGenerator, sessionOpener, auditService,
-                transactionRunner);
+                transactionRunner, emailLocales);
+        org.mockito.Mockito.lenient().when(emailLocales.rememberRequestLanguage(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Mono.empty());
         user = TestPasskeys.user("holder@example.com");
         passkey = TestPasskeys.create(user.getId(), "cred-1", "Phone", null);
         ceremony = WebAuthnCeremony.start(CeremonyType.AUTHENTICATION, new byte[32], null);

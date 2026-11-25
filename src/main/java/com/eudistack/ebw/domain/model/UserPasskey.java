@@ -26,7 +26,7 @@ public class UserPasskey {
     private final boolean backupState;
     private final String attestationFormat;
     private final boolean prfEnabled;
-    private String displayName;
+    private final String displayName;
     private final String userAgent;
     private final Instant createdAt;
     private final Instant lastUsedAt;
@@ -63,10 +63,6 @@ public class UserPasskey {
                 registration.transports(), registration.uvInitialized(), registration.backupEligible(),
                 registration.backupState(), registration.attestationFormat(), prfEnabled, displayName, userAgent,
                 now, now);
-    }
-
-    public void updateDisplayName(String displayName) {
-        this.displayName = displayName;
     }
 
     public UUID getId() { return id; }
