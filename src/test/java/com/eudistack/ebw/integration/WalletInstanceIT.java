@@ -161,7 +161,7 @@ class WalletInstanceIT extends IntegrationTestBase {
         assertThat(devices).hasSize(2);
         assertThat(devices.getFirst()).containsEntry("id", deviceId).containsEntry("current", true);
         assertThat(query("SELECT count(*) AS n FROM wallet_instance i JOIN wallet_user u ON u.id = i.user_id"
-                + " WHERE u.email = '" + email + "'").getFirst().get("n")).isEqualTo(2L);
+                + " WHERE u.email = '" + email + "'").getFirst()).containsEntry("n", 2L);
     }
 
     @Test
@@ -199,7 +199,7 @@ class WalletInstanceIT extends IntegrationTestBase {
         var row = query("SELECT status, revoked_by FROM wallet_instance WHERE id = '" + lostDevice + "'").getFirst();
         assertThat(row).containsEntry("status", "REVOKED").containsEntry("revoked_by", "HOLDER");
         assertThat(query("SELECT count(*) AS n FROM user_passkey p JOIN wallet_user u ON u.id = p.user_id"
-                + " WHERE u.email = '" + email + "'").getFirst().get("n")).isEqualTo(2L);
+                + " WHERE u.email = '" + email + "'").getFirst()).containsEntry("n", 2L);
 
         var back = client.signIn(lostAuthenticator).accessToken();
         bind(back, lostDevice).expectStatus().isEqualTo(410).expectBody().jsonPath("$.type")

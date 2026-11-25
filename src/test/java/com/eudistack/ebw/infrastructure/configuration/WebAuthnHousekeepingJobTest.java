@@ -88,7 +88,7 @@ class WebAuthnHousekeepingJobTest {
         // Act + Assert
         StepVerifier.create(job.cleanup()).expectNext(0L).verifyComplete();
         assertThat(tenantsSeen).containsExactly("cgcom");
-        org.mockito.Mockito.verify(sendPendingPasskeyNotices).sendPending();
+        verify(sendPendingPasskeyNotices).sendPending();
     }
 
     @Test

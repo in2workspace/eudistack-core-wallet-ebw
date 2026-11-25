@@ -15,7 +15,7 @@
                     <td align="center" style="padding: 12px 40px 32px 40px; font-family: 'Blinker', Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.5; color: #000000; text-align: center;">
                         <p style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400;" th:text="#{email.new-passkey.body(${date}, ${time})}">El 30/10/2026 a las 10:42 se añadió una passkey nueva a tu wallet.</p>
                         <p style="margin: 0; font-size: 14px; font-weight: 400;" th:text="#{email.new-passkey.hint}">Si has sido tú, no tienes que hacer nada. Si no, entra en tu wallet y revisa tus dispositivos.</p>
-                        <th:block th:if="${devicesUrl != null}"><table th:replace="~{fragments/devices-button :: button(${devicesUrl})}"></table></th:block>
+                        <th:block th:if="${devicesUrl != null}"><th:block th:replace="~{fragments/devices-button :: button(${devicesUrl})}"></th:block></th:block>
                     </td>
                 </tr>
 

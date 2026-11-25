@@ -25,7 +25,6 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -91,9 +90,9 @@ class BindWalletInstanceWorkflowTest {
                 .verify();
 
         verify(refreshTokenRepository, never()).bindSession(any(), any());
-        verify(auditService).record(eq(WalletInstanceAuditEvents.ENTITY_WALLET_INSTANCE), eq(instance.id()),
-                eq(WalletInstanceAuditEvents.WALLET_INSTANCE_BIND_REJECTED), eq(user.getId()),
-                eq(Map.of("reason", "not_found", "session_id", session.sessionId().toString())));
+        verify(auditService).record(WalletInstanceAuditEvents.ENTITY_WALLET_INSTANCE, instance.id(),
+                WalletInstanceAuditEvents.WALLET_INSTANCE_BIND_REJECTED, user.getId(),
+                Map.of("reason", "not_found", "session_id", session.sessionId().toString()));
     }
 
     @Test
@@ -109,9 +108,9 @@ class BindWalletInstanceWorkflowTest {
                 .verify();
 
         verify(refreshTokenRepository, never()).bindSession(any(), any());
-        verify(auditService).record(eq(WalletInstanceAuditEvents.ENTITY_WALLET_INSTANCE), eq(instance.id()),
-                eq(WalletInstanceAuditEvents.WALLET_INSTANCE_BIND_REJECTED), eq(user.getId()),
-                eq(Map.of("reason", "revoked", "session_id", session.sessionId().toString())));
+        verify(auditService).record(WalletInstanceAuditEvents.ENTITY_WALLET_INSTANCE, instance.id(),
+                WalletInstanceAuditEvents.WALLET_INSTANCE_BIND_REJECTED, user.getId(),
+                Map.of("reason", "revoked", "session_id", session.sessionId().toString()));
     }
 
     @Test

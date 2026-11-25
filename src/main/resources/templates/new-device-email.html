@@ -17,7 +17,7 @@
                         <p class="break-long" style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400; overflow-wrap: anywhere;" th:text="#{email.new-device.body(${date}, ${time}, ${deviceName})}">El 30/10/2026 a las 10:42 se registró el dispositivo «Windows · Edge» en tu wallet.</p>
                         <p th:if="${passkeyAdded}" style="margin: 0 0 16px 0; font-size: 14px; font-weight: 400;" th:text="#{email.new-device.passkey}">Para entrar se añadió una passkey nueva a tu cuenta.</p>
                         <p style="margin: 0; font-size: 14px; font-weight: 400;" th:text="#{email.new-device.hint}">Si has sido tú, no tienes que hacer nada. Si no, revócalo.</p>
-                        <th:block th:if="${devicesUrl != null}"><table th:replace="~{fragments/devices-button :: button(${devicesUrl})}"></table></th:block>
+                        <th:block th:if="${devicesUrl != null}"><th:block th:replace="~{fragments/devices-button :: button(${devicesUrl})}"></th:block></th:block>
                     </td>
                 </tr>
 

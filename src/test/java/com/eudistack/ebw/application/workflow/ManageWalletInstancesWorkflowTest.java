@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -220,7 +221,7 @@ class ManageWalletInstancesWorkflowTest {
         StepVerifier.create(revoker.revokeRegisteredWith(passkeyId, userId)).verifyComplete();
 
         var metadata = ArgumentCaptor.forClass(Map.class);
-        verify(auditService, org.mockito.Mockito.times(2)).record(eq(WalletInstanceAuditEvents.ENTITY_WALLET_INSTANCE),
+        verify(auditService, times(2)).record(eq(WalletInstanceAuditEvents.ENTITY_WALLET_INSTANCE),
                 any(), eq(WalletInstanceAuditEvents.WALLET_INSTANCE_REVOKED), eq(userId), metadata.capture());
         assertThat(metadata.getAllValues()).allSatisfy(m -> assertThat(m).containsEntry("revoked_by", "DISAVOWAL"));
     }

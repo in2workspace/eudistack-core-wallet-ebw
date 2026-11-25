@@ -113,6 +113,7 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
 
     private static final String SESSION_ID = "sessionId";
     private static final String WALLET_INSTANCE_ID = "walletInstanceId";
+    private static final String SESSION_ID_COLUMN = "session_id";
 
     private final SpringRefreshTokenRepository springRepository;
     private final DatabaseClient databaseClient;
@@ -194,7 +195,7 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
     public Flux<UUID> revokeByWalletInstanceId(UUID walletInstanceId) {
         return databaseClient.sql(REVOKE_BY_INSTANCE_SQL)
                 .bind(WALLET_INSTANCE_ID, walletInstanceId)
-                .map((row, metadata) -> row.get("session_id", UUID.class))
+                .map((row, metadata) -> row.get(SESSION_ID_COLUMN, UUID.class))
                 .all()
                 .distinct();
     }
@@ -223,7 +224,7 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
     public Flux<PendingPasskeyNotice> takePendingNoticesOfEndedSessions() {
         return databaseClient.sql(TAKE_ENDED_NOTICES_SQL)
                 .map((row, metadata) -> new PendingPasskeyNotice(
-                        row.get("session_id", UUID.class),
+                        row.get(SESSION_ID_COLUMN, UUID.class),
                         row.get("user_id", UUID.class),
                         row.get("passkey_id", UUID.class),
                         row.get("passkey_added_at", Instant.class)))
@@ -237,7 +238,7 @@ public class RefreshTokenR2dbcRepository implements RefreshTokenRepository {
 
     private static ExpiredSession toExpiredSession(Readable row) {
         return new ExpiredSession(
-                row.get("session_id", UUID.class),
+                row.get(SESSION_ID_COLUMN, UUID.class),
                 row.get("user_id", UUID.class),
                 row.get("session_started_at", Instant.class),
                 row.get("last_expires_at", Instant.class));

@@ -325,8 +325,8 @@ class JwtAuthenticationWebFilterTest {
         // Assert
         assertThat(seenAuthentication.get()).isNull();
         assertThat(exchange.getResponse().getStatusCode().value()).isEqualTo(403);
-        assertThat(exchange.getResponse().getHeaders().getContentType().toString())
-                .isEqualTo("application/problem+json");
+        assertThat(exchange.getResponse().getHeaders().getContentType())
+                .hasToString("application/problem+json");
         StepVerifier.create(exchange.getResponse().getBodyAsString())
                 .assertNext(body -> assertThat(body).contains("\"type\":\"instance_required\"")).verifyComplete();
     }
